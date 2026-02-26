@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { Sparkles, Clock, FileText, User, Menu, X, Image as ImageIcon } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://ai-video-highlights-production.up.railway.app';
+const API_BASE = import.meta.env.VITE_API_URL;
 
 
 

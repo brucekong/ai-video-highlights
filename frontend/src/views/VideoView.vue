@@ -16,9 +16,10 @@ interface Takeaway {
   duration: string;   // 如 "2:30"
 }
 
+
 interface TranscriptSegment {
   text: string;
-  offset: number;   // 毫秒
+  offset: number;   // 毫秒，
   duration: number;  // 毫秒
 }
 

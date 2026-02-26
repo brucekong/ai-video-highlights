@@ -5,7 +5,7 @@ import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play } from 'lucide-vu
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 interface Takeaway {
   id: string;

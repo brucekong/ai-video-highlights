@@ -6,6 +6,9 @@ import LoginModal from './components/LoginModal.vue';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://ai-video-highlights-production.up.railway.app';
 
+
+
+
 interface HistoryItem {
   videoId: string;
   title: string | null;

@@ -2,7 +2,7 @@
 import { X } from 'lucide-vue-next';
 
 // This URL needs to match the backend port
-const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://ai-video-highlights-production.up.railway.app';
 
 const emit = defineEmits(['close']);
 

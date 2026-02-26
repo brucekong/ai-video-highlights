@@ -19,10 +19,24 @@ async function main() {
     },
   });
 
-  // CORS — 允许前端开发服务器访问
+  // CORS — 允许前端访问
   await fastify.register(cors, {
-    origin: ['http://localhost:5173', 'http://localhost:5174'],
+    origin: (origin, cb) => {
+      // 允许 localhost, Vercel 域名, 以及自定义的 FRONTEND_URL
+      const allowedOrigins = [
+        'http://localhost:5173',
+        'http://localhost:5174',
+        process.env.FRONTEND_URL
+      ].filter(Boolean);
+
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+        cb(null, true);
+        return;
+      }
+      cb(new Error('Not allowed by CORS'), false);
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true
   });
 
   // 注册路由

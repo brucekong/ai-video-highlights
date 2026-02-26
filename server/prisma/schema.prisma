@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// 视频信息
+model Video {
+  id        String   @id @default(cuid())
+  videoId   String   @unique @map("video_id")   // YouTube video ID 或 Bilibili BV号
+  url       String                                // 完整 URL
+  title     String?                               // 视频标题
+  platform  String   @default("youtube")          // 视频平台: youtube, bilibili
+  duration  Int?                                  // 视频时长（秒）
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  takeaways Takeaway[]
+  subtitles Subtitle[]
+  histories UserHistory[]
+
+  @@map("videos")
+}
+
+/// 用户信息
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  name          String?
+  avatar        String?
+  googleId      String?   @unique @map("google_id")
+  wechatOpenId  String?   @unique @map("wechat_open_id")
+  wechatUnionId String?   @unique @map("wechat_union_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  histories     UserHistory[]
+
+  @@map("users")
+}
+
+/// 用户分析历史
+model UserHistory {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  videoId   String   @map("video_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video     Video    @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@map("user_history")
+}
+
+/// AI 提取的关键要点
+model Takeaway {
+  id        String   @id @default(cuid())
+  videoId   String   @map("video_id")
+  title     String                                 // 要点标题
+  summary   String?                                // 要点摘要
+  timestamp Int                                    // 视频中的时间点（秒）
+  duration  String?                                // 该段持续时长
+  sortOrder Int      @default(0) @map("sort_order") // 排序
+  createdAt DateTime @default(now()) @map("created_at")
+
+  video Video @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
+
+  @@map("takeaways")
+}
+
+/// 视频字幕（缓存）
+model Subtitle {
+  id        String   @id @default(cuid())
+  videoId   String   @map("video_id")
+  text      String                                 // 字幕文本
+  offset    Int                                    // 开始时间（毫秒）
+  duration  Int                                    // 持续时长（毫秒）
+  sortOrder Int      @default(0) @map("sort_order") // 排序
+  createdAt DateTime @default(now()) @map("created_at")
+
+  video Video @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
+
+  @@map("subtitles")
+}

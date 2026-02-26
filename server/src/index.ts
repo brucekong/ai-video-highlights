@@ -29,8 +29,16 @@ async function main() {
   await fastify.register(analyzeRoutes);
   await fastify.register(authRoutes);
 
-  // Health check
+  // Health checks
   fastify.get('/api/health', async () => {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  });
+
+  fastify.get('/health', async () => {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  });
+
+  fastify.get('/healthz', async () => {
     return { status: 'ok', timestamp: new Date().toISOString() };
   });
 

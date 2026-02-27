@@ -379,16 +379,11 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
     });
   });
 
-  /**
-   * DELETE /api/videos/:videoId
-   * 删除已解析的视频记录。如果用户已登录，从该用户的历史记录中移除；如果未登录，则彻底删除该视频记录。
-   */
   fastify.delete('/api/videos/:videoId', {
     schema: {
       tags: ['Videos'],
-      summary: '删除视频记录',
-      description: '删除已解析的视频记录。如果用户已登录（携带 Bearer Token），仅从该用户的历史记录中移除；如果未登录，则彻底删除该视频的所有数据（包括字幕和要点）。',
-      security: [{ bearerAuth: [] }, {}],
+      summary: '彻底删除视频数据',
+      description: '从全局数据库中彻底删除视频记录及其所有的字幕、AI 分析要点以及所有效用户的历史记录。此操作不可逆。',
       params: {
         type: 'object',
         required: ['videoId'],
@@ -406,32 +401,23 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
     reply: FastifyReply,
   ) => {
     const { videoId } = request.params;
-    const userId = getUserId(request);
 
     try {
-      if (userId) {
-        // 1. 如果用户已登录，仅删除该用户的历史记录
-        await prisma.userHistory.delete({
-          where: {
-            userId_videoId: { userId, videoId },
-          },
-        });
-        fastify.log.info(`Deleted user history for user: ${userId}, video: ${videoId}`);
-      } else {
-        // 2. 如果用户未登录，尝试从全局库中彻底删除（cascade 会自动删除 subtitles 和 takeaways）
-        await prisma.video.delete({
-          where: { videoId },
-        });
-        fastify.log.info(`Deleted video globally: ${videoId}`);
-      }
+      // 彻底删除视频记录。由于 Prisma Schema 中设置了 onDelete: Cascade，
+      // 这会自动删除关联的 subtitles (字幕)、takeaways (AI要点) 以及所有用户的 UserHistory (历史记录)。
+      await prisma.video.delete({
+        where: { videoId },
+      });
 
-      return reply.send({ success: true, message: '删除成功' });
+      fastify.log.info(`Deleted video globally: ${videoId} and all its related data.`);
+      return reply.send({ success: true, message: '视频及相关所有数据已彻底删除' });
     } catch (error: any) {
-      fastify.log.error(`Delete failed: ${error.message}`);
-      // 如果记录不存在也返回成功，避免报错
+      // 如果记录不存在 (P2025)，也返回成功，避免报错
       if (error.code === 'P2025') {
         return reply.send({ success: true, message: '记录已不存在' });
       }
+
+      fastify.log.error(`Delete failed: ${error.message}`);
       return reply.status(500).send({
         error: '删除失败',
         message: error.message,

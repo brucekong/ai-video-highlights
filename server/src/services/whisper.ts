@@ -27,8 +27,12 @@ export async function fallbackToWhisper(videoId: string, platform: 'youtube' | '
       format: 'worstaudio/bestaudio',
       output: tmpFile,
       maxFilesize: '25m',
-      // 添加 User-Agent 伪装成浏览器，降低被识别为爬虫的概率
+      // 添加 User-Agent 和 Header 伪装成浏览器，降低被识别为爬虫的概率
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      addHeader: [
+        'referer:https://www.youtube.com/',
+        'accept-language:zh-CN,zh;q=0.9,en;q=0.8'
+      ]
     };
 
     // 如果环境变量设置了 YouTube Cookies，则写入临时文件供 yt-dlp 使用

@@ -16,18 +16,30 @@ export async function fallbackToWhisper(videoId: string, platform: 'youtube' | '
     : `https://www.bilibili.com/video/${videoId}`;
 
   const tmpFile = path.join(os.tmpdir(), `${videoId}_audio.m4a`);
+  const cookieFile = path.join(os.tmpdir(), `youtube_cookies_${Date.now()}.txt`);
 
   try {
     console.log(`[Whisper Fallback] Downloading audio for ${platform} video: ${videoId}...`);
 
-    // 使用 yt-dlp 抓取并转化为最小体积的 m4a 音频
-    await youtubedl(url, {
+    const dlFlags: any = {
       extractAudio: true,
       audioFormat: 'm4a',
-      format: 'worstaudio/bestaudio', // 尽量取较小的音频流
+      format: 'worstaudio/bestaudio',
       output: tmpFile,
-      maxFilesize: '25m', // Groq Whisper API Limit is also 25MB
-    });
+      maxFilesize: '25m',
+      // 添加 User-Agent 伪装成浏览器，降低被识别为爬虫的概率
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    };
+
+    // 如果环境变量设置了 YouTube Cookies，则写入临时文件供 yt-dlp 使用
+    if (process.env.YOUTUBE_COOKIES && platform === 'youtube') {
+      await fs.writeFile(cookieFile, process.env.YOUTUBE_COOKIES);
+      dlFlags.cookies = cookieFile;
+      console.log(`[Whisper Fallback] Using provided YouTube cookies.`);
+    }
+
+    // 使用 yt-dlp 抓取并转化为最小体积的 m4a 音频
+    await youtubedl(url, dlFlags);
 
     // 检查文件是否下载成功
     if (!fs.existsSync(tmpFile)) {
@@ -71,6 +83,9 @@ export async function fallbackToWhisper(videoId: string, platform: 'youtube' | '
     // 垃圾回收：删除临时文件
     if (fs.existsSync(tmpFile)) {
       await fs.remove(tmpFile).catch(console.error);
+    }
+    if (fs.existsSync(cookieFile)) {
+      await fs.remove(cookieFile).catch(console.error);
     }
   }
 }

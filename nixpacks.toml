@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python3", "ffmpeg", "yt-dlp"]
+nixPkgs = ["python3", "ffmpeg", "yt-dlp", "deno"]
 
 [phases.build]
 cmds = ["python3 --version", "which python3", "npm run build"]

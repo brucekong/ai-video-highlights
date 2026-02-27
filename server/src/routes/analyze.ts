@@ -134,8 +134,11 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
 
       // 4. 格式化并发送给 AI 分析
       const formattedText = formatTranscriptForAI(transcript);
-      fastify.log.info(`Analyzing transcript (${transcript.length} segments)...`);
-      const aiResult = await analyzeTranscript(formattedText);
+      const lastSegment = transcript[transcript.length - 1];
+      const maxDurationSeconds = Math.ceil((lastSegment.offset + lastSegment.duration) / 1000);
+
+      fastify.log.info(`Analyzing transcript (${transcript.length} segments, duration: ${maxDurationSeconds}s)...`);
+      const aiResult = await analyzeTranscript(formattedText, maxDurationSeconds);
 
       // 4. 存储到数据库（事务：upsert video + 字幕 + takeaways）
       await prisma.$transaction(async (tx) => {
@@ -298,6 +301,49 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       },
     });
   });
+
+  /**
+   * DELETE /api/videos/:videoId
+   * 删除已解析的视频记录。如果用户已登录，从该用户的历史记录中移除；如果未登录，则彻底删除该视频记录。
+   */
+  fastify.delete('/api/videos/:videoId', async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+    const userId = getUserId(request);
+
+    try {
+      if (userId) {
+        // 1. 如果用户已登录，仅删除该用户的历史记录
+        await prisma.userHistory.delete({
+          where: {
+            userId_videoId: { userId, videoId },
+          },
+        });
+        fastify.log.info(`Deleted user history for user: ${userId}, video: ${videoId}`);
+      } else {
+        // 2. 如果用户未登录，尝试从全局库中彻底删除（cascade 会自动删除 subtitles 和 takeaways）
+        await prisma.video.delete({
+          where: { videoId },
+        });
+        fastify.log.info(`Deleted video globally: ${videoId}`);
+      }
+
+      return reply.send({ success: true, message: '删除成功' });
+    } catch (error: any) {
+      fastify.log.error(`Delete failed: ${error.message}`);
+      // 如果记录不存在也返回成功，避免报错
+      if (error.code === 'P2025') {
+        return reply.send({ success: true, message: '记录已不存在' });
+      }
+      return reply.status(500).send({
+        error: '删除失败',
+        message: error.message,
+      });
+    }
+  });
+
 
   /**
    * GET /api/videos

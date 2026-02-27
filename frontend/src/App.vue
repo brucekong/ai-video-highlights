@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, Clock, FileText, User, Menu, X, Image as ImageIcon } from 'lucide-vue-next';
+import { Sparkles, Clock, FileText, User, Menu, X, Image as ImageIcon, Trash2 } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -101,6 +101,27 @@ const getThumbnailUrl = (item: HistoryItem) => {
   }
   return '';
 };
+
+const deleteHistory = async (event: Event, item: HistoryItem) => {
+  event.stopPropagation(); // 阻止触发跳转
+  if (!confirm('确定要删除这条记录吗？')) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/videos/${item.videoId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    const result = await res.json();
+    if (result.success) {
+      await loadHistory();
+    } else {
+      alert(result.error || '删除失败');
+    }
+  } catch (error) {
+    console.error('Delete history failed:', error);
+    alert('删除失败，请检查网络连接');
+  }
+};
 </script>
 
 <template>
@@ -140,10 +161,15 @@ const getThumbnailUrl = (item: HistoryItem) => {
             <span class="platform-badge absolute-badge" :class="item.platform">{{ item.platform }}</span>
           </div>
           <div class="history-item-content">
-            <div class="history-title">{{ item.title || '未命名视频' }}</div>
+            <div class="history-title-row">
+              <div class="history-title">{{ item.title || '未命名视频' }}</div>
+              <button class="delete-history-btn" title="删除记录" @click="deleteHistory($event, item)">
+                <Trash2 :size="16" />
+              </button>
+            </div>
             <div class="history-meta">
               <span class="meta-date">{{ new Date(item.analyzedAt).toLocaleDateString() }}</span>
-              <span class="meta-takeaways"><FileText :size="12" style="display:inline;vertical-align:-2px;margin-right:2px;"/>{{ item.takeawayCount }}</span>
+              <span class="meta-takeaways"><FileText :size="12" style="display:inline;vertical-align:-2px;margin-right:2px;"/>{{ item.takeawayCount }}个片段</span>
             </div>
           </div>
         </div>
@@ -355,7 +381,6 @@ const getThumbnailUrl = (item: HistoryItem) => {
   font-size: 0.9rem;
   font-weight: 500;
   color: var(--text-primary);
-  margin-bottom: auto; /* push meta bottom */
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
@@ -363,6 +388,41 @@ const getThumbnailUrl = (item: HistoryItem) => {
   overflow: hidden;
   line-height: 1.4;
   min-height: 2.8em;
+  flex: 1;
+}
+
+.history-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: auto;
+}
+
+.delete-history-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  opacity: 0;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: -2px;
+}
+
+.history-item:hover .delete-history-btn {
+  opacity: 0.6;
+}
+
+.delete-history-btn:hover {
+  opacity: 1 !important;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .history-meta {

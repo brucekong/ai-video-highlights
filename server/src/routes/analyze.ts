@@ -5,6 +5,7 @@ import { fetchBilibiliTranscript } from '../services/bilibili.js';
 import { analyzeTranscript } from '../services/ai.js';
 import { fallbackToWhisper } from '../services/whisper.js';
 import jwt from 'jsonwebtoken';
+import { Schemas } from '../docs/openapi.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_please_change';
 
@@ -40,7 +41,51 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
    * POST /api/analyze
    * 分析 YouTube 视频，提取关键要点
    */
-  fastify.post('/api/analyze', async (
+  fastify.post('/api/analyze', {
+    schema: {
+      tags: ['Analyze'],
+      summary: '分析视频并提取关键要点',
+      description: '提交一个视频 URL 进行 AI 分析，自动提取字幕、生成关键要点摘要。支持 YouTube 和 Bilibili 平台。如果数据库中已有缓存结果且未强制刷新，则直接返回缓存。',
+      body: {
+        type: 'object',
+        required: ['videoId', 'url'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID（YouTube video ID 或 Bilibili BV号）', examples: ['dQw4w9WgXcQ'] },
+          url: { type: 'string', description: '视频完整 URL', examples: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'] },
+          platform: { type: 'string', enum: ['youtube', 'bilibili'], default: 'youtube', description: '视频平台' },
+          forceRefresh: { type: 'boolean', default: false, description: '是否强制刷新（忽略缓存重新分析）' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          description: '分析成功',
+          properties: {
+            success: { type: 'boolean', example: true },
+            cached: { type: 'boolean', description: '是否命中缓存' },
+            data: {
+              type: 'object',
+              properties: {
+                videoTitle: { type: 'string', nullable: true },
+                takeaways: {
+                  type: 'array',
+                  items: Schemas.TakeawayItem,
+                },
+                transcript: {
+                  type: 'array',
+                  items: Schemas.TranscriptSegment,
+                },
+              },
+            },
+          },
+        },
+        400: Schemas.ErrorResponse,
+        422: Schemas.ErrorResponse,
+        429: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
     request: FastifyRequest<{ Body: AnalyzeBody }>,
     reply: FastifyReply,
   ) => {
@@ -268,7 +313,39 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
    * GET /api/videos/:videoId
    * 获取之前分析过的视频结果
    */
-  fastify.get('/api/videos/:videoId', async (
+  fastify.get('/api/videos/:videoId', {
+    schema: {
+      tags: ['Videos'],
+      summary: '获取视频分析结果',
+      description: '根据视频 ID 获取之前分析过的视频详情和关键要点。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: {
+              type: 'object',
+              properties: {
+                videoTitle: { type: 'string', nullable: true },
+                takeaways: {
+                  type: 'array',
+                  items: Schemas.TakeawayItem,
+                },
+              },
+            },
+          },
+        },
+        404: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
     request: FastifyRequest<{ Params: { videoId: string } }>,
     reply: FastifyReply,
   ) => {
@@ -306,7 +383,25 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
    * DELETE /api/videos/:videoId
    * 删除已解析的视频记录。如果用户已登录，从该用户的历史记录中移除；如果未登录，则彻底删除该视频记录。
    */
-  fastify.delete('/api/videos/:videoId', async (
+  fastify.delete('/api/videos/:videoId', {
+    schema: {
+      tags: ['Videos'],
+      summary: '删除视频记录',
+      description: '删除已解析的视频记录。如果用户已登录（携带 Bearer Token），仅从该用户的历史记录中移除；如果未登录，则彻底删除该视频的所有数据（包括字幕和要点）。',
+      security: [{ bearerAuth: [] }, {}],
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      response: {
+        200: Schemas.SuccessMessage,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
     request: FastifyRequest<{ Params: { videoId: string } }>,
     reply: FastifyReply,
   ) => {
@@ -349,7 +444,26 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
    * GET /api/videos
    * 获取分析过的视频列表。如果用户已登录，获取该用户的历史记录；否则返回公共的最新记录。
    */
-  fastify.get('/api/videos', async (request, reply) => {
+  fastify.get('/api/videos', {
+    schema: {
+      tags: ['Videos'],
+      summary: '获取视频列表',
+      description: '获取已分析的视频列表。如果用户已登录（携带 Bearer Token），返回该用户的历史记录（最多50条）；否则返回最新的公共记录（最多20条）。',
+      security: [{ bearerAuth: [] }, {}],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: {
+              type: 'array',
+              items: Schemas.VideoListItem,
+            },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
     const userId = getUserId(request);
 
     if (userId) {
@@ -405,7 +519,49 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
    * 优先从数据库缓存读取，没有缓存时从平台获取并落库
    * 通过 query 参数 platform 指定平台: youtube（默认）或 bilibili
    */
-  fastify.get('/api/transcript/:videoId', async (
+  fastify.get('/api/transcript/:videoId', {
+    schema: {
+      tags: ['Transcript'],
+      summary: '获取视频字幕',
+      description: '仅获取视频字幕，不做 AI 分析。优先从数据库缓存读取，缓存未命中时从平台实时获取并保存到数据库。支持 Whisper 语音识别兜底。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          platform: { type: 'string', enum: ['youtube', 'bilibili'], default: 'youtube', description: '视频平台' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            cached: { type: 'boolean', description: '是否命中缓存' },
+            data: {
+              type: 'object',
+              properties: {
+                videoId: { type: 'string' },
+                segmentCount: { type: 'integer', description: '字幕段数' },
+                segments: {
+                  type: 'array',
+                  items: Schemas.TranscriptSegment,
+                },
+              },
+            },
+          },
+        },
+        400: Schemas.ErrorResponse,
+        422: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
     request: FastifyRequest<{ Params: TranscriptQuery; Querystring: { platform?: string } }>,
     reply: FastifyReply,
   ) => {

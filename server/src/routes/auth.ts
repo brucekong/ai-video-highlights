@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../lib/prisma.js';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
+import { Schemas } from '../docs/openapi.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_please_change';
 
@@ -19,12 +20,36 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
 export async function authRoutes(fastify: FastifyInstance) {
   // === Google Auth ===
-  fastify.get('/api/auth/google', async (request, reply) => {
+  fastify.get('/api/auth/google', {
+    schema: {
+      tags: ['Auth'],
+      summary: 'Google OAuth 登录',
+      description: '重定向到 Google OAuth 授权页面，用户授权后会回调到 /api/auth/google/callback。',
+      response: {
+        302: { type: 'null', description: '重定向到 Google 授权页面' },
+      },
+    },
+  }, async (request, reply) => {
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${GOOGLE_REDIRECT_URI}&response_type=code&scope=email%20profile`;
     reply.redirect(authUrl);
   });
 
-  fastify.get('/api/auth/google/callback', async (
+  fastify.get('/api/auth/google/callback', {
+    schema: {
+      tags: ['Auth'],
+      summary: 'Google OAuth 回调',
+      description: 'Google OAuth 授权回调地址，成功后会携带 JWT Token 重定向回前端。无需手动调用。',
+      querystring: {
+        type: 'object',
+        properties: {
+          code: { type: 'string', description: 'Google 授权码' },
+        },
+      },
+      response: {
+        302: { type: 'null', description: '重定向回前端（携带 token 或 error 参数）' },
+      },
+    },
+  }, async (
     request: FastifyRequest<{ Querystring: { code: string } }>,
     reply: FastifyReply
   ) => {
@@ -85,12 +110,37 @@ export async function authRoutes(fastify: FastifyInstance) {
   });
 
   // === WeChat Login ===
-  fastify.get('/api/auth/wechat', async (request, reply) => {
+  fastify.get('/api/auth/wechat', {
+    schema: {
+      tags: ['Auth'],
+      summary: '微信 OAuth 登录',
+      description: '重定向到微信开放平台扫码登录页面，用户授权后会回调到 /api/auth/wechat/callback。',
+      response: {
+        302: { type: 'null', description: '重定向到微信授权页面' },
+      },
+    },
+  }, async (request, reply) => {
     const authUrl = `https://open.weixin.qq.com/connect/qrconnect?appid=${WECHAT_APP_ID}&redirect_uri=${encodeURIComponent(WECHAT_REDIRECT_URI)}&response_type=code&scope=snsapi_login&state=STATE#wechat_redirect`;
     reply.redirect(authUrl);
   });
 
-  fastify.get('/api/auth/wechat/callback', async (
+  fastify.get('/api/auth/wechat/callback', {
+    schema: {
+      tags: ['Auth'],
+      summary: '微信 OAuth 回调',
+      description: '微信 OAuth 授权回调地址，成功后会携带 JWT Token 重定向回前端。无需手动调用。',
+      querystring: {
+        type: 'object',
+        properties: {
+          code: { type: 'string', description: '微信授权码' },
+          state: { type: 'string', description: '状态参数' },
+        },
+      },
+      response: {
+        302: { type: 'null', description: '重定向回前端（携带 token 或 error 参数）' },
+      },
+    },
+  }, async (
     request: FastifyRequest<{ Querystring: { code: string; state?: string } }>,
     reply: FastifyReply
   ) => {
@@ -156,7 +206,24 @@ export async function authRoutes(fastify: FastifyInstance) {
   });
 
   // Get current user profile
-  fastify.get('/api/auth/me', async (request, reply) => {
+  fastify.get('/api/auth/me', {
+    schema: {
+      tags: ['Auth'],
+      summary: '获取当前用户信息',
+      description: '通过 JWT Token 获取当前登录用户的个人信息（名称、邮箱、头像等）。',
+      security: [{ bearerAuth: [] }],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: Schemas.UserProfile,
+          },
+        },
+        401: Schemas.ErrorResponse,
+      },
+    },
+  }, async (request, reply) => {
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return reply.status(401).send({ error: 'Unauthorized' });

@@ -38,7 +38,7 @@ function parseNetscapeCookies(content: string): string {
  */
 export async function fetchTranscript(videoId: string): Promise<TranscriptSegment[]> {
   // 更加详尽的语言回退列表，优先匹配中文和英文的各种变体
-  const langs = ['en','zh-CN', 'zh-Hans', 'zh', 'zh-TW', 'zh-Hant', 'en-US', 'en-GB', ];
+  const langs = ['en', 'zh' ,'zh-CN'];
 
   let lastError: any = null;
   let availableLangs: string[] = [];

@@ -404,7 +404,7 @@ const takeawayMap = computed(() => {
               <Sparkles :size="64" class="empty-icon" />
            </div>
            <h2>AI Video Highlights</h2>
-           <p>Paste a YouTube or Bilibili link above and click AI Analysis. Our AI will extract key takeaways and let you jump to the highlights.</p>
+           <p>在上方粘贴 YouTube 或 Bilibili 链接并点击“AI 分析转换”。我们的 AI 将提取核心摘要，方便您精准跳转到精彩片段。</p>
         </div>
 
         <!-- Loading State -->
@@ -412,8 +412,8 @@ const takeawayMap = computed(() => {
            <div class="empty-icon-wrap">
               <Loader2 :size="48" class="empty-icon spin" />
            </div>
-           <h2>AI Analyzing...</h2>
-           <p>Fetching subtitles and analyzing with AI. This may take 10-30 seconds depending on video length.</p>
+           <h2>AI 正在分析中...</h2>
+           <p>正在获取字幕并使用 AI 进行深度分析。根据视频长度，这可能需要 10-30 秒，请稍候。</p>
         </div>
 
         <!-- Error State -->
@@ -421,11 +421,11 @@ const takeawayMap = computed(() => {
            <div class="empty-icon-wrap error-icon-wrap">
               <AlertCircle :size="48" class="empty-icon error-icon" />
            </div>
-           <h2>Analysis Failed</h2>
+           <h2>分析失败</h2>
            <p>{{ errorMsg }}</p>
            <button class="btn-primary" style="margin-top: 20px;" @click="handleAnalyze">
              <Sparkles :size="18" class="icon" />
-             <span>Retry</span>
+             <span>重试</span>
            </button>
         </div>
 
@@ -454,13 +454,13 @@ const takeawayMap = computed(() => {
             <div v-if="showResult && takeaways.length > 0" class="takeaways-section glass-panel animate-slide-in">
               <div class="sidebar-header">
                 <div class="sidebar-title-area">
-                  <h3><Sparkles class="icon accent" :size="20"/> Key Takeaways</h3>
-                  <p v-if="videoTitle" class="video-title-hint">{{ videoTitle }}</p>
-                </div>
-                <div class="sidebar-actions">
-                  <span class="badge">{{ takeaways.length }} highlights</span>
-                </div>
-              </div>
+                   <h3><Sparkles class="icon accent" :size="20"/> 核心摘要</h3>
+                   <p v-if="videoTitle" class="video-title-hint">{{ videoTitle }}</p>
+                 </div>
+                 <div class="sidebar-actions">
+                   <span class="badge">{{ takeaways.length }} 个精彩片段</span>
+                 </div>
+               </div>
 
               <div class="takeaways-timeline-container">
                 <div class="takeaways-timeline">
@@ -509,12 +509,12 @@ const takeawayMap = computed(() => {
           <div v-if="showResult && mergedTranscript.length > 0" class="outline-sidebar glass-panel animate-slide-in">
             <div class="sidebar-header">
               <div class="sidebar-title-area">
-                <h3><FileText class="icon accent" :size="20"/> Transcript</h3>
-              </div>
-              <div class="sidebar-actions">
-                <span class="badge">{{ mergedTranscript.length }} segments</span>
-              </div>
-            </div>
+                 <h3><FileText class="icon accent" :size="20"/> 视频转录</h3>
+               </div>
+               <div class="sidebar-actions">
+                 <span class="badge">{{ mergedTranscript.length }} 段内容</span>
+               </div>
+             </div>
 
             <div
               class="transcript-list"

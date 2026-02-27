@@ -115,7 +115,7 @@ const getThumbnailUrl = (item: HistoryItem) => {
     <!-- Left: History Sidebar Drawer -->
     <aside class="history-sidebar glass-panel" :class="{ 'is-open': showHistory }">
       <div class="sidebar-header" style="justify-content: space-between; align-items: center; display: flex;">
-        <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;"><Clock class="icon accent" :size="20"/> History</h3>
+        <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;"><Clock class="icon accent" :size="20"/> 历史记录</h3>
         <button class="btn-text" @click="showHistory = false" style="padding: 4px;">
           <X :size="20" />
         </button>
@@ -140,7 +140,7 @@ const getThumbnailUrl = (item: HistoryItem) => {
             <span class="platform-badge absolute-badge" :class="item.platform">{{ item.platform }}</span>
           </div>
           <div class="history-item-content">
-            <div class="history-title">{{ item.title || 'Untitled Video' }}</div>
+            <div class="history-title">{{ item.title || '未命名视频' }}</div>
             <div class="history-meta">
               <span class="meta-date">{{ new Date(item.analyzedAt).toLocaleDateString() }}</span>
               <span class="meta-takeaways"><FileText :size="12" style="display:inline;vertical-align:-2px;margin-right:2px;"/>{{ item.takeawayCount }}</span>
@@ -148,7 +148,7 @@ const getThumbnailUrl = (item: HistoryItem) => {
           </div>
         </div>
         <div v-if="historyList.length === 0" class="history-empty">
-          No history yet.
+          暂无历史记录。
         </div>
       </div>
     </aside>
@@ -171,12 +171,12 @@ const getThumbnailUrl = (item: HistoryItem) => {
           <div v-if="currentUser" class="user-profile">
             <img v-if="currentUser.avatar" :src="currentUser.avatar" class="avatar" />
             <User v-else class="icon avatar-fallback" :size="20" />
-            <span class="user-name">{{ currentUser.name || currentUser.email || 'User' }}</span>
-            <button class="btn-text" @click="logout">Logout</button>
+            <span class="user-name">{{ currentUser.name || currentUser.email || '用户' }}</span>
+            <button class="btn-text" @click="logout">退出登录</button>
           </div>
           <button v-else class="btn-secondary" @click="showLoginModal = true">
             <User class="icon" :size="18" />
-            Sign In
+            登录
           </button>
         </div>
       </header>
@@ -616,7 +616,7 @@ input::placeholder {
 .main-content {
   flex: 1;
   padding: 40px;
-  display: flex;
+  /* display: flex; */
   justify-content: center;
 }
 

@@ -22,18 +22,18 @@ const loginWithWeChat = () => {
         <X :size="20" />
       </button>
 
-      <h2 class="modal-title">Sign In</h2>
-      <p class="modal-subtitle">Login to save your video highlights history.</p>
+      <h2 class="modal-title">登录</h2>
+      <p class="modal-subtitle">登录以保存您的 AI Video Highlights 历史记录。</p>
 
       <div class="auth-buttons">
         <button class="auth-btn wechat-btn" @click="loginWithWeChat">
           <img src="https://upload.wikimedia.org/wikipedia/commons/1/14/WeChat_logo.svg" alt="WeChat" class="btn-icon" />
-          <span>Continue with WeChat</span>
+          <span>使用微信登录</span>
         </button>
 
         <button class="auth-btn google-btn" @click="loginWithGoogle">
           <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="Google" class="btn-icon" />
-          <span>Continue with Google</span>
+          <span>使用 Google 登录</span>
         </button>
       </div>
     </div>

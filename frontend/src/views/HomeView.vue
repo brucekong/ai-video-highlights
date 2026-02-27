@@ -5,7 +5,7 @@
         <Sparkles :size="64" class="empty-icon animate-pulse-glow" />
       </div>
       <h2>AI Video Highlights</h2>
-      <p>Paste a YouTube or Bilibili link below and our AI will extract key takeaways and subtitles, letting you instantly jump to the best parts.</p>
+      <p>AI 提取核心摘要和字幕，让您即刻跳转到最精彩的部分。</p>
     </div>
 
     <div class="input-area">
@@ -13,12 +13,12 @@
         <input
           v-model="videoUrl"
           type="text"
-          placeholder="Paste YouTube or Bilibili link here..."
+          placeholder="在此处粘贴 YouTube 或 Bilibili 链接..."
           @keyup.enter="handleAnalyze"
         />
         <button class="btn-primary" @click="handleAnalyze" :disabled="!hasValidUrl">
           <Sparkles class="icon" :size="18" />
-          <span>AI Analysis</span>
+          <span>AI 分析转换</span>
         </button>
       </div>
     </div>

@@ -1,12 +1,11 @@
 import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
-import youtubedlDefault, { create } from 'youtube-dl-exec';
+import youtubedl from 'youtube-dl-exec';
 import Groq from 'groq-sdk';
 import { TranscriptSegment } from './transcript.js';
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-const systemYoutubedl = create('yt-dlp');
 
 /**
  * 尝试下载视频纯音频，并通过 Whisper 转换为字幕格式的兜底方案
@@ -21,22 +20,14 @@ export async function fallbackToWhisper(videoId: string, platform: 'youtube' | '
   try {
     console.log(`[Whisper Fallback] Downloading audio for ${platform} video: ${videoId}...`);
 
-    const dlOptions = {
+    // 使用 yt-dlp 抓取并转化为最小体积的 m4a 音频
+    await youtubedl(url, {
       extractAudio: true,
       audioFormat: 'm4a',
       format: 'worstaudio/bestaudio', // 尽量取较小的音频流
       output: tmpFile,
       maxFilesize: '25m', // Groq Whisper API Limit is also 25MB
-    };
-
-    try {
-      // 优先尝试系统安装的 yt-dlp (通常自带依赖环境)
-      await systemYoutubedl(url, dlOptions);
-    } catch (err: any) {
-      console.warn(`[Whisper Fallback] System yt-dlp failed, trying internal: ${err.message}`);
-      // 回退到 youtube-dl-exec 自带的
-      await youtubedlDefault(url, dlOptions);
-    }
+    });
 
     // 检查文件是否下载成功
     if (!fs.existsSync(tmpFile)) {

@@ -10,9 +10,9 @@ const loginWithGoogle = () => {
   window.location.href = `${API_BASE}/api/auth/google`;
 };
 
-const loginWithWeChat = () => {
-  window.location.href = `${API_BASE}/api/auth/wechat`;
-};
+// const loginWithWeChat = () => {
+//   window.location.href = `${API_BASE}/api/auth/wechat`;
+// };
 </script>
 
 <template>

@@ -78,7 +78,10 @@ onMounted(() => {
   const token = params.get('token');
   if (token) {
     localStorage.setItem('auth_token', token);
-    window.history.replaceState({}, document.title, window.location.pathname);
+    // 使用 URL 对象彻底清除 search 参数
+    const url = new URL(window.location.href);
+    url.searchParams.delete('token');
+    window.history.replaceState({}, document.title, url.pathname);
   }
 
   checkAuth();

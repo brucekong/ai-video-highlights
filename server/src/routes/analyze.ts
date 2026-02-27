@@ -490,26 +490,9 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       });
     }
 
-    const videos = await prisma.video.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-      include: {
-        _count: {
-          select: { takeaways: true },
-        },
-      },
-    });
-
     return reply.send({
       success: true,
-      data: videos.map((v) => ({
-        videoId: v.videoId,
-        title: v.title,
-        url: v.url,
-        platform: v.platform,
-        takeawayCount: v._count.takeaways,
-        analyzedAt: v.createdAt,
-      })),
+      data: [],
     });
   });
 

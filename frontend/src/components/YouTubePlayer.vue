@@ -7,6 +7,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'ready', player: any): void;
+  (e: 'duration', seconds: number): void;
   (e: 'timeupdate', currentTime: number): void;
 }>();
 
@@ -32,6 +33,22 @@ const loadYouTubeAPI = (): Promise<void> => {
   });
 };
 
+const startTimePolling = (playerTarget: any) => {
+  if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+  timeUpdateInterval = window.setInterval(() => {
+    if (playerTarget && playerTarget.getCurrentTime) {
+      emit('timeupdate', playerTarget.getCurrentTime());
+    }
+  }, 100); // 100ms 轮询以获得细腻平滑的指针运动
+};
+
+const stopTimePolling = () => {
+  if (timeUpdateInterval) {
+    clearInterval(timeUpdateInterval);
+    timeUpdateInterval = null;
+  }
+};
+
 const initPlayer = () => {
   if (!playerContainer.value) return;
 
@@ -47,17 +64,21 @@ const initPlayer = () => {
     events: {
       onReady: (event: any) => {
         emit('ready', event.target);
-        // Start polling for current time to sync with outline
-        timeUpdateInterval = window.setInterval(() => {
-          if (event.target && event.target.getCurrentTime) {
-            emit('timeupdate', event.target.getCurrentTime());
-          }
-        }, 1000);
+        if (event.target.getDuration) {
+          emit('duration', event.target.getDuration());
+        }
+        startTimePolling(event.target);
       },
       onStateChange: (event: any) => {
-        // Handle state changes if needed
-        if (event.data === (window as any).YT.PlayerState.ENDED) {
-          if (timeUpdateInterval) clearInterval(timeUpdateInterval);
+        const state = event.data;
+        const YT = (window as any).YT;
+
+        if (state === YT.PlayerState.PLAYING) {
+          startTimePolling(event.target);
+        } else if (state === YT.PlayerState.ENDED || state === YT.PlayerState.PAUSED) {
+          // 暂停或结束时停止轮询以节省资源，但在 seek 时会重新触发状态变化
+          // 这里可以根据需要决定是否在 PAUSED 时停止。通常停止对资源更好。
+          stopTimePolling();
         }
       }
     }
@@ -72,6 +93,12 @@ onMounted(async () => {
 watch(() => props.videoId, (newId) => {
   if (player && player.loadVideoById) {
     player.loadVideoById(newId);
+    // On new video load, we should wait and then re-emit duration
+    setTimeout(() => {
+      if (player && player.getDuration) {
+        emit('duration', player.getDuration());
+      }
+    }, 1000);
   } else {
     initPlayer();
   }
@@ -93,6 +120,8 @@ defineExpose({
     if (player && player.seekTo) {
       player.seekTo(seconds, true);
       player.playVideo();
+      // 在 seek 后立即重启轮询，防止状态处于非播放时指针停滞
+      startTimePolling(player);
     }
   }
 });

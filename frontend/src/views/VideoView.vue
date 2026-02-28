@@ -37,6 +37,7 @@ const videoTitle = ref('');
 const activeTakeawayIndex = ref<number | null>(null);
 const activeTranscriptIndex = ref<number | null>(null);
 const currentVideoTime = ref(0);
+const videoDuration = ref(0); // 从播放器获取的真实时长
 
 // 字幕滚动自动归中行为控制变量
 const isHoveringTranscript = ref(false);
@@ -125,7 +126,7 @@ const platform = computed<'youtube' | 'bilibili' | ''>(() => {
 // 提取 YouTube Video ID
 const youtubeVideoId = computed(() => {
   if (platform.value !== 'youtube') return '';
-  const match = videoUrl.value.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
+  const match = videoUrl.value.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([^&?]+)/);
   return match ? match[1] : '';
 });
 
@@ -195,7 +196,6 @@ const handleAnalyze = async () => {
   await waitForAuth(); // 等待认证初始化完成
   if (!checkLogin()) return; // 检查登录状态
   if (!videoId.value || !platform.value) return;
-  debugger;
   isLoading.value = true;
   showResult.value = false;
   errorMsg.value = '';
@@ -266,6 +266,26 @@ const jumpToTranscript = (seg: TranscriptSegment, index: number) => {
 };
 
 // 视频时间更新时，自动高亮当前要点和字幕
+const handleDuration = (duration: number) => {
+  if (duration > 0) {
+    videoDuration.value = duration;
+  }
+};
+
+const handleTimelineClick = (event: MouseEvent) => {
+  const container = event.currentTarget as HTMLElement;
+  if (!container || !totalVideoDuration.value) return;
+
+  const rect = container.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const percent = Math.max(0, Math.min(1, clickX / rect.width));
+  const targetTime = percent * totalVideoDuration.value;
+
+  if (playerRef.value) {
+    playerRef.value.seekTo(targetTime);
+  }
+};
+
 const handleTimeUpdate = (time: number) => {
   currentVideoTime.value = time;
 
@@ -325,6 +345,11 @@ const takeawayColors = [
 ];
 
 const totalVideoDuration = computed(() => {
+  // 优先使用播放器上报的真实时长
+  if (videoDuration.value > 0) {
+    return videoDuration.value;
+  }
+
   if (transcript.value.length > 0) {
     const lastSeg = transcript.value[transcript.value.length - 1];
     return (lastSeg.offset + lastSeg.duration) / 1000;
@@ -436,12 +461,15 @@ const takeawayMap = computed(() => {
                 :key="'yt-' + youtubeVideoId"
                 :video-id="youtubeVideoId"
                 @timeupdate="handleTimeUpdate"
+                @duration="handleDuration"
               />
               <BilibiliPlayer
                 v-else-if="platform === 'bilibili' && bilibiliBvid"
                 ref="playerRef"
                 :key="'bili-' + bilibiliBvid"
                 :bvid="bilibiliBvid"
+                @timeupdate="handleTimeUpdate"
+                @duration="handleDuration"
               />
             </div>
 
@@ -458,14 +486,14 @@ const takeawayMap = computed(() => {
                </div>
 
               <div class="takeaways-timeline-container">
-                <div class="takeaways-timeline">
+                <div class="takeaways-timeline" @click="handleTimelineClick">
                   <div
                     v-for="item in takeawayMap"
                     :key="'map-' + item.index"
                     class="timeline-segment"
                     :style="{ left: item.leftPercent + '%', width: item.widthPercent + '%', backgroundColor: item.color }"
                     :class="{ active: activeTakeawayIndex === item.index }"
-                    @click="jumpToTakeaway(item, item.index)"
+                    @click.stop="jumpToTakeaway(item, item.index)"
                   >
                     <div class="timeline-tooltip">{{ item.title }}</div>
                   </div>
@@ -1289,26 +1317,33 @@ input::placeholder {
 
 .timeline-progress {
   position: absolute;
-  top: -6px;
-  bottom: -6px;
+  top: -8px;
+  bottom: -8px;
   width: 2px;
-  background-color: #ef4444; /* red needle */
+  background: linear-gradient(to bottom,
+    transparent,
+    var(--accent-color) 20%,
+    var(--accent-color) 80%,
+    transparent
+  );
   z-index: 10;
   pointer-events: none;
-  transition: left 0.1s linear;
+  transition: left 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.5); /* Glowing needle body */
 }
 
 .timeline-progress::before {
   content: '';
   position: absolute;
-  top: 0;
+  top: -2px;
   left: 50%;
   transform: translateX(-50%);
-  width: 6px;
-  height: 6px;
-  background-color: #ef4444;
+  width: 10px;
+  height: 10px;
+  background-color: var(--accent-color);
+  border: 2px solid #fff;
   border-radius: 50%;
-  box-shadow: 0 0 2px rgba(0,0,0,0.5);
+  box-shadow: 0 0 12px var(--accent-color), 0 2px 4px rgba(0,0,0,0.5);
 }
 
 /* Takeaway Item Styles */

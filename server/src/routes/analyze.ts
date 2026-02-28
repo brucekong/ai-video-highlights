@@ -4,6 +4,8 @@ import { fetchTranscript, formatTranscriptForAI, type TranscriptSegment } from '
 import { fetchBilibiliTranscript } from '../services/bilibili.js';
 import { analyzeTranscript } from '../services/ai.js';
 import { fallbackToWhisper } from '../services/whisper.js';
+import { fetchVideoMetadata } from '../services/metadata.js';
+import { containsSensitiveContent, SafetyValidationError } from '../services/safety.js';
 import jwt from 'jsonwebtoken';
 import { Schemas } from '../docs/openapi.js';
 
@@ -152,7 +154,18 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 2. 获取视频字幕（从外部平台）
+      // 2. 视频元数据预检 (用于拦截已知的敏感作者/标题)
+      fastify.log.info(`Pre-checking video metadata for ${platform} video: ${videoId}`);
+      const metadata = await fetchVideoMetadata(videoId, platform);
+
+      if (containsSensitiveContent(metadata.title) || containsSensitiveContent(metadata.author)) {
+        fastify.log.warn(`[Safety Block] Blocked video: ${metadata.title} by ${metadata.author}`);
+        return reply.status(403).send({
+          error: '安全拦截：该视频包含受限或敏感政治内容，暂不支持分析。',
+        });
+      }
+
+      // 3. 获取视频字幕（从外部平台）
       fastify.log.info(`Fetching transcript for ${platform} video: ${videoId}`);
       let transcript: TranscriptSegment[] = [];
       try {
@@ -177,8 +190,16 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
         });
       }
 
-      // 4. 格式化并发送给 AI 分析
+      // 4. 格式化并发送给 AI 分析前，先扫描字幕内容
       const formattedText = formatTranscriptForAI(transcript);
+
+      if (containsSensitiveContent(formattedText)) {
+        fastify.log.warn(`[Safety Block] Transcript content for ${videoId} contains sensitive patterns.`);
+        return reply.status(403).send({
+            error: '安全拦截：分析检测到转录内容涉及受限话题，暂不提供摘要服务。',
+        });
+      }
+
       const lastSegment = transcript[transcript.length - 1];
       const maxDurationSeconds = Math.ceil((lastSegment.offset + lastSegment.duration) / 1000);
 

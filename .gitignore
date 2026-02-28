@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Documentation (Internal Explanations)
+TECH_EXPLAIN_AI_CHAT.md

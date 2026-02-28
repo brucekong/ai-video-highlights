@@ -19,6 +19,7 @@ model Video {
   duration  Int?                                  // 视频时长（秒）
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
+  mindmap   String?  @map("mindmap")              // 脑图 Markdown 文本
 
   takeaways Takeaway[]
   subtitles Subtitle[]

@@ -20,7 +20,8 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
       "timestamp": 起始时间秒数（整数）,
       "duration": "该段持续时长，如 2:30"
     }
-  ]
+  ],
+  "mindmap": "# 视频主题\n## 核心模块 A\n### 子观点 1\n### 子观点 2\n## 核心模块 B"
 }
 
 要求：
@@ -31,7 +32,8 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
 5. 摘要需要概括该段落的核心内容
 6. 时间戳必须从小到大排列
 7. 如果转录文本是英文，请将标题和摘要翻译成中文
-8. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
+8. 生成一份完整的视频结构脑图Markdown文本，使用层级标题（# 为根，## 为二级，### 为三级），确保能够被 Markmap 渲染
+9. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
 
 // 重试配置
 const MAX_RETRIES = 3;
@@ -52,7 +54,7 @@ function sleep(ms: number): Promise<void> {
 export async function analyzeTranscript(
   formattedTranscript: string,
   maxDurationSeconds?: number,
-): Promise<{ title: string; takeaways: AITakeaway[] }> {
+): Promise<{ title: string; takeaways: AITakeaway[]; mindmap: string }> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error('DEEPSEEK_API_KEY is not configured. Please set DEEPSEEK_API_KEY in server/.env');
@@ -114,6 +116,7 @@ export async function analyzeTranscript(
         return {
           title: parsed.title || 'Untitled Video',
           takeaways: finalTakeaways,
+          mindmap: parsed.mindmap || '',
         };
       } catch {
         console.error('Failed to parse AI response:', text);

@@ -122,6 +122,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
             cached: true,
             data: {
               videoTitle: cached.title,
+              mindmap: cached.mindmap,
               takeaways: cached.takeaways.map((t) => ({
                 id: t.id,
                 title: t.title,
@@ -211,11 +212,13 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
             videoId,
             url,
             title: aiResult.title,
+            mindmap: aiResult.mindmap,
             platform,
           },
           update: {
             url,
             title: aiResult.title,
+            mindmap: aiResult.mindmap,
             platform,
           },
         });
@@ -284,6 +287,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
         cached: false,
         data: {
           videoTitle: result?.title,
+          mindmap: result?.mindmap,
           takeaways: result?.takeaways.map((t) => ({
             id: t.id,
             title: t.title,
@@ -390,6 +394,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       success: true,
       data: {
         videoTitle: video.title,
+        mindmap: video.mindmap,
         takeaways: video.takeaways.map((t) => ({
           id: t.id,
           title: t.title,

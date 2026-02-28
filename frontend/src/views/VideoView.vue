@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
+import MindMapModal from '../components/MindMapModal.vue';
 import { useAuth } from '../services/auth';
 
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -40,6 +41,8 @@ const activeTranscriptIndex = ref<number | null>(null);
 const currentVideoTime = ref(0);
 const videoDuration = ref(0); // 从播放器获取的真实时长
 const isBilingual = ref(true); // 是否开启双语模式
+const mindmapRaw = ref(''); // 脑图 Markdown
+const showMindMap = ref(false); // 是否显示脑图
 
 // AI 助手相关状态
 const activeSidebarTab = ref<'transcript' | 'chat'>('transcript');
@@ -126,6 +129,11 @@ const mergedTranscript = computed(() => {
   }
   if (current) merged.push(current);
   return merged;
+});
+
+// 是否存在双语数据
+const hasBilingualData = computed(() => {
+  return transcript.value.some(seg => !!seg.translatedText);
 });
 
 
@@ -256,6 +264,7 @@ const handleAnalyze = async () => {
         translatedText: decodeHtml(seg.translatedText)
       }));
       videoTitle.value = decodeHtml(result.data.videoTitle || '');
+      mindmapRaw.value = result.data.mindmap || '';
       showResult.value = true;
       window.dispatchEvent(new Event('video-analyzed')); // 刷新历史
     } else {
@@ -627,9 +636,17 @@ const takeawayMap = computed(() => {
                    <h3><Sparkles class="icon accent" :size="20"/> 核心摘要</h3>
                    <p v-if="videoTitle" class="video-title-hint">{{ videoTitle }}</p>
                  </div>
-                 <div class="sidebar-actions">
-                   <span class="badge">{{ takeaways.length }} 个精彩片段</span>
-                 </div>
+                  <div class="sidebar-actions">
+                    <button
+                      v-if="mindmapRaw"
+                      class="btn-mindmap"
+                      @click="showMindMap = true"
+                    >
+                      <Map :size="14" />
+                      <span>查看脑图</span>
+                    </button>
+                    <span class="badge">{{ takeaways.length }} 条精选</span>
+                  </div>
                </div>
 
               <div class="takeaways-timeline-container">
@@ -706,6 +723,7 @@ const takeawayMap = computed(() => {
                  </div>
                   <div class="sidebar-actions">
                     <button
+                      v-if="hasBilingualData"
                       class="toggle-bilingual-btn"
                       :class="{ active: isBilingual }"
                       @click="isBilingual = !isBilingual"
@@ -713,7 +731,7 @@ const takeawayMap = computed(() => {
                     >
                       {{ isBilingual ? '双语' : '单语' }}
                     </button>
-                    <span class="badge">{{ mergedTranscript.length }}</span>
+                    <span class="badge">{{ mergedTranscript.length }} 条记录</span>
                   </div>
                </div>
 
@@ -813,9 +831,15 @@ const takeawayMap = computed(() => {
               </div>
             </div>
           </div>
-
         </div>
 
+        <!-- Mind Map Modal -->
+        <MindMapModal
+          :show="showMindMap"
+          :markdown="mindmapRaw"
+          :title="videoTitle"
+          @close="showMindMap = false"
+        />
       </div>
     </template>
 
@@ -1173,6 +1197,27 @@ input::placeholder {
 
 .btn-text:hover {
   color: var(--text-primary);
+}
+
+.btn-mindmap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent-color);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.btn-mindmap:hover {
+  background: var(--accent-color);
+  color: white;
+  transform: translateY(-1px);
 }
 
 /* User Profile */
@@ -1615,8 +1660,82 @@ input::placeholder {
   top: 100px;
 }
 
+.accent { color: var(--accent-color); }
+.accent-light { color: var(--text-accent); }
+
 .sidebar-header {
-  padding: 16px;
+  padding: 18px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.sidebar-title-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Premium Badge Style */
+.badge {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: 'JetBrains Mono', monospace;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.badge:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+/* Bilingual Toggle Button */
+.toggle-bilingual-btn {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toggle-bilingual-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+}
+
+.toggle-bilingual-btn.active {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-light);
+  box-shadow: 0 4px 12px var(--accent-shadow);
 }
 
 .transcript-list {

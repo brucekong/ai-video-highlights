@@ -1,6 +1,6 @@
 /**
  * 从环境变量加载敏感词列表，支持逗号分隔
- * 例如：SENSITIVE_KEYWORDS_LIST=王局,二大爷,六四
+ * 例如：SENSITIVE_KEYWORDS_LIST=xxx,xxx
  */
 const GET_SENSITIVE_KEYWORDS = (): string[] => {
   const envKeywords = process.env.SENSITIVE_KEYWORDS_LIST;

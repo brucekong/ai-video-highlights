@@ -14,6 +14,11 @@ const router = createRouter({
       path: '/video',
       name: 'video',
       component: VideoView
+    },
+    // Catch-all route to redirect back to home if path doesn't exist
+    {
+      path: '/:pathMatch(.*)*',
+      redirect: '/'
     }
   ]
 });

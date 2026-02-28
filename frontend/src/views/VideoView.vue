@@ -271,18 +271,14 @@ const handleTimeUpdate = (time: number) => {
   currentVideoTime.value = time;
 
   // 高亮 takeaway（timestamp 是秒）
-  for (let i = takeaways.value.length - 1; i >= 0; i--) {
-    if (time >= takeaways.value[i].timestamp - 0.5) {
-      if (activeTakeawayIndex.value !== i) {
-        activeTakeawayIndex.value = i;
-        const el = document.getElementById(`takeaway-${i}`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    for (let i = takeaways.value.length - 1; i >= 0; i--) {
+      if (time >= takeaways.value[i].timestamp - 0.5) {
+        if (activeTakeawayIndex.value !== i) {
+          activeTakeawayIndex.value = i;
         }
+        break;
       }
-      break;
     }
-  }
 
   // 高亮字幕（offset 是毫秒）
   const timeMs = time * 1000;

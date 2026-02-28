@@ -27,12 +27,21 @@ export async function authRoutes(fastify: FastifyInstance) {
       tags: ['Auth'],
       summary: 'Google OAuth 登录',
       description: '重定向到 Google OAuth 授权页面，用户授权后会回调到 /api/auth/google/callback。',
+      querystring: {
+        type: 'object',
+        properties: {
+          redirect: { type: 'string', description: '登录成功后返回的页面路径' },
+        },
+      },
       response: {
         302: { type: 'null', description: '重定向到 Google 授权页面' },
       },
     },
-  }, async (request, reply) => {
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${GOOGLE_REDIRECT_URI}&response_type=code&scope=email%20profile`;
+  }, async (request: FastifyRequest<{ Querystring: { redirect?: string } }>, reply) => {
+    const { redirect } = request.query;
+    // 使用 state 携带跳转地址
+    const state = redirect ? Buffer.from(redirect).toString('base64') : '';
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${GOOGLE_REDIRECT_URI}&response_type=code&scope=email%20profile&state=${state}`;
 
     console.log(authUrl);
     reply.redirect(authUrl);
@@ -47,6 +56,7 @@ export async function authRoutes(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           code: { type: 'string', description: 'Google 授权码' },
+          state: { type: 'string', description: '状态参数' },
         },
       },
       response: {
@@ -54,12 +64,22 @@ export async function authRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (
-    request: FastifyRequest<{ Querystring: { code: string } }>,
+    request: FastifyRequest<{ Querystring: { code: string, state?: string } }>,
     reply: FastifyReply
   ) => {
-    const { code } = request.query;
+    const { code, state } = request.query;
+    let targetUrl = FRONTEND_URL;
+    if (state) {
+      try {
+        const decodedPath = Buffer.from(state, 'base64').toString('utf-8');
+        targetUrl = `${FRONTEND_URL}${decodedPath.startsWith('/') ? '' : '/'}${decodedPath}`;
+      } catch (e) {
+        console.error('Failed to decode state:', e);
+      }
+    }
+
     if (!code) {
-      return reply.redirect(`${FRONTEND_URL}?error=missing_code`);
+      return reply.redirect(`${targetUrl}${targetUrl.includes('?') ? '&' : '?'}error=missing_code`);
     }
 
     try {
@@ -80,36 +100,29 @@ export async function authRoutes(fastify: FastifyInstance) {
       const userInfo = userRes.data; // { id, email, name, picture }
 
       // 3. Upsert user
-      let user = await prisma.user.findUnique({ where: { googleId: userInfo.id } });
-      if (!user) {
-        if (userInfo.email) {
-          user = await prisma.user.findUnique({ where: { email: userInfo.email } });
-        }
-        if (user) {
-          user = await prisma.user.update({
-            where: { id: user.id },
-            data: { googleId: userInfo.id, avatar: user.avatar || userInfo.picture }
-          });
-        } else {
-          user = await prisma.user.create({
-            data: {
-              googleId: userInfo.id,
-              email: userInfo.email,
-              name: userInfo.name,
-              avatar: userInfo.picture,
-            }
-          });
-        }
-      }
+      const user = await prisma.user.upsert({
+        where: { googleId: userInfo.id },
+        update: {
+          name: userInfo.name,
+          avatar: userInfo.picture,
+        },
+        create: {
+          googleId: userInfo.id,
+          email: userInfo.email,
+          name: userInfo.name,
+          avatar: userInfo.picture,
+        },
+      });
 
       // 4. Generate JWT
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
-      // 5. Redirect back to frontend
-      reply.redirect(`${FRONTEND_URL}?token=${token}`);
+      // 5. Redirect back to frontend - Use a short-lived cookie for handoff to keep URL clean
+      reply.header('Set-Cookie', `auth_token_handoff=${token}; Path=/; Max-Age=60; SameSite=Lax`);
+      reply.redirect(targetUrl);
     } catch (e) {
       fastify.log.error(e);
-      reply.redirect(`${FRONTEND_URL}?error=google_auth_failed`);
+      reply.redirect(`${targetUrl}${targetUrl.includes('?') ? '&' : '?'}error=google_auth_failed`);
     }
   });
 
@@ -119,12 +132,20 @@ export async function authRoutes(fastify: FastifyInstance) {
       tags: ['Auth'],
       summary: '微信 OAuth 登录',
       description: '重定向到微信开放平台扫码登录页面，用户授权后会回调到 /api/auth/wechat/callback。',
+      querystring: {
+        type: 'object',
+        properties: {
+          redirect: { type: 'string', description: '登录成功后返回的页面路径' },
+        },
+      },
       response: {
         302: { type: 'null', description: '重定向到微信授权页面' },
       },
     },
-  }, async (request, reply) => {
-    const authUrl = `https://open.weixin.qq.com/connect/qrconnect?appid=${WECHAT_APP_ID}&redirect_uri=${encodeURIComponent(WECHAT_REDIRECT_URI)}&response_type=code&scope=snsapi_login&state=STATE#wechat_redirect`;
+  }, async (request: FastifyRequest<{ Querystring: { redirect?: string } }>, reply) => {
+    const { redirect } = request.query;
+    const state = redirect ? Buffer.from(redirect).toString('base64') : 'STATE';
+    const authUrl = `https://open.weixin.qq.com/connect/qrconnect?appid=${WECHAT_APP_ID}&redirect_uri=${encodeURIComponent(WECHAT_REDIRECT_URI)}&response_type=code&scope=snsapi_login&state=${state}#wechat_redirect`;
     reply.redirect(authUrl);
   });
 
@@ -148,9 +169,19 @@ export async function authRoutes(fastify: FastifyInstance) {
     request: FastifyRequest<{ Querystring: { code: string; state?: string } }>,
     reply: FastifyReply
   ) => {
-    const { code } = request.query;
+    const { code, state } = request.query;
+    let targetUrl = FRONTEND_URL;
+    if (state && state !== 'STATE') {
+      try {
+        const decodedPath = Buffer.from(state, 'base64').toString('utf-8');
+        targetUrl = `${FRONTEND_URL}${decodedPath.startsWith('/') ? '' : '/'}${decodedPath}`;
+      } catch (e) {
+        console.error('Failed to decode state:', e);
+      }
+    }
+
     if (!code) {
-      return reply.redirect(`${FRONTEND_URL}?error=missing_code`);
+      return reply.redirect(`${targetUrl}${targetUrl.includes('?') ? '&' : '?'}error=missing_code`);
     }
 
     try {
@@ -169,43 +200,31 @@ export async function authRoutes(fastify: FastifyInstance) {
       const actualUnionId = unionid || userInfo.unionid;
 
       // 3. Upsert user
-      let user = null;
-      if (actualUnionId) {
-        user = await prisma.user.findUnique({ where: { wechatUnionId: actualUnionId } });
-      }
-      if (!user) {
-        user = await prisma.user.findUnique({ where: { wechatOpenId: openid } });
-      }
-
-      if (user) {
-        user = await prisma.user.update({
-          where: { id: user.id },
-          data: {
-            wechatOpenId: openid,
-            wechatUnionId: actualUnionId,
-            name: user.name || userInfo.nickname,
-            avatar: user.avatar || userInfo.headimgurl
-          }
-        });
-      } else {
-        user = await prisma.user.create({
-          data: {
-            wechatOpenId: openid,
-            wechatUnionId: actualUnionId,
-            name: userInfo.nickname,
-            avatar: userInfo.headimgurl,
-          }
-        });
-      }
+      const user = await prisma.user.upsert({
+        where: actualUnionId ? { wechatUnionId: actualUnionId } : { wechatOpenId: openid },
+        update: {
+          wechatOpenId: openid,
+          wechatUnionId: actualUnionId,
+          name: userInfo.nickname,
+          avatar: userInfo.headimgurl,
+        },
+        create: {
+          wechatOpenId: openid,
+          wechatUnionId: actualUnionId,
+          name: userInfo.nickname,
+          avatar: userInfo.headimgurl,
+        },
+      });
 
       // 4. Generate JWT
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
-      // 5. Redirect to frontend
-      reply.redirect(`${FRONTEND_URL}?token=${token}`);
+      // 5. Redirect back to frontend - Use a short-lived cookie for handoff
+      reply.header('Set-Cookie', `auth_token_handoff=${token}; Path=/; Max-Age=60; SameSite=Lax`);
+      reply.redirect(targetUrl);
     } catch (e) {
       fastify.log.error(e);
-      reply.redirect(`${FRONTEND_URL}?error=wechat_auth_failed`);
+      reply.redirect(`${targetUrl}${targetUrl.includes('?') ? '&' : '?'}error=wechat_auth_failed`);
     }
   });
 

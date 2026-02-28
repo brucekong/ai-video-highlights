@@ -7,7 +7,7 @@ import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import { useAuth } from '../services/auth';
 
 const API_BASE = import.meta.env.VITE_API_URL;
-const { checkLogin } = useAuth();
+const { checkLogin, waitForAuth, getAuthHeaders } = useAuth();
 
 console.log('API_BASE====', API_BASE)
 interface Takeaway {
@@ -109,11 +109,6 @@ const mergedTranscript = computed(() => {
 });
 
 
-
-const getAuthHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('auth_token');
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
-};
 const errorMsg = ref('');
 
 const playerRef = ref<any>(null);
@@ -197,9 +192,10 @@ watch(() => route.query.url, (newUrl) => {
 
 // 调用后端 AI 分析接口
 const handleAnalyze = async () => {
+  await waitForAuth(); // 等待认证初始化完成
   if (!checkLogin()) return; // 检查登录状态
   if (!videoId.value || !platform.value) return;
-
+  debugger;
   isLoading.value = true;
   showResult.value = false;
   errorMsg.value = '';

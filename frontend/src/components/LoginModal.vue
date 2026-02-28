@@ -7,7 +7,8 @@ const API_BASE = import.meta.env.VITE_API_URL
 const emit = defineEmits(['close']);
 
 const loginWithGoogle = () => {
-  window.location.href = `${API_BASE}/api/auth/google`;
+  const currentPath = window.location.pathname + window.location.search;
+  window.location.href = `${API_BASE}/api/auth/google?redirect=${encodeURIComponent(currentPath)}`;
 };
 
 // const loginWithWeChat = () => {

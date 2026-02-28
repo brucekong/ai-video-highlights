@@ -5,7 +5,7 @@ import { Sparkles, Clock, FileText, User, Menu, X, Image as ImageIcon, Trash2, A
 import LoginModal from './components/LoginModal.vue';
 import { useAuth } from './services/auth';
 
-const { authState } = useAuth();
+const { authState, getAuthHeaders } = useAuth();
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -31,10 +31,6 @@ const deleteTargetItem = ref<HistoryItem | null>(null);
 const isDeleting = ref(false);
  // Refactored to authState
 
-const getAuthHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('auth_token');
-  return token ? { 'Authorization': `Bearer ${token}` } : {};
-};
 
 const decodeHtml = (html: string | null) => {
   if (!html) return '';
@@ -60,7 +56,10 @@ const loadHistory = async () => {
 
 const checkAuth = async () => {
   const headers = getAuthHeaders();
-  if (!headers.Authorization) return;
+  if (!headers.Authorization) {
+    authState.isInitialized = true;
+    return;
+  }
   try {
     const res = await fetch(`${API_BASE}/api/auth/me`, { headers });
     const data = await res.json();
@@ -71,6 +70,8 @@ const checkAuth = async () => {
     }
   } catch (e) {
     localStorage.removeItem('auth_token');
+  } finally {
+    authState.isInitialized = true;
   }
 };
 
@@ -81,14 +82,40 @@ const logout = () => {
 };
 
 onMounted(() => {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get('token');
+  // 1. 尝试从 Cookie 中获取 Handoff Token (最优化方案)
+  const cookieValue = document.cookie
+    .split('; ')
+    .find(row => row.startsWith('auth_token_handoff='))
+    ?.split('=')[1];
+
+  // 2. 尝试从 URL 查询参数或 Hash 中获取 token (后备方案)
+  const searchParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+  const token = cookieValue || searchParams.get('token') || hashParams.get('token');
+
   if (token) {
     localStorage.setItem('auth_token', token);
-    // 使用 URL 对象彻底清除 search 参数
+
+    // 如果是从 Cookie 获取的，清理 Cookie
+    if (cookieValue) {
+      document.cookie = 'auth_token_handoff=; Path=/; Max-Age=0; SameSite=Lax';
+    }
+
+    // 3. 彻底从 URL 中移除 token，但保留其他参数 (如 video url)
     const url = new URL(window.location.href);
     url.searchParams.delete('token');
-    window.history.replaceState({}, document.title, url.pathname);
+
+    // 如果 token 在 hash 中，也清理 hash
+    if (url.hash.includes('token=')) {
+      const newHashParams = new URLSearchParams(url.hash.substring(1));
+      newHashParams.delete('token');
+      const hashString = newHashParams.toString();
+      url.hash = hashString ? `#${hashString}` : '';
+    }
+
+    // 使用 replaceState 更新 URL 栏，不触发刷新且保留其他参数
+    window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
   }
 
   checkAuth();

@@ -32,7 +32,7 @@ import { Sparkles } from 'lucide-vue-next';
 import { useAuth } from '../services/auth';
 
 const router = useRouter();
-const { checkLogin } = useAuth();
+const { checkLogin, waitForAuth } = useAuth();
 const videoUrl = ref('');
 
 // 检测视频平台
@@ -46,7 +46,8 @@ const platform = computed<'youtube' | 'bilibili' | ''>(() => {
 
 const hasValidUrl = computed(() => !!platform.value);
 
-const handleAnalyze = () => {
+const handleAnalyze = async () => {
+  await waitForAuth();
   if (!checkLogin()) return; // 检查登录状态
   if (hasValidUrl.value) {
     router.push({ path: '/video', query: { url: videoUrl.value } });

@@ -23,6 +23,7 @@ model Video {
   takeaways Takeaway[]
   subtitles Subtitle[]
   histories UserHistory[]
+  chatMessages ChatMessage[]
 
   @@map("videos")
 }
@@ -40,8 +41,26 @@ model User {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   histories     UserHistory[]
+  chatMessages  ChatMessage[]
 
   @@map("users")
+}
+
+
+/// AI 聊天记录
+model ChatMessage {
+  id        String   @id @default(cuid())
+  videoId   String   @map("video_id")
+  userId    String   @map("user_id")
+  role      String   // "user" or "assistant"
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  video Video @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([videoId, userId])
+  @@map("chat_messages")
 }
 
 /// 用户分析历史

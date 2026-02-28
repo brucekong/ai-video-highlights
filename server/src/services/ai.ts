@@ -202,3 +202,66 @@ export async function translateTranscriptSegments(
 
   return results;
 }
+
+/**
+ * 视频对话流式接口
+ */
+export async function* streamChat(
+  videoId: string,
+  transcriptItems: { text: string; offset: number }[],
+  userMessage: string,
+  history: { role: 'user' | 'assistant'; content: string }[] = []
+) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error('DEEPSEEK_API_KEY is not configured');
+
+  const client = new OpenAI({
+    baseURL: 'https://api.deepseek.com',
+    apiKey,
+  });
+
+  // 格式化字幕作为上下文
+  const transcriptContext = transcriptItems
+    .map(item => {
+      const seconds = Math.floor(item.offset / 1000);
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      const ts = `[${m}:${s < 10 ? '0' : ''}${s}]`;
+      return `${ts} ${item.text}`;
+    })
+    .join('\n');
+
+  const systemPrompt = `你是一个专业的视频内容分析助手。
+用户的提问是基于一段视频的转录文本进行的。
+你的任务是根据提供的视频内容回答问题。
+
+视频转录内容（带时间戳）：
+${transcriptContext}
+
+要求：
+1. 仅基于视频内容回答，不要胡编乱造。
+2. 如果回答中涉及视频的具体片段，请务必标注对应的时间戳，格式为 [mm:ss]，例如 [02:15]。
+3. 语言地道、简洁，使用中文回答。
+4. 鼓励使用 Markdown 格式（如列表、加粗）使回答更易读。
+5. 如果用户要求跳转到某个位置，你可以提供对应的时间戳引导用户点击。`;
+
+  const messages: any[] = [
+    { role: 'system', content: systemPrompt },
+    ...history.map(h => ({ role: h.role, content: h.content })),
+    { role: 'user', content: userMessage },
+  ];
+
+  const stream = await client.chat.completions.create({
+    model: 'deepseek-chat',
+    messages,
+    stream: true,
+    temperature: 0.5,
+  });
+
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content || '';
+    if (content) {
+      yield content;
+    }
+  }
+}

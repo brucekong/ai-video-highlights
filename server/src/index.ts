@@ -5,6 +5,7 @@ import swagger from '@fastify/swagger';
 import scalarReference from '@scalar/fastify-api-reference';
 import { analyzeRoutes } from './routes/analyze.js';
 import { authRoutes } from './routes/auth.js';
+import { chatRoutes } from './routes/chat.js';
 import { swaggerOptions } from './docs/openapi.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -75,6 +76,7 @@ async function main() {
   // 注册路由
   await fastify.register(analyzeRoutes);
   await fastify.register(authRoutes);
+  await fastify.register(chatRoutes);
 
   // Health checks
   fastify.get('/api/health', {

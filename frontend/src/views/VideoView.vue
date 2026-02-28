@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import { useAuth } from '../services/auth';
@@ -40,6 +40,13 @@ const activeTranscriptIndex = ref<number | null>(null);
 const currentVideoTime = ref(0);
 const videoDuration = ref(0); // 从播放器获取的真实时长
 const isBilingual = ref(true); // 是否开启双语模式
+
+// AI 助手相关状态
+const activeSidebarTab = ref<'transcript' | 'chat'>('transcript');
+const chatInput = ref('');
+const chatMessages = ref<{ role: 'user' | 'assistant'; content: string }[]>([]);
+const isChatLoading = ref(false);
+const chatListRef = ref<HTMLElement | null>(null);
 
 // 字幕滚动自动归中行为控制变量
 const isHoveringTranscript = ref(false);
@@ -261,6 +268,133 @@ const handleAnalyze = async () => {
     isLoading.value = false;
   }
 };
+
+// --- AI 聊天逻辑 ---
+
+const fetchChatHistory = async () => {
+  if (!videoId.value) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/history/${videoId.value}`, {
+      headers: getAuthHeaders()
+    });
+    const result = await res.json();
+    if (result.success) {
+      chatMessages.value = result.data;
+      setTimeout(scrollToBottom, 100);
+    }
+  } catch (e) {
+    console.error('Failed to fetch chat history:', e);
+  }
+};
+
+const scrollToBottom = () => {
+  if (chatListRef.value) {
+    chatListRef.value.scrollTop = chatListRef.value.scrollHeight;
+  }
+};
+
+const sendChatMessage = async () => {
+  if (!chatInput.value.trim() || isChatLoading.value || !videoId.value) return;
+
+  const userMsg = chatInput.value;
+  chatInput.value = '';
+  chatMessages.value.push({ role: 'user', content: userMsg });
+  chatMessages.value.push({ role: 'assistant', content: '' });
+  isChatLoading.value = true;
+
+  setTimeout(scrollToBottom, 50);
+
+  try {
+    const response = await fetch(`${API_BASE}/api/chat/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({
+        videoId: videoId.value,
+        message: userMsg
+      })
+    });
+
+    if (!response.ok) throw new Error('Chat failed');
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let assistantMsg = '';
+
+    while (reader) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const dataStr = line.slice(6);
+          if (dataStr === '[DONE]') break;
+          try {
+            const data = JSON.parse(dataStr);
+            if (data.content) {
+              assistantMsg += data.content;
+              chatMessages.value[chatMessages.value.length - 1].content = assistantMsg;
+              scrollToBottom();
+            }
+          } catch (e) {
+            // ignore partial json
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Chat error:', error);
+    chatMessages.value[chatMessages.value.length - 1].content = '抱歉，对话出了一点问题，请重试。';
+  } finally {
+    isChatLoading.value = false;
+  }
+};
+
+// 处理时间戳点击跳转
+const handleTimestampClick = (ts: string) => {
+  const match = ts.match(/\[(\d+):(\d+)\]/);
+  if (match) {
+    const minutes = parseInt(match[1]);
+    const seconds = parseInt(match[2]);
+    const target = minutes * 60 + seconds;
+    if (playerRef.value) {
+      playerRef.value.seekTo(target);
+    }
+  }
+};
+
+// 解析消息内容，提取时间戳 [mm:ss]
+const parseMessageContent = (content: string) => {
+  if (!content) return [];
+  const parts: { type: 'text' | 'timestamp'; value: string }[] = [];
+  const regex = /\[(\d{1,2}:\d{2})\]/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', value: content.substring(lastIndex, match.index) });
+    }
+    parts.push({ type: 'timestamp', value: match[0] });
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < content.length) {
+    parts.push({ type: 'text', value: content.substring(lastIndex) });
+  }
+
+  return parts;
+};
+
+// 预热聊天记录
+watch(showResult, (val) => {
+  if (val) fetchChatHistory();
+});
 
 // 点击要点条目跳转到对应时间（timestamp 是秒）
 const jumpToTakeaway = (item: Takeaway, index: number) => {
@@ -541,49 +675,140 @@ const takeawayMap = computed(() => {
             </div>
           </div>
 
-          <!-- Right: Transcript Sidebar -->
-          <div v-if="showResult && mergedTranscript.length > 0" class="outline-sidebar glass-panel animate-slide-in">
-            <div class="sidebar-header">
-              <div class="sidebar-title-area">
-                 <h3><FileText class="icon accent" :size="20"/> 视频转录</h3>
-               </div>
-                <div class="sidebar-actions">
-                  <button
-                    class="toggle-bilingual-btn"
-                    :class="{ active: isBilingual }"
-                    @click="isBilingual = !isBilingual"
-                    title="切换中英双语"
-                  >
-                    {{ isBilingual ? '双语' : '单语' }}
-                  </button>
-                  <span class="badge">{{ mergedTranscript.length }} 段内容</span>
-                </div>
-             </div>
-
-            <div
-              class="transcript-list"
-              @scroll="handleTranscriptScroll"
-              @mouseenter="handleTranscriptMouseEnter"
-              @mouseleave="handleTranscriptMouseLeave"
-            >
-              <div
-                v-for="(seg, index) in mergedTranscript"
-                :key="index"
-                :id="`seg-${index}`"
-                class="transcript-item"
-                :class="{ 'active': activeTranscriptIndex === index }"
-                @click="jumpToTranscript(seg, index)"
+          <!-- Right Sidebar: Transcript & Chat -->
+          <div v-if="showResult" class="outline-sidebar glass-panel animate-slide-in">
+            <!-- Sidebar Tabs -->
+            <div class="sidebar-tabs">
+              <button
+                class="sidebar-tab"
+                :class="{ active: activeSidebarTab === 'transcript' }"
+                @click="activeSidebarTab = 'transcript'"
               >
-                <div class="seg-time">
-                  <Clock :size="12" class="seg-time-icon" />
-                  <span>{{ formatTimeFromMs(seg.offset) }}</span>
+                <FileText :size="16" />
+                <span>转录</span>
+              </button>
+              <button
+                class="sidebar-tab"
+                :class="{ active: activeSidebarTab === 'chat' }"
+                @click="activeSidebarTab = 'chat'"
+              >
+                <MessageCircle :size="16" />
+                <span>AI 助手</span>
+                <span v-if="activeSidebarTab !== 'chat' && chatMessages.length > 0" class="tab-dot"></span>
+              </button>
+            </div>
+
+            <!-- Tab Content: Transcript -->
+            <div v-if="activeSidebarTab === 'transcript'" class="tab-pane">
+              <div class="sidebar-header">
+                <div class="sidebar-title-area">
+                   <h3>视频转录</h3>
+                 </div>
+                  <div class="sidebar-actions">
+                    <button
+                      class="toggle-bilingual-btn"
+                      :class="{ active: isBilingual }"
+                      @click="isBilingual = !isBilingual"
+                      title="切换中英双语"
+                    >
+                      {{ isBilingual ? '双语' : '单语' }}
+                    </button>
+                    <span class="badge">{{ mergedTranscript.length }}</span>
+                  </div>
+               </div>
+
+              <div
+                class="transcript-list"
+                @scroll="handleTranscriptScroll"
+                @mouseenter="handleTranscriptMouseEnter"
+                @mouseleave="handleTranscriptMouseLeave"
+              >
+                <div
+                  v-for="(seg, index) in mergedTranscript"
+                  :key="index"
+                  :id="`seg-${index}`"
+                  class="transcript-item"
+                  :class="{ 'active': activeTranscriptIndex === index }"
+                  @click="jumpToTranscript(seg, index)"
+                >
+                  <div class="seg-time">
+                    <Clock :size="12" class="seg-time-icon" />
+                    <span>{{ formatTimeFromMs(seg.offset) }}</span>
+                  </div>
+                  <div class="seg-text">
+                    <div v-if="isBilingual && seg.translatedText" class="translated-text">{{ seg.translatedText }}</div>
+                    <div class="original-text" :class="{ 'has-translation': isBilingual && seg.translatedText }">{{ seg.text }}</div>
+                  </div>
+                  <div class="seg-play-icon">
+                    <Play :size="14" />
+                  </div>
                 </div>
-                <div class="seg-text">
-                  <div v-if="isBilingual && seg.translatedText" class="translated-text">{{ seg.translatedText }}</div>
-                  <div class="original-text" :class="{ 'has-translation': isBilingual && seg.translatedText }">{{ seg.text }}</div>
+              </div>
+            </div>
+
+            <!-- Tab Content: AI Chat -->
+            <div v-else class="tab-pane chat-pane">
+              <div ref="chatListRef" class="chat-messages">
+                <div v-if="chatMessages.length === 0" class="chat-empty">
+                  <div class="empty-icon-wrapper">
+                    <Bot :size="40" class="accent-glow-text" />
+                  </div>
+                  <h4>我是你的 AI 视频助手</h4>
+                  <p>你可以问我关于视频内容的任何问题</p>
+                  <div class="quick-prompts">
+                    <button class="quick-prompt-btn" @click="chatInput = '总结一下这个视频的核心要点'; sendChatMessage()">总结核心要点</button>
+                    <button class="quick-prompt-btn" @click="chatInput = '视频中提到了哪些具体的建议？'; sendChatMessage()">有哪些建议？</button>
+                  </div>
                 </div>
-                <div class="seg-play-icon">
-                  <Play :size="14" />
+
+                <div
+                  v-for="(msg, idx) in chatMessages"
+                  :key="idx"
+                  class="chat-message-wrapper"
+                  :class="msg.role"
+                >
+                  <div class="message-avatar">
+                    <Bot v-if="msg.role === 'assistant'" :size="16" />
+                    <UserIcon v-else :size="16" />
+                  </div>
+                  <div class="message-bubble">
+                    <div v-if="msg.content" class="message-content">
+                      <template v-for="(part, pIdx) in parseMessageContent(msg.content)">
+                        <span v-if="part.type === 'text'" :key="'text-' + idx + '-' + pIdx">{{ part.value }}</span>
+                        <a
+                          v-else-if="part.type === 'timestamp'"
+                          :key="'ts-' + idx + '-' + pIdx"
+                          href="javascript:void(0)"
+                          class="timestamp-link"
+                          @click="handleTimestampClick(part.value)"
+                        >
+                          {{ part.value }}
+                        </a>
+                      </template>
+                    </div>
+                    <div v-else-if="isChatLoading && idx === chatMessages.length - 1" class="typing-indicator">
+                      <span></span><span></span><span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Chat Input -->
+              <div class="chat-input-wrapper">
+                <div class="input-container">
+                  <textarea
+                    v-model="chatInput"
+                    placeholder="问点什么..."
+                    @keydown.enter.prevent="sendChatMessage"
+                    :disabled="isChatLoading"
+                  ></textarea>
+                  <button
+                    class="send-btn"
+                    :disabled="!chatInput.trim() || isChatLoading"
+                    @click="sendChatMessage"
+                  >
+                    <Send :size="18" />
+                  </button>
                 </div>
               </div>
             </div>
@@ -1087,92 +1312,317 @@ input::placeholder {
   gap: 4px;
 }
 
-/* Right Sidebar: Transcript */
-.outline-sidebar {
-  padding: 24px;
+
+/* Sidebar Tabs */
+.sidebar-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.sidebar-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.sidebar-tab.active {
+  background: rgba(0, 163, 255, 0.1);
+  color: var(--accent-color);
+}
+
+.tab-dot {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  background: var(--accent-color);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--accent-shadow);
+}
+
+.tab-pane {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 160px);
+  overflow: hidden;
+}
+
+/* Chat Pane */
+.chat-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  scroll-behavior: smooth;
+}
+
+.chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 20px;
+}
+
+.empty-icon-wrapper {
+  margin-bottom: 16px;
+  padding: 20px;
+  background: rgba(0, 163, 255, 0.05);
+  border-radius: 50%;
+}
+
+.chat-empty h4 {
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+}
+
+.chat-empty p {
+  font-size: 0.9rem;
+  margin-bottom: 24px;
+}
+
+.quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.quick-prompt-btn {
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quick-prompt-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-color);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
+.chat-message-wrapper {
+  display: flex;
+  gap: 12px;
+  max-width: 90%;
+}
+
+.chat-message-wrapper.user {
+  flex-direction: row-reverse;
+  align-self: flex-end;
+}
+
+.chat-message-wrapper.assistant {
+  align-self: flex-start;
+}
+
+.message-avatar {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+}
+
+.user .message-avatar {
+  background: var(--accent-color);
+  color: white;
+}
+
+.assistant .message-avatar {
+  background: rgba(0, 163, 255, 0.1);
+  color: var(--accent-color);
+  border-color: rgba(0, 163, 255, 0.2);
+}
+
+.message-bubble {
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.user .message-bubble {
+  background: var(--accent-color);
+  color: white;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 4px 12px var(--accent-shadow);
+}
+
+.assistant .message-bubble {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+
+.timestamp-link {
+  color: var(--accent-color);
+  text-decoration: none;
+  font-weight: 600;
+  padding: 0 2px;
+  border-bottom: 1.5px dashed var(--accent-color);
+  cursor: pointer;
+}
+
+.timestamp-link:hover {
+  background: rgba(0, 163, 255, 0.1);
+}
+
+/* Typing Indicator */
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(1) { animation-delay: 0s; }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* Chat Input */
+.chat-input-wrapper {
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.input-container {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 8px 12px;
+  transition: all 0.2s ease;
+}
+
+.input-container:focus-within {
+  border-color: var(--accent-color);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 15px rgba(0, 163, 255, 0.1);
+}
+
+.input-container textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  padding: 6px 0;
+  resize: none;
+  max-height: 120px;
+  min-height: 24px;
+  line-height: 1.5;
+}
+
+.input-container textarea:focus {
+  outline: none;
+}
+
+.send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.send-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  background: #0088cc;
+}
+
+.send-btn:disabled {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.3);
+  cursor: not-allowed;
+}
+
+/* Updated Sidebar Header for Tabs */
+.outline-sidebar {
+  padding: 0 !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 140px);
   position: sticky;
   top: 100px;
 }
 
 .sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 16px;
 }
 
-.sidebar-header h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
-
-.icon.accent {
-  color: var(--accent-color);
-}
-
-.sidebar-title-area {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.sidebar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.badge {
-  background: rgba(99, 102, 241, 0.1);
-  color: var(--text-secondary);
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.toggle-bilingual-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  padding: 4px 12px;
-  border-radius: 100px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.toggle-bilingual-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: var(--border-hover);
-  color: var(--text-primary);
-}
-
-.toggle-bilingual-btn.active {
-  background: var(--accent-glow);
-  border-color: var(--accent-color);
-  color: var(--text-accent);
-}
-
-/* =============== Transcript List =============== */
 .transcript-list {
   flex: 1;
   overflow-y: auto;
-  scroll-behavior: smooth;
-  position: relative;
-  padding-right: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 0 16px 16px 16px;
 }
 
 .transcript-item {

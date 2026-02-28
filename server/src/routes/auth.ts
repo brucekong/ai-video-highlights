@@ -3,8 +3,7 @@ import prisma from '../lib/prisma.js';
 import axios from 'axios';
 import jwt from 'jsonwebtoken';
 import { Schemas } from '../docs/openapi.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_please_change';
+import { JWT_SECRET } from '../utils/auth.js';
 
 // Google Config
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';

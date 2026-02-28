@@ -8,22 +8,7 @@ import { fetchVideoMetadata } from '../services/metadata.js';
 import { containsSensitiveContent, SafetyValidationError } from '../services/safety.js';
 import jwt from 'jsonwebtoken';
 import { Schemas } from '../docs/openapi.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_please_change';
-
-function getUserId(request: FastifyRequest): string | null {
-  const authHeader = request.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    try {
-      const token = authHeader.split(' ')[1];
-      const decoded: any = jwt.verify(token, JWT_SECRET);
-      return decoded.userId;
-    } catch (e) {
-      return null;
-    }
-  }
-  return null;
-}
+import { JWT_SECRET, getUserId } from '../utils/auth.js';
 
 interface TranscriptQuery {
   videoId: string;
@@ -210,7 +195,8 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       // 4. 判断是否需要翻译字幕（如果是英文/外语视频）
       // 简单判断：如果前 10 个片段中有一半以上不包含中文，则尝试翻译
       const needsTranslation = transcript.slice(0, 10).filter(s => !/[\u4e00-\u9fa5]/.test(s.text)).length > 5;
-      let translatedTexts: string[] = [];
+      let translatedTexts: string[]
+      = [];
       if (needsTranslation) {
         fastify.log.info(`Translating ${transcript.length} segments to Chinese...`);
         translatedTexts = await translateTranscriptSegments(transcript.map(s => s.text));

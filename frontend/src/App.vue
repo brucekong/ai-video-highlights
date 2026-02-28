@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, Clock, FileText, User, Menu, X, Image as ImageIcon, Trash2 } from 'lucide-vue-next';
+import { Sparkles, Clock, FileText, User, Menu, X, Image as ImageIcon, Trash2, AlertTriangle, Loader2 } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 import { useAuth } from './services/auth';
 
 const { authState } = useAuth();
-const { currentUser, showLoginModal } = authState; // these are reactive since authState is reactive
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -26,7 +25,11 @@ const router = useRouter();
 const showHistory = ref(false);
 const historyList = ref<HistoryItem[]>([]);
 // const showLoginModal = ref(false); // Refactored to authState
-// const currentUser = ref<any>(null); // Refactored to authState
+// const currentUser = ref<any>(null);
+const showDeleteConfirm = ref(false);
+const deleteTargetItem = ref<HistoryItem | null>(null);
+const isDeleting = ref(false);
+ // Refactored to authState
 
 const getAuthHeaders = (): Record<string, string> => {
   const token = localStorage.getItem('auth_token');
@@ -109,24 +112,34 @@ const getThumbnailUrl = (item: HistoryItem) => {
   return '';
 };
 
-const deleteHistory = async (event: Event, item: HistoryItem) => {
+const deleteHistory = (event: Event, item: HistoryItem) => {
   event.stopPropagation(); // 阻止触发跳转
-  if (!confirm('确定要删除这条记录吗？')) return;
+  deleteTargetItem.value = item;
+  showDeleteConfirm.value = true;
+};
 
+const confirmDelete = async () => {
+  if (!deleteTargetItem.value) return;
+
+  isDeleting.value = true;
   try {
-    const res = await fetch(`${API_BASE}/api/videos/${item.videoId}`, {
+    const res = await fetch(`${API_BASE}/api/videos/${deleteTargetItem.value.videoId}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
     const result = await res.json();
     if (result.success) {
       await loadHistory();
+      showDeleteConfirm.value = false;
+      deleteTargetItem.value = null;
     } else {
       alert(result.error || '删除失败');
     }
   } catch (error) {
     console.error('Delete history failed:', error);
     alert('删除失败，请检查网络连接');
+  } finally {
+    isDeleting.value = false;
   }
 };
 </script>
@@ -220,7 +233,29 @@ const deleteHistory = async (event: Event, item: HistoryItem) => {
       </div>
     </div> <!-- End Main Wrapper -->
 
-    <LoginModal v-if="authState.showLoginModal" @close="authState.showLoginModal = false" />
+    <LoginModal v-if="authState.showLoginModal" @close="authState.showLoginModal = false" />˝
+
+    <!-- Custom Delete Confirmation Modal -->
+    <Transition name="modal-fade">
+      <div v-if="showDeleteConfirm" class="confirm-modal-overlay" @click.self="showDeleteConfirm = false">
+        <div class="confirm-modal glass-panel">
+          <div class="confirm-icon-wrap">
+            <AlertTriangle :size="32" class="confirm-icon" />
+          </div>
+          <h3>确认删除？</h3>
+          <p>您确定要删除 <strong>{{ deleteTargetItem?.title || '此视频' }}</strong> 的所有分析记录及其关联数据吗？此操作不可撤销。</p>
+
+          <div class="confirm-actions">
+            <button class="btn-secondary" @click="showDeleteConfirm = false" :disabled="isDeleting">取消</button>
+            <button class="btn-danger" @click="confirmDelete" :disabled="isDeleting">
+              <Loader2 v-if="isDeleting" :size="18" class="spin" />
+              <Trash2 v-else :size="18" />
+              <span>{{ isDeleting ? '正在删除...' : '确认彻底删除' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -1166,5 +1201,117 @@ input::placeholder {
   .history-meta {
     margin-top: 8px;
   }
+}
+/* Confirm Modal */
+.confirm-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.confirm-modal {
+  width: 100%;
+  max-width: 440px;
+  padding: 32px;
+  text-align: center;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.confirm-icon-wrap {
+  width: 64px;
+  height: 64px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.confirm-icon {
+  color: #ef4444;
+}
+
+.confirm-modal h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+
+.confirm-modal p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-danger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ef4444;
+  color: white;
+  padding: 10px 24px;
+  border-radius: 100px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.4);
+}
+
+.btn-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Modal Transition */
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+.modal-fade-enter-active .confirm-modal,
+.modal-fade-leave-active .confirm-modal {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modal-fade-enter-from .confirm-modal,
+.modal-fade-leave-to .confirm-modal {
+  transform: scale(0.9);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }
 </style>

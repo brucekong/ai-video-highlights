@@ -4,8 +4,10 @@ import { useRoute } from 'vue-router';
 import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
+import { useAuth } from '../services/auth';
 
 const API_BASE = import.meta.env.VITE_API_URL;
+const { checkLogin } = useAuth();
 
 console.log('API_BASE====', API_BASE)
 interface Takeaway {
@@ -195,6 +197,7 @@ watch(() => route.query.url, (newUrl) => {
 
 // 调用后端 AI 分析接口
 const handleAnalyze = async () => {
+  if (!checkLogin()) return; // 检查登录状态
   if (!videoId.value || !platform.value) return;
 
   isLoading.value = true;

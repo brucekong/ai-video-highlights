@@ -3,6 +3,10 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { Sparkles, Clock, FileText, User, Menu, X, Image as ImageIcon, Trash2 } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
+import { useAuth } from './services/auth';
+
+const { authState } = useAuth();
+const { currentUser, showLoginModal } = authState; // these are reactive since authState is reactive
 
 const API_BASE = import.meta.env.VITE_API_URL;
 
@@ -21,8 +25,8 @@ interface HistoryItem {
 const router = useRouter();
 const showHistory = ref(false);
 const historyList = ref<HistoryItem[]>([]);
-const showLoginModal = ref(false);
-const currentUser = ref<any>(null);
+// const showLoginModal = ref(false); // Refactored to authState
+// const currentUser = ref<any>(null); // Refactored to authState
 
 const getAuthHeaders = (): Record<string, string> => {
   const token = localStorage.getItem('auth_token');
@@ -58,7 +62,7 @@ const checkAuth = async () => {
     const res = await fetch(`${API_BASE}/api/auth/me`, { headers });
     const data = await res.json();
     if (data.success) {
-      currentUser.value = data.data;
+      authState.currentUser = data.data;
     } else {
       localStorage.removeItem('auth_token');
     }
@@ -69,7 +73,7 @@ const checkAuth = async () => {
 
 const logout = () => {
   localStorage.removeItem('auth_token');
-  currentUser.value = null;
+  authState.currentUser = null;
   loadHistory();
 };
 
@@ -197,13 +201,13 @@ const deleteHistory = async (event: Event, item: HistoryItem) => {
         </div>
 
         <div class="user-action">
-          <div v-if="currentUser" class="user-profile">
-            <img v-if="currentUser.avatar" :src="currentUser.avatar" class="avatar" />
+          <div v-if="authState.currentUser" class="user-profile">
+            <img v-if="authState.currentUser.avatar" :src="authState.currentUser.avatar" class="avatar" />
             <User v-else class="icon avatar-fallback" :size="20" />
-            <span class="user-name">{{ currentUser.name || currentUser.email || '用户' }}</span>
+            <span class="user-name">{{ authState.currentUser.name || authState.currentUser.email || '用户' }}</span>
             <button class="btn-text" @click="logout">退出登录</button>
           </div>
-          <button v-else class="btn-secondary" @click="showLoginModal = true">
+          <button v-else class="btn-secondary" @click="authState.showLoginModal = true">
             <User class="icon" :size="18" />
             登录
           </button>
@@ -216,7 +220,7 @@ const deleteHistory = async (event: Event, item: HistoryItem) => {
       </div>
     </div> <!-- End Main Wrapper -->
 
-    <LoginModal v-if="showLoginModal" @close="showLoginModal = false" />
+    <LoginModal v-if="authState.showLoginModal" @close="authState.showLoginModal = false" />
   </div>
 </template>
 

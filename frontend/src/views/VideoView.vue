@@ -21,7 +21,8 @@ interface Takeaway {
 
 interface TranscriptSegment {
   text: string;
-  offset: number;   // 毫秒，
+  translatedText?: string;
+  offset: number;   // 毫秒
   duration: number;  // 毫秒
 }
 
@@ -38,6 +39,7 @@ const activeTakeawayIndex = ref<number | null>(null);
 const activeTranscriptIndex = ref<number | null>(null);
 const currentVideoTime = ref(0);
 const videoDuration = ref(0); // 从播放器获取的真实时长
+const isBilingual = ref(true); // 是否开启双语模式
 
 // 字幕滚动自动归中行为控制变量
 const isHoveringTranscript = ref(false);
@@ -89,10 +91,9 @@ const mergedTranscript = computed(() => {
       if (current) merged.push(current);
       current = { ...seg };
     } else if (current) {
-      // 检查前一句是否已经包含标点结尾，决定是否增加逗号连接
+      // 1. 合并原文
       const lastChar = current.text.trim().slice(-1);
       const hasPunctuation = /[.,?!，。？！、;；]/.test(lastChar);
-
       const isChinese = /[\u4e00-\u9fa5]/.test(seg.text);
       let sep = '';
       if (!hasPunctuation) {
@@ -100,8 +101,19 @@ const mergedTranscript = computed(() => {
       } else {
         sep = isChinese ? '' : ' ';
       }
-
       current.text = current.text.trim() + sep + seg.text.trim();
+
+      // 2. 合并译文
+      if (seg.translatedText) {
+        const lastTransChar = (current.translatedText || '').trim().slice(-1);
+        const hasTransPunctuation = /[.,?!，。？！、;；]/.test(lastTransChar);
+        let transSep = '';
+        if (current.translatedText && !hasTransPunctuation) {
+          transSep = '，';
+        }
+        current.translatedText = (current.translatedText || '').trim() + transSep + seg.translatedText.trim();
+      }
+
       current.duration = (seg.offset + seg.duration) - current.offset;
     }
   }
@@ -233,7 +245,8 @@ const handleAnalyze = async () => {
       }));
       transcript.value = (result.data.transcript || []).map((seg: any) => ({
         ...seg,
-        text: decodeHtml(seg.text)
+        text: decodeHtml(seg.text),
+        translatedText: decodeHtml(seg.translatedText)
       }));
       videoTitle.value = decodeHtml(result.data.videoTitle || '');
       showResult.value = true;
@@ -534,9 +547,17 @@ const takeawayMap = computed(() => {
               <div class="sidebar-title-area">
                  <h3><FileText class="icon accent" :size="20"/> 视频转录</h3>
                </div>
-               <div class="sidebar-actions">
-                 <span class="badge">{{ mergedTranscript.length }} 段内容</span>
-               </div>
+                <div class="sidebar-actions">
+                  <button
+                    class="toggle-bilingual-btn"
+                    :class="{ active: isBilingual }"
+                    @click="isBilingual = !isBilingual"
+                    title="切换中英双语"
+                  >
+                    {{ isBilingual ? '双语' : '单语' }}
+                  </button>
+                  <span class="badge">{{ mergedTranscript.length }} 段内容</span>
+                </div>
              </div>
 
             <div
@@ -557,7 +578,10 @@ const takeawayMap = computed(() => {
                   <Clock :size="12" class="seg-time-icon" />
                   <span>{{ formatTimeFromMs(seg.offset) }}</span>
                 </div>
-                <div class="seg-text">{{ seg.text }}</div>
+                <div class="seg-text">
+                  <div v-if="isBilingual && seg.translatedText" class="translated-text">{{ seg.translatedText }}</div>
+                  <div class="original-text" :class="{ 'has-translation': isBilingual && seg.translatedText }">{{ seg.text }}</div>
+                </div>
                 <div class="seg-play-icon">
                   <Play :size="14" />
                 </div>
@@ -1107,12 +1131,36 @@ input::placeholder {
 }
 
 .badge {
-  background: rgba(99, 102, 241, 0.15);
-  color: var(--text-accent);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--text-secondary);
   padding: 4px 10px;
   border-radius: 12px;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.toggle-bilingual-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 0.75rem;
   font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.toggle-bilingual-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.toggle-bilingual-btn.active {
+  background: var(--accent-glow);
+  border-color: var(--accent-color);
+  color: var(--text-accent);
 }
 
 /* =============== Transcript List =============== */
@@ -1193,10 +1241,29 @@ input::placeholder {
 /* Text content */
 .seg-text {
   flex: 1;
-  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.translated-text {
+  font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text-primary);
+  font-weight: 500;
   word-break: break-word;
+}
+
+.original-text {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.original-text.has-translation {
+  opacity: 0.7;
+  font-size: 0.8rem;
 }
 
 .transcript-item:not(.active) .seg-text {

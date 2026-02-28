@@ -15,6 +15,7 @@ export const Schemas = {
     type: 'object',
     properties: {
       text: { type: 'string', description: '字幕文本' },
+      translatedText: { type: 'string', nullable: true, description: '字幕翻译文本' },
       offset: { type: 'integer', description: '开始时间（毫秒）' },
       duration: { type: 'integer', description: '持续时长（毫秒）' },
     },

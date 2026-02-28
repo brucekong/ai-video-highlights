@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../lib/prisma.js';
 import { fetchTranscript, formatTranscriptForAI, type TranscriptSegment } from '../services/transcript.js';
 import { fetchBilibiliTranscript } from '../services/bilibili.js';
-import { analyzeTranscript } from '../services/ai.js';
+import { analyzeTranscript, translateTranscriptSegments } from '../services/ai.js';
 import { fallbackToWhisper } from '../services/whisper.js';
 import { fetchVideoMetadata } from '../services/metadata.js';
 import { containsSensitiveContent, SafetyValidationError } from '../services/safety.js';
@@ -146,6 +146,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               })),
               transcript: cached.subtitles.map((s) => ({
                 text: s.text,
+                translatedText: s.translatedText, // 返回翻译
                 offset: s.offset,
                 duration: s.duration,
               })),
@@ -206,7 +207,16 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       fastify.log.info(`Analyzing transcript (${transcript.length} segments, duration: ${maxDurationSeconds}s)...`);
       const aiResult = await analyzeTranscript(formattedText, maxDurationSeconds);
 
-      // 4. 存储到数据库（事务：upsert video + 字幕 + takeaways）
+      // 4. 判断是否需要翻译字幕（如果是英文/外语视频）
+      // 简单判断：如果前 10 个片段中有一半以上不包含中文，则尝试翻译
+      const needsTranslation = transcript.slice(0, 10).filter(s => !/[\u4e00-\u9fa5]/.test(s.text)).length > 5;
+      let translatedTexts: string[] = [];
+      if (needsTranslation) {
+        fastify.log.info(`Translating ${transcript.length} segments to Chinese...`);
+        translatedTexts = await translateTranscriptSegments(transcript.map(s => s.text));
+      }
+
+      // 5. 存储到数据库（事务：upsert video + 字幕 + takeaways）
       await prisma.$transaction(async (tx) => {
         // Upsert video
         await tx.video.upsert({
@@ -251,6 +261,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           data: transcript.map((seg, index) => ({
             videoId,
             text: seg.text,
+            translatedText: translatedTexts[index] || null, // 存储翻译
             offset: seg.offset,
             duration: seg.duration,
             sortOrder: index,
@@ -296,6 +307,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           })) || [],
           transcript: result?.subtitles.map((s) => ({
             text: s.text,
+            translatedText: s.translatedText, // 返回翻译
             offset: s.offset,
             duration: s.duration,
           })) || [],
@@ -378,6 +390,9 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
         takeaways: {
           orderBy: { sortOrder: 'asc' },
         },
+        subtitles: {
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
 
@@ -395,6 +410,12 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           summary: t.summary,
           timestamp: t.timestamp,
           duration: t.duration,
+        })),
+        transcript: video.subtitles.map((s) => ({
+          text: s.text,
+          translatedText: s.translatedText,
+          offset: s.offset,
+          duration: s.duration,
         })),
       },
     });

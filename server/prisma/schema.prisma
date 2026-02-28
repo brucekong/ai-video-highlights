@@ -7,7 +7,6 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 /// 视频信息
@@ -77,13 +76,14 @@ model Takeaway {
 
 /// 视频字幕（缓存）
 model Subtitle {
-  id        String   @id @default(cuid())
-  videoId   String   @map("video_id")
-  text      String                                 // 字幕文本
-  offset    Int                                    // 开始时间（毫秒）
-  duration  Int                                    // 持续时长（毫秒）
-  sortOrder Int      @default(0) @map("sort_order") // 排序
-  createdAt DateTime @default(now()) @map("created_at")
+  id             String   @id @default(cuid())
+  videoId        String   @map("video_id")
+  text           String                                 // 字幕文本
+  translatedText String?  @map("translated_text")        // 字幕翻译文本
+  offset         Int                                    // 开始时间（毫秒）
+  duration       Int                                    // 持续时长（毫秒）
+  sortOrder      Int      @default(0) @map("sort_order") // 排序
+  createdAt      DateTime @default(now()) @map("created_at")
 
   video Video @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
 

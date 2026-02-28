@@ -138,3 +138,67 @@ export async function analyzeTranscript(
 
   throw lastError || new Error('Failed to analyze transcript after retries');
 }
+/**
+ * 翻译字幕片段
+ * 为了提高效率，这里采用批量翻译的方式（每批 30-50 条）
+ */
+export async function translateTranscriptSegments(
+  texts: string[]
+): Promise<string[]> {
+  if (!texts || texts.length === 0) return [];
+
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error('DEEPSEEK_API_KEY is not configured');
+  }
+
+  const client = new OpenAI({
+    baseURL: 'https://api.deepseek.com',
+    apiKey,
+  });
+
+  const BATCH_SIZE = 40;
+  const results: string[] = [];
+
+  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+    const batch = texts.slice(i, i + BATCH_SIZE);
+
+    try {
+      console.log(`🤖 Translating transcript batch ${Math.floor(i / BATCH_SIZE) + 1}...`);
+
+      const completion = await client.chat.completions.create({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: '你是一个专业的翻译助手。请将用户提供的字幕片段列表翻译成中文。保持原意，语言地道。请严格按照原始列表的顺序返回一个 JSON 数组，数组中只包含翻译后的字符串。不要返回任何其他解释。',
+          },
+          {
+            role: 'user',
+            content: JSON.stringify(batch),
+          },
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        const parsed = JSON.parse(content);
+        // 如果返回的是对象形式 { "translations": [...] } 或直接是数组
+        const translatedBatch = Array.isArray(parsed) ? parsed : (parsed.translations || Object.values(parsed)[0]);
+        if (Array.isArray(translatedBatch)) {
+          results.push(...translatedBatch.map(s => String(s)));
+        } else {
+          // 兜底：如果格式不对，填充原文占位
+          results.push(...batch);
+        }
+      }
+    } catch (error) {
+      console.error('Batch translation failed:', error);
+      results.push(...batch); // 失败时回退到原文
+    }
+  }
+
+  return results;
+}

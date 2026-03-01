@@ -45,11 +45,24 @@ export async function searchRoutes(fastify: FastifyInstance) {
            s.text AS "text",
            s.translated_text AS "translatedText",
            s."offset" AS "offset",
-           (1 - (s.embedding <=> ${vectorStr}::vector)) AS "similarity"
+           LEAST(1.0,
+             (1 - (s.embedding <=> ${vectorStr}::vector)) +
+             (CASE
+                WHEN s.text ILIKE ${q} OR s.translated_text ILIKE ${q} THEN 0.3
+                WHEN s.text ILIKE ${'%' + q + '%'} OR s.translated_text ILIKE ${'%' + q + '%'} THEN 0.15
+                ELSE 0
+              END)
+           ) AS "similarity"
         FROM subtitles s
         JOIN videos v ON s.video_id = v.video_id
         WHERE s.embedding IS NOT NULL
-          AND (1 - (s.embedding <=> ${vectorStr}::vector)) > ${Number(min_score)}
+          AND ( (1 - (s.embedding <=> ${vectorStr}::vector)) +
+                (CASE
+                   WHEN s.text ILIKE ${q} OR s.translated_text ILIKE ${q} THEN 0.3
+                   WHEN s.text ILIKE ${'%' + q + '%'} OR s.translated_text ILIKE ${'%' + q + '%'} THEN 0.15
+                   ELSE 0
+                 END)
+              ) > ${Number(min_score)}
           ${videoId ? Prisma.sql`AND s.video_id = ${videoId}` : Prisma.empty}
         ORDER BY similarity DESC
         LIMIT ${limit}

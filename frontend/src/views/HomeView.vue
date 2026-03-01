@@ -60,42 +60,68 @@
           </button>
         </div>
 
-        <!-- Search Results -->
-        <div v-if="searchResults.length > 0" class="search-results">
-          <div
-            v-for="(res, idx) in searchResults"
-            :key="idx"
-            class="search-result-card glass-panel compact"
-            @click="goToResult(res)"
-          >
-            <div class="result-main">
-              <div class="result-content">
-                <div class="result-text-summary">
-                  <span class="translated">{{ res.translatedText || res.text }}</span>
-                </div>
-                <div class="result-meta">
-                  <span class="video-title">
-                    <FileText :size="12" />
-                    {{ res.videoTitle }}
-                  </span>
-                  <span class="dot">•</span>
-                  <span class="timestamp">
-                    <Clock :size="12" />
-                    {{ formatTimeFromMs(res.offset) }}
-                  </span>
+        <!-- Permanent Search Results Container -->
+        <div class="search-results">
+          <TransitionGroup name="list-premium">
+            <!-- Search Loading Skeleton -->
+            <template v-if="isSearching">
+              <div
+                v-for="i in 3"
+                :key="'skel-' + i"
+                class="skeleton-card glass-panel compact"
+                :style="{ '--index': i - 1 }"
+              >
+                <div class="skeleton-shimmer"></div>
+                <div class="result-main">
+                  <div class="result-content">
+                    <div class="skeleton-line title"></div>
+                    <div class="skeleton-line meta"></div>
+                  </div>
+                  <div class="skeleton-circle"></div>
                 </div>
               </div>
-              <div class="result-score-wrap">
-                 <div class="score-circle" :style="{ '--score-opacity': res.similarity }">
-                    {{ Math.round(res.similarity * 100) }}
-                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
+            </template>
 
-        <div v-else-if="hasSearched && !isSearching" class="no-results glass-panel">
-          <p>没有找到相关内容，请尝试换一个描述方式。</p>
+            <!-- Search Results -->
+            <template v-else-if="searchResults.length > 0">
+              <div
+                v-for="(res, index) in searchResults"
+                :key="'res-' + res.videoId + res.offset"
+                class="search-result-card glass-panel compact"
+                :style="{ '--index': index }"
+                @click="goToResult(res)"
+              >
+                <div class="result-main">
+                  <div class="result-content">
+                    <div class="result-text-summary">
+                      <span class="translated">{{ res.translatedText || res.text }}</span>
+                    </div>
+                    <div class="result-meta">
+                      <span class="video-title">
+                        <FileText :size="12" />
+                        {{ res.videoTitle }}
+                      </span>
+                      <span class="dot">•</span>
+                      <span class="timestamp">
+                        <Clock :size="12" />
+                        {{ formatTimeFromMs(res.offset) }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="result-score-wrap">
+                     <div class="score-circle" :style="{ '--score-opacity': res.similarity }">
+                        {{ Math.round(res.similarity * 100) }}
+                     </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- No Results -->
+            <div v-else-if="hasSearched" key="empty" class="no-results glass-panel">
+              <p>没有找到相关内容，请尝试换一个描述方式。</p>
+            </div>
+          </TransitionGroup>
         </div>
       </div>
     </div>
@@ -353,15 +379,7 @@ const formatTimeFromMs = (ms: number) => {
   font-size: 0.9rem;
 }
 
-.search-results {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 16px;
-  max-height: 40vh; /* 限制结果列表高度 */
-  overflow-y: auto;
-  padding-right: 8px; /* 给滚动条留点空间 */
-}
+
 
 /* 自定义滚动条样式 */
 .search-results::-webkit-scrollbar {
@@ -473,13 +491,111 @@ const formatTimeFromMs = (ms: number) => {
   color: var(--text-secondary);
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .fade-in {
   animation: fadeIn 0.4s ease-out;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Skeleton Styles */
+.skeleton-card {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.skeleton-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.05),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.skeleton-line {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.skeleton-line.title {
+  width: 60%;
+  height: 16px;
+  margin-bottom: 8px;
+}
+
+.skeleton-line.meta {
+  width: 40%;
+}
+
+.skeleton-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Permanent Search Container */
+.search-results {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  height: 30vh;
+  overflow-y: auto;
+  padding-right: 8px;
+  position: relative;
+}
+
+/* List Premium - Sequential "Pop Pop Pop" Effect */
+.list-premium-enter-active {
+  /* 使用强力 Overshoot 曲线，产生明显的“蹦出”感 */
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
+              opacity 0.6s ease,
+              filter 0.6s ease;
+  /* 显著增加步进延迟到 120ms，让“1 2 3”依次蹦出的节奏非常清晰 */
+  transition-delay: calc(var(--index) * 70ms) !important;
+}
+
+.list-premium-leave-active {
+  transition: all 0.2s ease;
+  position: absolute;
+  width: calc(100% - 8px);
+  z-index: 0;
+}
+
+.list-premium-enter-from {
+  opacity: 0;
+  /* 从下方较远处弹起，并配合较小的缩放，强化“蹦”出来的爆发感 */
+  transform: translateY(30px) scale(0.8);
+  filter: blur(10px);
+}
+
+.list-premium-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+  filter: blur(5px);
+}
+
+.list-premium-move {
+  transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .spin {

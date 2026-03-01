@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted } from 'vue';
 import { X } from 'lucide-vue-next';
 
 // This URL needs to match the backend port
@@ -10,6 +11,20 @@ const loginWithGoogle = () => {
   const currentPath = window.location.pathname + window.location.search;
   window.location.href = `${API_BASE}/api/auth/google?redirect=${encodeURIComponent(currentPath)}`;
 };
+
+const handleEsc = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    emit('close');
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('keydown', handleEsc);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEsc);
+});
 
 // const loginWithWeChat = () => {
 //   window.location.href = `${API_BASE}/api/auth/wechat`;

@@ -124,14 +124,26 @@ const handleReindex = async (event: Event, item: HistoryItem) => {
   }
 };
 
+const handleEsc = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    if (showDeleteConfirm.value) {
+      showDeleteConfirm.value = false;
+    } else if (props.modelValue) {
+      closeHistory();
+    }
+  }
+};
+
 // Initial load and listen for events
 onMounted(() => {
   loadHistory();
   window.addEventListener('video-analyzed', loadHistory);
+  window.addEventListener('keydown', handleEsc);
 });
 
 onUnmounted(() => {
   window.removeEventListener('video-analyzed', loadHistory);
+  window.removeEventListener('keydown', handleEsc);
 });
 
 // Watch for auth state changes to reload history

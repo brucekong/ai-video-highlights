@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { X, Globe } from 'lucide-vue-next';
 import SemanticSearchPanel from './SemanticSearchPanel.vue';
 
@@ -15,6 +15,20 @@ const handleResultClick = (res: any) => {
   emit('result-click', res);
   emit('close');
 };
+
+const handleEsc = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && props.show) {
+    emit('close');
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('keydown', handleEsc);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleEsc);
+});
 
 // Auto-focus input when shown
 watch(() => props.show, (newVal) => {

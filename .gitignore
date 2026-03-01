@@ -24,8 +24,4 @@ dist-ssr
 *.sw?
 
 # Documentation (Internal Explanations)
-TECH_EXPLAIN_AI_CHAT.md
-FUTURE_TECH_EXPLAIN.md
-SPEC_SEMANTIC_SEARCH.md
-SPEC_AI_VIDEO_CHAT.md
-SEMANTIC_SEARCH_OPTIMIZATION.md
+docs/*

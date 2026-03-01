@@ -123,6 +123,7 @@ const handleAnalyze = async () => {
   font-family: inherit;
   padding-right: 16px;
   min-width: 0;
+  width:600px;
 }
 .input-group input::placeholder {
   color: var(--text-secondary);

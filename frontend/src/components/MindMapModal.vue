@@ -52,13 +52,24 @@ const downloadSvg = () => {
   URL.revokeObjectURL(url);
 };
 
+const handleEsc = (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && props.show) {
+    emit('close');
+  }
+};
+
 watch(() => props.show, async (newVal) => {
   if (newVal) {
     document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleEsc);
     await nextTick();
     setTimeout(initMarkmap, 100);
   } else {
     document.body.style.overflow = '';
+    window.removeEventListener('keydown', handleEsc);
+    // 关键：当 Modal 关闭时，由于 v-if 会销毁 SVG 元素，
+    // 我们必须清空 markmap 实例引用，确保下次打开时重新绑定到新的 SVG 元素。
+    markmapRef.value = null;
   }
 });
 
@@ -68,6 +79,7 @@ watch(() => props.markdown, () => {
 
 onUnmounted(() => {
   document.body.style.overflow = '';
+  window.removeEventListener('keydown', handleEsc);
 });
 </script>
 
@@ -120,9 +132,9 @@ onUnmounted(() => {
   backdrop-filter: blur(8px);
   z-index: 2000;
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* 改为 flex-start 靠上显示 */
   justify-content: center;
-  padding: 2vw;
+  padding: 5vh 2vw 2vw; /* 增加顶部间距 5vh */
 }
 
 .mindmap-modal-container {
@@ -270,18 +282,30 @@ onUnmounted(() => {
   }
 }
 
-:deep(.markmap-node) {
-  cursor: pointer;
+</style>
+
+<style>
+/*
+  必须使用非 scoped 样式，因为 Markmap 渲染的 SVG 是动态生成的，
+  Scoped CSS 的 data-v 属性属性无法应用到这些深层节点上。
+*/
+.markmap-canvas .markmap-node-text,
+.markmap-canvas .markmap-foreign {
+  fill: #ffffff !important;
+  color: #ffffff !important;
+  font-weight: 300 !important;
+  font-size: 12px !important;
 }
 
-:deep(.markmap-node-text) {
-  fill: var(--text-primary);
-  font-family: 'Inter', sans-serif;
-  font-weight: 500;
+.markmap-canvas .markmap-foreign * {
+  color: #ffffff !important;
 }
 
-:deep(.markmap-link) {
-  stroke-opacity: 0.5;
-  stroke-width: 2px;
+.markmap-canvas .markmap-link {
+  stroke-opacity: 0.9 !important;
+}
+
+.markmap-canvas .markmap-circle {
+  fill: #111827 !important;
 }
 </style>

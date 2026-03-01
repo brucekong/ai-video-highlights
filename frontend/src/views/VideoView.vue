@@ -415,6 +415,10 @@ const jumpToTakeaway = (item: Takeaway, index: number) => {
   activeTakeawayIndex.value = index;
   if (playerRef.value) {
     playerRef.value.seekTo(item.timestamp);
+    // 点击摘要时自动置顶，方便观看视频
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // 兼容某些布局下的 main-wrapper 滚动
+    document.querySelector('.main-wrapper')?.scrollTo({ top: 0, behavior: 'smooth' });
   }
 };
 

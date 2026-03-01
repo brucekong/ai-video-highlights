@@ -2,7 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../lib/prisma.js';
 import { fetchTranscript, formatTranscriptForAI, type TranscriptSegment } from '../services/transcript.js';
 import { fetchBilibiliTranscript } from '../services/bilibili.js';
-import { analyzeTranscript, translateTranscriptSegments } from '../services/ai.js';
+import { analyzeTranscript, translateTranscriptSegments, getEmbedding, getEmbeddings } from '../services/ai.js';
 import { fallbackToWhisper } from '../services/whisper.js';
 import { fetchVideoMetadata } from '../services/metadata.js';
 import { containsSensitiveContent, SafetyValidationError } from '../services/safety.js';
@@ -260,6 +260,38 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       });
 
       fastify.log.info(`Saved ${transcript.length} subtitles and ${aiResult.takeaways.length} takeaways to DB`);
+
+      // 5.1 生成并保存向量 (异步或同步)
+      try {
+        fastify.log.info(`Generating semantic embeddings for ${videoId}...`);
+        const titleEmbedding = await getEmbedding(aiResult.title);
+        // 为每一条字幕生成向量 (考虑到内容量，这里我们只对翻译后的中文文本做向量化，效果更好)
+        // 为了节省 API 调用，我们可以每批处理 50 条
+        const textsToEmbed = translatedTexts.length > 0 ? translatedTexts : transcript.map(s => s.text);
+        const subtitleEmbeddings = await getEmbeddings(textsToEmbed);
+
+        // 使用 $executeRaw 保存 Video 向量
+        await prisma.$executeRaw`
+          UPDATE videos
+          SET embedding = ${titleEmbedding.join(',').replace(/^/, '[').replace(/$/, ']')}::vector
+          WHERE video_id = ${videoId}
+        `;
+
+        // 使用 $executeRaw 循环保存 Subtitle 向量
+        // (注：如果量特别大建议批量，暂时先用循环或 Promise.all 为演示)
+        await Promise.all(subtitleEmbeddings.map(async (vec, idx) => {
+          const vectorStr = `[${vec.join(',')}]`;
+          const offset = transcript[idx].offset;
+          await prisma.$executeRaw`
+            UPDATE subtitles
+            SET embedding = ${vectorStr}::vector
+            WHERE video_id = ${videoId} AND "offset" = ${offset}
+          `;
+        }));
+        fastify.log.info(`⚡ Embeddings generated and saved for video: ${videoId}`);
+      } catch (embError: any) {
+        fastify.log.warn(`[Embedding] Generation failed: ${embError.message}`);
+      }
 
       // 5. 从数据库重新读取完整数据返回
       const result = await prisma.video.findUnique({
@@ -665,6 +697,70 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       fastify.log.error(error);
       return reply.status(500).send({
         error: 'Failed to fetch transcript.',
+        message: error.message,
+      });
+    }
+  });
+
+
+  /**
+   * GET /api/search
+   * 语义搜索视频内容
+   */
+  fastify.get('/api/search', {
+    schema: {
+      tags: ['Analyze'],
+      summary: '全库语义搜索',
+      description: '输入自然语言描述（如“如何配置深度学习环境”），AI 会在所有已分析视频的字幕中进行向量相似度检索并返回片段。',
+      querystring: {
+        type: 'object',
+        required: ['q'],
+        properties: {
+          q: { type: 'string', description: '搜索关键词或语义描述' },
+          limit: { type: 'integer', default: 10, description: '返回结果数量' },
+        },
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Querystring: { q: string; limit?: number } }>,
+    reply: FastifyReply,
+  ) => {
+    const { q, limit = 10 } = request.query;
+
+    try {
+      // 1. 生成查询语义向量
+      const queryEmbedding = await getEmbedding(q);
+      const vectorStr = `[${queryEmbedding.join(',')}]`;
+
+      // 2. 向量检索：使用余弦相似度的距离运算符 <=>
+      // 相似度得分 = 1 - 距离
+      // (注：由于字段是 Unsupported 类型，Prisma 需要通过 $queryRaw 直接执行原生的 SQL)
+      const results: any[] = await prisma.$queryRaw`
+        SELECT
+           s.video_id AS "videoId",
+           v.title AS "videoTitle",
+           s.text AS "text",
+           s.translated_text AS "translatedText",
+           s."offset" AS "offset",
+           (1 - (s.embedding <=> ${vectorStr}::vector)) AS "similarity"
+        FROM subtitles s
+        JOIN videos v ON s.video_id = v.video_id
+        WHERE s.embedding IS NOT NULL
+        ORDER BY similarity DESC
+        LIMIT ${limit}
+      `;
+
+      return reply.send({
+        success: true,
+        data: results.map(r => ({
+          ...r,
+          similarity: Number(r.similarity), // PostgreSQL bigint/float 需要手动转 JS number
+        })),
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.status(500).send({
+        error: 'Semantic search failed.',
         message: error.message,
       });
     }

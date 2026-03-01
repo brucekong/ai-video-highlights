@@ -268,3 +268,82 @@ ${transcriptContext}
     }
   }
 }
+
+import { pipeline } from '@xenova/transformers';
+
+/**
+ * 获取 Embedding 实例 (单例模式)
+ */
+let localPipe: any = null;
+async function getLocalPipeline() {
+  if (!localPipe) {
+    console.log('📦 Loading local embedding model (Xenova/bge-small-zh-v1.5)...');
+    localPipe = await pipeline('feature-extraction', 'Xenova/bge-small-zh-v1.5');
+  }
+  return localPipe;
+}
+
+/**
+ * 获取文本的向量 (Embedding)
+ * 支持本地 (transformers.js) 和 云端 (OpenAI 兼容接口)
+ */
+export async function getEmbedding(text: string): Promise<number[]> {
+  const strategy = process.env.EMBEDDING_STRATEGY || 'local';
+
+  if (strategy === 'local') {
+    const pipe = await getLocalPipeline();
+    const output = await pipe(text, { pooling: 'mean', normalize: true });
+    return Array.from(output.data);
+  } else {
+    // 云端方案
+    const apiKey = process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY;
+    const apiBase = process.env.EMBEDDING_API_BASE || 'https://api.openai.com/v1';
+    const model = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
+
+    if (!apiKey) throw new Error('Cloud embedding requires EMBEDDING_API_KEY.');
+
+    const client = new OpenAI({ apiKey, baseURL: apiBase });
+    const response = await client.embeddings.create({
+      model,
+      input: text.replace(/\n/g, ' '),
+      dimensions: model.includes('text-embedding-3') ? 512 : undefined, // OpenAI 支持指定维度
+    });
+
+    return response.data[0].embedding;
+  }
+}
+
+/**
+ * 批量获取文本向量
+ */
+export async function getEmbeddings(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const strategy = process.env.EMBEDDING_STRATEGY || 'local';
+
+  if (strategy === 'local') {
+    const pipe = await getLocalPipeline();
+    const results: number[][] = [];
+    // 本地批量处理
+    for (const text of texts) {
+      const output = await pipe(text, { pooling: 'mean', normalize: true });
+      results.push(Array.from(output.data));
+    }
+    return results;
+  } else {
+    // 云端批量处理
+    const apiKey = process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY;
+    const apiBase = process.env.EMBEDDING_API_BASE || 'https://api.openai.com/v1';
+    const model = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
+
+    if (!apiKey) throw new Error('Cloud embedding requires EMBEDDING_API_KEY.');
+
+    const client = new OpenAI({ apiKey, baseURL: apiBase });
+    const response = await client.embeddings.create({
+      model,
+      input: texts.map(t => t.replace(/\n/g, ' ')),
+      dimensions: model.includes('text-embedding-3') ? 512 : undefined,
+    });
+
+    return response.data.map(d => d.embedding);
+  }
+}

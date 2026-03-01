@@ -211,6 +211,16 @@ onMounted(() => {
   }
 });
 
+// 监听分析成功，如果是从搜索跳过来的，自动跳转到对应时间
+window.addEventListener('video-analyzed', () => {
+  if (route.query.t && playerRef.value) {
+    const targetTime = parseInt(route.query.t as string);
+    setTimeout(() => {
+      playerRef.value?.seekTo(targetTime);
+    }, 1000); // 稍微延迟确保播放器加载完成
+  }
+});
+
 watch(() => route.query.url, (newUrl) => {
   if (newUrl) {
     videoUrl.value = newUrl as string;

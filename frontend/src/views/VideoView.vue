@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
@@ -289,16 +289,22 @@ const fetchChatHistory = async () => {
     const result = await res.json();
     if (result.success) {
       chatMessages.value = result.data;
-      setTimeout(scrollToBottom, 100);
+      nextTick(scrollToBottom);
     }
   } catch (e) {
     console.error('Failed to fetch chat history:', e);
   }
 };
 
-const scrollToBottom = () => {
+const scrollToBottom = (force = false) => {
   if (chatListRef.value) {
-    chatListRef.value.scrollTop = chatListRef.value.scrollHeight;
+    const { scrollTop, scrollHeight, clientHeight } = chatListRef.value;
+    // 如果用户向上滚动超过 100px，则停止自动滚动，除非 force 为 true
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+    if (force || isAtBottom) {
+      chatListRef.value.scrollTop = scrollHeight;
+    }
   }
 };
 
@@ -310,8 +316,7 @@ const sendChatMessage = async () => {
   chatMessages.value.push({ role: 'user', content: userMsg });
   chatMessages.value.push({ role: 'assistant', content: '' });
   isChatLoading.value = true;
-
-  setTimeout(scrollToBottom, 50);
+  nextTick(() => scrollToBottom(true));
 
   try {
     const response = await fetch(`${API_BASE}/api/chat/stream`, {
@@ -348,7 +353,7 @@ const sendChatMessage = async () => {
             if (data.content) {
               assistantMsg += data.content;
               chatMessages.value[chatMessages.value.length - 1].content = assistantMsg;
-              scrollToBottom();
+              nextTick(scrollToBottom);
             }
           } catch (e) {
             // ignore partial json
@@ -860,208 +865,6 @@ const takeawayMap = computed(() => {
   overflow-y: auto;
   scroll-behavior: smooth;
 }
-
-/* History Drawer & Backdrop */
-.history-backdrop {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(2px);
-  z-index: 199;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-}
-
-.history-backdrop.is-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.history-sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: 60%;
-  background: rgba(15, 15, 18, 0.85); /* fallback */
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  z-index: 200;
-  display: flex;
-  flex-direction: column;
-  padding: 24px;
-  border-right: 1px solid var(--border-color);
-  transform: translateX(-100%);
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 10px 0 30px rgba(0,0,0,0.5);
-}
-
-.history-sidebar.is-open {
-  transform: translateX(0);
-}
-
-.history-list {
-  flex: 1;
-  overflow-y: auto;
-  display: grid;
-  /*
-    calc((100% - 5 * 20px) / 6) defines exactly 6 items max per row.
-    max(200px, ...) enforces that if cards get smaller than 200px, they will wrap.
-  */
-  grid-template-columns: repeat(auto-fill, minmax(max(200px, calc((100% - 100px) / 6)), 1fr));
-  gap: 20px;
-  margin-top: 16px;
-  padding-right: 8px; /* For scrollbar */
-  align-content: start;
-}
-
-.history-item {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  border: 1px solid var(--border-color);
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
-  height: auto;
-}
-
-.history-item:hover {
-  background: var(--bg-hover);
-  border-color: var(--accent-color);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-
-.history-item.active {
-  border-color: var(--accent-light);
-  background: rgba(99, 102, 241, 0.1);
-  box-shadow: 0 0 0 1px var(--accent-light);
-}
-
-.history-thumb-wrapper {
-  position: relative;
-  width: 100%;
-  flex-shrink: 0;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  overflow: hidden;
-}
-
-.history-thumb {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform var(--transition-normal);
-}
-
-.history-item:hover .history-thumb {
-  transform: scale(1.05);
-}
-
-.history-thumb-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, #1f2937, #111827);
-}
-
-.history-thumb-placeholder.youtube {
-  background: linear-gradient(135deg, #451a1a, #111827);
-}
-
-.history-thumb-placeholder.bilibili {
-  background: linear-gradient(135deg, #1a3245, #111827);
-}
-
-.thumb-icon {
-  color: var(--text-secondary);
-  opacity: 0.5;
-}
-
-.absolute-badge {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.5);
-}
-
-.history-item-content {
-  padding: 12px 14px;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-}
-
-.history-title {
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: auto; /* push meta bottom */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.4;
-  min-height: 2.8em;
-}
-
-.history-meta {
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.75rem;
-}
-
-.meta-date {
-  color: var(--text-secondary);
-}
-
-.meta-takeaways {
-  color: var(--text-secondary);
-  background: rgba(255,255,255,0.05);
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.platform-badge {
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: capitalize;
-}
-
-.platform-badge.youtube {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.platform-badge.bilibili {
-  background: rgba(0, 161, 214, 0.15);
-  color: #00a1d6;
-}
-
-.history-empty {
-  color: var(--text-secondary);
-  text-align: center;
-  padding: 40px 0;
-  font-size: 0.9rem;
-}
-
-
 .header-left {
   display: flex;
   align-items: center;
@@ -2074,36 +1877,5 @@ input::placeholder {
   }
 }
 
-@media (max-width: 800px) {
-  .history-sidebar {
-    width: 85%;
-  }
 
-  .history-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .history-item {
-    flex-direction: row;
-    height: 100px;
-    flex: none;
-  }
-
-  .history-thumb-wrapper {
-    width: 160px;
-    height: 100%;
-    aspect-ratio: auto;
-  }
-
-  .history-title {
-    min-height: auto;
-    font-size: 0.85rem;
-  }
-
-  .history-meta {
-    margin-top: 8px;
-  }
-}
 </style>

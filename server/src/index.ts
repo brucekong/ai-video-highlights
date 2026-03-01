@@ -6,6 +6,9 @@ import scalarReference from '@scalar/fastify-api-reference';
 import { analyzeRoutes } from './routes/analyze.js';
 import { authRoutes } from './routes/auth.js';
 import { chatRoutes } from './routes/chat.js';
+import { videoRoutes } from './routes/video.js';
+import { searchRoutes } from './routes/search.js';
+import { transcriptRoutes } from './routes/transcript.js';
 import { swaggerOptions } from './docs/openapi.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -77,6 +80,9 @@ async function main() {
   await fastify.register(analyzeRoutes);
   await fastify.register(authRoutes);
   await fastify.register(chatRoutes);
+  await fastify.register(videoRoutes);
+  await fastify.register(searchRoutes);
+  await fastify.register(transcriptRoutes);
 
   // Health checks
   fastify.get('/api/health', {

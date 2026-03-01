@@ -679,7 +679,7 @@ const takeawayMap = computed(() => {
                       title="语义搜索视频内容"
                     >
                       <Search :size="14" />
-                      <span>搜索</span>
+                      <span>语义搜索</span>
                     </button>
                     <span class="badge">{{ takeaways.length }} 条精选</span>
                   </div>
@@ -869,21 +869,23 @@ const takeawayMap = computed(() => {
         </div>
       </div>
 
-      <!-- Mind Map Modal -->
-      <MindMapModal
-        :show="showMindMap"
-        :markdown="mindmapRaw"
-        :title="videoTitle"
-        @close="showMindMap = false"
-      />
+      <Teleport to="body">
+        <!-- Mind Map Modal -->
+        <MindMapModal
+          :show="showMindMap"
+          :markdown="mindmapRaw"
+          :title="videoTitle"
+          @close="showMindMap = false"
+        />
 
-      <VideoSearchModal
-        :show="showSearchModal"
-        :video-id="videoId"
-        :video-title="videoTitle"
-        @close="showSearchModal = false"
-        @seek="handleSeek"
-      />
+        <VideoSearchModal
+          :show="showSearchModal"
+          :video-id="videoId"
+          :video-title="videoTitle"
+          @close="showSearchModal = false"
+          @seek="handleSeek"
+        />
+      </Teleport>
     </div>
   </div>
 </template>
@@ -1060,7 +1062,7 @@ input::placeholder {
 .btn-mindmap:hover {
   background: var(--accent-color);
   color: white;
-  transform: translateY(-1px);
+  /* transform: translateY(-1px); */
 }
 
 /* User Profile */

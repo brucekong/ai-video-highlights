@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue';
-import { X, Search, Loader2, Play, Clock, SearchSlash } from 'lucide-vue-next';
-import { useAuth } from '../services/auth';
+import { X } from 'lucide-vue-next';
+import SemanticSearchPanel from './SemanticSearchPanel.vue';
 
 const props = defineProps<{
   show: boolean;
@@ -11,60 +11,19 @@ const props = defineProps<{
 
 const emit = defineEmits(['close', 'seek']);
 
-const API_BASE = import.meta.env.VITE_API_URL;
-const { getAuthHeaders } = useAuth();
-
-const searchQuery = ref('');
-const isSearching = ref(false);
-const searchResults = ref<any[]>([]);
-const hasSearched = ref(false);
-
-const handleSearch = async () => {
-  if (!searchQuery.value.trim() || isSearching.value || !props.videoId) return;
-
-  isSearching.value = true;
-  hasSearched.value = true;
-  searchResults.value = [];
-
-  try {
-    const res = await fetch(
-      `${API_BASE}/api/search?q=${encodeURIComponent(searchQuery.value)}&videoId=${props.videoId}&min_score=0.4`,
-      { headers: getAuthHeaders() }
-    );
-    const data = await res.json();
-    if (data.success) {
-      searchResults.value = data.data;
-    }
-  } catch (e) {
-    console.error('Search failed:', e);
-  } finally {
-    isSearching.value = false;
-  }
-};
+const searchPanelRef = ref<any>(null);
 
 const handleResultClick = (res: any) => {
   emit('seek', res.offset);
   emit('close');
 };
 
-const formatTimeFromMs = (ms: number) => {
-  const totalSeconds = Math.floor(ms / 1000);
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
-};
-
 // Auto-focus input when shown
-const searchInput = ref<HTMLInputElement | null>(null);
 watch(() => props.show, (newVal) => {
   if (newVal) {
     nextTick(() => {
-      searchInput.value?.focus();
+      searchPanelRef.value?.focus();
     });
-  } else {
-    searchQuery.value = '';
-    searchResults.value = [];
-    hasSearched.value = false;
   }
 });
 </script>
@@ -76,73 +35,23 @@ watch(() => props.show, (newVal) => {
         <!-- Header -->
         <div class="modal-header">
           <div class="header-info">
-            <div class="search-badge">视频内搜索</div>
-            <h3>{{ videoTitle || '搜索视频内容' }}</h3>
+            <div class="search-badge">视频内检索</div>
+            <h3 :title="videoTitle">{{ videoTitle || '搜索视频内容' }}</h3>
           </div>
           <button class="close-btn" @click="emit('close')">
             <X :size="20" />
           </button>
         </div>
 
-        <!-- Search Input -->
-        <div class="search-input-section">
-          <div class="search-input-wrapper glass-panel">
-            <Search class="search-icon" :size="20" />
-            <input
-              ref="searchInput"
-              v-model="searchQuery"
-              type="text"
-              placeholder="输入关键词，定位视频内容..."
-              @keyup.enter="handleSearch"
-            />
-            <button class="btn-search" @click="handleSearch" :disabled="!searchQuery.trim() || isSearching">
-              <Loader2 v-if="isSearching" :size="20" class="spin" />
-              <span v-else>搜索</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- content -->
-        <div class="results-content custom-scrollbar">
-          <div v-if="isSearching" class="loading-state">
-            <Loader2 :size="32" class="spin" />
-            <p>正在语义匹配中...</p>
-          </div>
-
-          <template v-else-if="searchResults.length > 0">
-            <div
-              v-for="(res, index) in searchResults"
-              :key="index"
-              class="search-result-item glass-panel"
-              @click="handleResultClick(res)"
-            >
-              <div class="result-info">
-                <p class="result-text">{{ res.translatedText || res.text }}</p>
-                <div class="result-meta">
-                  <span class="timestamp">
-                    <Clock :size="12" />
-                    {{ formatTimeFromMs(res.offset) }}
-                  </span>
-                  <div class="similarity-bar-wrap">
-                    <div class="similarity-bar" :style="{ width: (res.similarity * 100) + '%', opacity: res.similarity }"></div>
-                  </div>
-                </div>
-              </div>
-              <div class="play-action">
-                <Play :size="16" fill="currentColor" />
-              </div>
-            </div>
-          </template>
-
-          <div v-else-if="hasSearched" class="empty-state">
-            <SearchSlash :size="48" />
-            <p>视频内未找到匹配内容</p>
-            <span>尝试更换关键词或输入更具体的描述</span>
-          </div>
-
-          <div v-else class="initial-state">
-            <p>输入自然语言描述，为您定位到精准时刻</p>
-          </div>
+        <!-- Search Content -->
+        <div class="modal-content">
+          <SemanticSearchPanel
+            ref="searchPanelRef"
+            :video-id="videoId"
+            placeholder="输入自然语言描述，为您定位到精准时刻..."
+            :min-score="0.4"
+            @result-click="handleResultClick"
+          />
         </div>
       </div>
     </div>
@@ -154,11 +63,11 @@ watch(() => props.show, (newVal) => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px);
   z-index: 2500;
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   padding: 20px;
 }
 
@@ -224,158 +133,10 @@ watch(() => props.show, (newVal) => {
   color: var(--text-primary);
 }
 
-.search-input-section {
+.modal-content {
   padding: 24px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.search-input-wrapper {
-  display: flex;
-  align-items: center;
-  padding: 4px 4px 4px 20px;
-  gap: 12px;
-  border-radius: 100px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  transition: all 0.3s ease;
-}
-
-.search-input-wrapper:focus-within {
-  border-color: var(--accent-color);
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.2);
-}
-
-.search-icon {
-  color: var(--text-secondary);
-}
-
-.search-input-wrapper input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  height: 44px;
-  color: white;
-  outline: none;
-  font-size: 1rem;
-}
-
-.btn-search {
-  background: var(--accent-color);
-  color: white;
-  padding: 0 24px;
-  height: 44px;
-  border-radius: 100px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-}
-
-.btn-search:hover:not(:disabled) {
-  filter: brightness(1.1);
-  transform: scale(1.02);
-}
-
-.results-content {
-  flex: 1;
   overflow-y: auto;
-  padding: 12px 24px 24px;
-  min-height: 200px;
 }
-
-.search-result-item {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
-  margin-bottom: 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.search-result-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--accent-color);
-  transform: translateY(-2px) translateX(4px);
-}
-
-.result-info {
-  flex: 1;
-}
-
-.result-text {
-  font-size: 0.95rem;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-  line-height: 1.5;
-}
-
-.result-meta {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.timestamp {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.8rem;
-  color: var(--accent-color);
-  font-weight: 600;
-}
-
-.similarity-bar-wrap {
-  width: 100px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.similarity-bar {
-  height: 100%;
-  background: var(--accent-color);
-}
-
-.play-action {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transform: scale(0.8);
-  transition: all 0.2s ease;
-}
-
-.search-result-item:hover .play-action {
-  opacity: 1;
-  transform: scale(1);
-  background: var(--accent-color);
-}
-
-.loading-state, .empty-state, .initial-state {
-  text-align: center;
-  padding: 60px 0;
-  color: var(--text-secondary);
-}
-
-.loading-state p { margin-top: 16px; }
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.empty-state p { font-size: 1.1rem; color: #fff; margin: 0; }
 
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

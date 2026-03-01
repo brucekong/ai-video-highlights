@@ -30,10 +30,11 @@
       <!-- Analyze Input Section -->
       <div v-if="activeTab === 'analyze'" class="input-area fade-in">
         <div class="input-group glass-panel">
+          <Sparkles class="icon" :size="18" />
           <input
             v-model="videoUrl"
             type="text"
-            placeholder="在此处粘贴 YouTube 或 Bilibili 链接..."
+            placeholder="输入视频链接，我们将为您提取关键点、脑图及转录文本"
             @keyup.enter="handleAnalyze"
           />
           <button class="btn-primary" @click="handleAnalyze" :disabled="!hasValidUrl">
@@ -41,125 +42,46 @@
             <span>AI 分析</span>
           </button>
         </div>
-        <p class="hint-text">支持输入视频链接，我们将为您提取关键点、脑图及转录文本。</p>
       </div>
 
       <!-- Semantic Search Section -->
       <div v-else class="search-area fade-in">
-        <div class="input-group glass-panel">
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="想搜索什么内容？(如：'视频里关于大模型的配置...')"
-            @keyup.enter="handleSearch"
-          />
-          <button class="btn-primary" @click="handleSearch" :disabled="!searchQuery.trim() || isSearching">
-            <Loader2 v-if="isSearching" :size="18" class="spin" />
-            <Search v-else class="icon" :size="18" />
-            <span>搜索</span>
-          </button>
-        </div>
-
-        <!-- Permanent Search Results Container -->
-        <div class="search-results">
-          <TransitionGroup name="list-premium">
-            <!-- Search Loading Skeleton -->
-            <template v-if="isSearching">
-              <div
-                v-for="i in 3"
-                :key="'skel-' + i"
-                class="skeleton-card glass-panel compact"
-                :style="{ '--index': i - 1 }"
-              >
-                <div class="skeleton-shimmer"></div>
-                <div class="result-main">
-                  <div class="result-content">
-                    <div class="skeleton-line title"></div>
-                    <div class="skeleton-line meta"></div>
-                  </div>
-                  <div class="skeleton-circle"></div>
-                </div>
-              </div>
-            </template>
-
-            <!-- Search Results -->
-            <template v-else-if="searchResults.length > 0">
-              <div
-                v-for="(res, index) in searchResults"
-                :key="'res-' + res.videoId + res.offset"
-                class="search-result-card glass-panel compact"
-                :style="{ '--index': index }"
-                @click="goToResult(res)"
-              >
-                <div class="result-main">
-                  <div class="result-content">
-                    <div class="result-text-summary">
-                      <span class="translated">{{ res.translatedText || res.text }}</span>
-                    </div>
-                    <div class="result-meta">
-                      <span class="video-title">
-                        <FileText :size="12" />
-                        {{ res.videoTitle }}
-                      </span>
-                      <span class="dot">•</span>
-                      <span class="timestamp">
-                        <Clock :size="12" />
-                        {{ formatTimeFromMs(res.offset) }}
-                      </span>
-                    </div>
-                  </div>
-                  <div class="result-score-wrap">
-                     <div class="score-circle" :style="{ '--score-opacity': res.similarity }">
-                        {{ Math.round(res.similarity * 100) }}
-                     </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <!-- No Results -->
-            <div v-else-if="hasSearched" key="empty" class="no-results glass-panel">
-              <p>没有找到相关内容，请尝试换一个描述方式。</p>
-            </div>
-          </TransitionGroup>
-        </div>
+        <SemanticSearchPanel
+          placeholder="输入自然语言描述，为您定位到精准时刻"
+          @result-click="goToResult"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, Search, Loader2, FileText, Clock } from 'lucide-vue-next';
+import { Sparkles, Search } from 'lucide-vue-next';
 import { useAuth } from '../services/auth';
+import SemanticSearchPanel from '../components/SemanticSearchPanel.vue';
 
-const API_BASE = import.meta.env.VITE_API_URL;
 const router = useRouter();
-const { checkLogin, waitForAuth, getAuthHeaders } = useAuth();
+const { checkLogin, waitForAuth } = useAuth();
 
 const activeTab = ref<'analyze' | 'search'>('analyze');
 const videoUrl = ref('');
-const searchQuery = ref('');
-const isSearching = ref(false);
-const hasSearched = ref(false);
-const searchResults = ref<any[]>([]);
 
-let debounceTimeout: any = null;
+const goToResult = (res: any) => {
+  // 构造对应的视频 URL
+  const videoLink = res.videoId.startsWith('BV')
+    ? `https://www.bilibili.com/video/${res.videoId}`
+    : `https://www.youtube.com/watch?v=${res.videoId}`;
 
-// 防抖搜索监听
-watch(searchQuery, (newVal) => {
-  if (debounceTimeout) clearTimeout(debounceTimeout);
-  if (!newVal.trim()) {
-    searchResults.value = [];
-    hasSearched.value = false;
-    return;
-  }
-
-  debounceTimeout = setTimeout(() => {
-    handleSearch();
-  }, 500); // 500ms 防抖
-});
+  router.push({
+    path: '/video',
+    query: {
+      url: videoLink,
+      t: Math.floor(res.offset / 1000).toString()
+    }
+  });
+};
 
 // 检测视频平台
 const platform = computed<'youtube' | 'bilibili' | ''>(() => {
@@ -179,51 +101,6 @@ const handleAnalyze = async () => {
     router.push({ path: '/video', query: { url: videoUrl.value } });
   }
 };
-
-const handleSearch = async () => {
-  if (!searchQuery.value.trim() || isSearching.value) return;
-
-  isSearching.value = true;
-  hasSearched.value = true;
-  searchResults.value = [];
-
-  try {
-    const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(searchQuery.value)}`, {
-      headers: getAuthHeaders()
-    });
-    const data = await res.json();
-    if (data.success) {
-      searchResults.value = data.data;
-    }
-  } catch (e) {
-    console.error('Search failed:', e);
-  } finally {
-    isSearching.value = false;
-  }
-};
-
-
-const goToResult = (res: any) => {
-  // 构造对应的视频 URL (考虑到我们之后需要根据 videoId 重新获取分析结果)
-  const videoLink = res.videoId.startsWith('BV')
-    ? `https://www.bilibili.com/video/${res.videoId}`
-    : `https://www.youtube.com/watch?v=${res.videoId}`;
-
-  router.push({
-    path: '/video',
-    query: {
-      url: videoLink,
-      t: Math.floor(res.offset / 1000).toString()
-    }
-  });
-};
-
-const formatTimeFromMs = (ms: number) => {
-  const totalSeconds = Math.floor(ms / 1000);
-  const m = Math.floor(totalSeconds / 60);
-  const s = totalSeconds % 60;
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
-};
 </script>
 
 <style scoped>
@@ -231,8 +108,9 @@ const formatTimeFromMs = (ms: number) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 20px;
+  padding:20px 0;
   max-width: 1200px;
+  min-width: 600px;
   margin: 0 auto;
 }
 
@@ -309,7 +187,9 @@ const formatTimeFromMs = (ms: number) => {
   background: rgba(255, 255, 255, 0.05);
   color: var(--text-primary);
 }
-
+.icon {
+  color: var(--text-secondary);
+}
 .input-area, .search-area {
   display: flex;
   flex-direction: column;
@@ -320,19 +200,21 @@ const formatTimeFromMs = (ms: number) => {
 
 .input-group {
   display: flex;
-  padding: 6px 6px 6px 24px;
+  padding: 4px 4px 4px 20px;
+  gap: 12px;
   border-radius: 100px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  width: 600px; /* 固宽 600px */
+  width: 600px;
   align-items: center;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .input-group:focus-within {
   border-color: var(--accent-color);
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 30px rgba(99, 102, 241, 0.2);
+  transform: translateY(-1px);
 }
 
 .btn-primary {
@@ -369,7 +251,8 @@ const formatTimeFromMs = (ms: number) => {
   flex: 1;
   background: transparent;
   border: none;
-  font-size: 1.15rem;
+  height: 44px;
+  font-size: 1rem;
   color: #fff;
   outline: none;
 }
@@ -539,102 +422,10 @@ const formatTimeFromMs = (ms: number) => {
   animation: fadeIn 0.4s ease-out;
 }
 
-/* Skeleton Styles */
-.skeleton-card {
-  position: relative;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.skeleton-shimmer {
-  position: absolute;
-  top: 0;
-  left: 0;
+.search-area {
   width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.05),
-    transparent
-  );
-  animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
-
-.skeleton-line {
-  height: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
-}
-
-.skeleton-line.title {
-  width: 60%;
-  height: 16px;
-  margin-bottom: 8px;
-}
-
-.skeleton-line.meta {
-  width: 40%;
-}
-
-.skeleton-circle {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* Permanent Search Container */
-.search-results {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 16px;
-  height: 30vh;
-  overflow-y: auto;
-  padding-right: 8px;
-  position: relative;
-}
-
-/* List Premium - Sequential "Pop Pop Pop" Effect */
-.list-premium-enter-active {
-  /* 使用强力 Overshoot 曲线，产生明显的“蹦出”感 */
-  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1),
-              opacity 0.6s ease,
-              filter 0.6s ease;
-  /* 显著增加步进延迟到 120ms，让“1 2 3”依次蹦出的节奏非常清晰 */
-  transition-delay: calc(var(--index) * 70ms) !important;
-}
-
-.list-premium-leave-active {
-  transition: all 0.2s ease;
-  position: absolute;
-  width: calc(100% - 8px);
-  z-index: 0;
-}
-
-.list-premium-enter-from {
-  opacity: 0;
-  /* 从下方较远处弹起，并配合较小的缩放，强化“蹦”出来的爆发感 */
-  transform: translateY(30px) scale(0.8);
-  filter: blur(10px);
-}
-
-.list-premium-leave-to {
-  opacity: 0;
-  transform: scale(0.95);
-  filter: blur(5px);
-}
-
-.list-premium-move {
-  transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 .spin {

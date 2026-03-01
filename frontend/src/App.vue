@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, User, Menu } from 'lucide-vue-next';
+import { Sparkles, User, Menu, Search, Globe } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
+import GlobalSearchModal from './components/GlobalSearchModal.vue';
 import { useAuth } from './services/auth';
 
 const { authState, getAuthHeaders } = useAuth();
@@ -15,6 +16,21 @@ const API_BASE = import.meta.env.VITE_API_URL;
 
 const router = useRouter();
 const showHistory = ref(false);
+const showGlobalSearch = ref(false);
+
+const goToResult = (res: any) => {
+  const videoLink = res.videoId.startsWith('BV')
+    ? `https://www.bilibili.com/video/${res.videoId}`
+    : `https://www.youtube.com/watch?v=${res.videoId}`;
+
+  router.push({
+    path: '/video',
+    query: {
+      url: videoLink,
+      t: Math.floor(res.offset / 1000).toString()
+    }
+  });
+};
 
 
 
@@ -106,17 +122,31 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="user-action">
-          <div v-if="authState.currentUser" class="user-profile">
-            <img v-if="authState.currentUser.avatar" :src="authState.currentUser.avatar" class="avatar" />
-            <User v-else class="icon avatar-fallback" :size="20" />
-            <span class="user-name">{{ authState.currentUser.name || authState.currentUser.email || '用户' }}</span>
-            <button class="btn-text" @click="logout">退出登录</button>
-          </div>
-          <button v-else class="btn-secondary" @click="authState.showLoginModal = true">
-            <User class="icon" :size="18" />
-            登录
+        <div class="header-right">
+          <button
+            class="global-search-entry"
+            @click="showGlobalSearch = true"
+            title="全局搜索"
+          >
+            <div class="search-box-mock glass-panel">
+              <Search :size="16" />
+              <span>全库检索视频内容...</span>
+              <kbd class="search-kbd">/</kbd>
+            </div>
           </button>
+
+          <div class="user-action">
+            <div v-if="authState.currentUser" class="user-profile">
+              <img v-if="authState.currentUser.avatar" :src="authState.currentUser.avatar" class="avatar" />
+              <User v-else class="icon avatar-fallback" :size="20" />
+              <span class="user-name">{{ authState.currentUser.name || authState.currentUser.email || '用户' }}</span>
+              <button class="btn-text" @click="logout">退出登录</button>
+            </div>
+            <button v-else class="btn-secondary" @click="authState.showLoginModal = true">
+              <User class="icon" :size="18" />
+              登录
+            </button>
+          </div>
         </div>
       </header>
 
@@ -126,8 +156,12 @@ onMounted(() => {
       </div>
     </div> <!-- End Main Wrapper -->
 
-    <LoginModal v-if="authState.showLoginModal" @close="authState.showLoginModal = false" />˝
-
+    <LoginModal v-if="authState.showLoginModal" @close="authState.showLoginModal = false" />
+    <GlobalSearchModal
+      :show="showGlobalSearch"
+      @close="showGlobalSearch = false"
+      @result-click="goToResult"
+    />
   </div>
 </template>
 
@@ -172,6 +206,53 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.global-search-entry {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+.search-box-mock {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  transition: all 0.3s ease;
+  width: 240px;
+}
+
+.global-search-entry:hover .search-box-mock {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  width: 260px;
+}
+
+.search-kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.75rem;
+  font-family: inherit;
+  margin-left: auto;
+  color: var(--text-muted);
 }
 
 .header-menu-btn {

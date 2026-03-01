@@ -1,5 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
-import prisma from '../lib/prisma.js';
+import prisma, { Prisma } from '../lib/prisma.js';
 import { Schemas } from '../docs/openapi.js';
 import { getUserId } from '../utils/auth.js';
 
@@ -41,6 +41,14 @@ export async function videoRoutes(fastify: FastifyInstance) {
           }
         }
       });
+
+      // 提取本页所有的 videoId 用于查向量状态
+      const videoIds = history.map(h => h.video.videoId);
+      const indexedResult: { video_id: string }[] = videoIds.length > 0
+        ? await prisma.$queryRaw`SELECT video_id FROM videos WHERE video_id IN (${Prisma.join(videoIds)}) AND embedding IS NOT NULL`
+        : [];
+      const indexedIds = new Set(indexedResult.map(r => r.video_id));
+
       return reply.send({
         success: true,
         data: history.map(h => ({
@@ -50,6 +58,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           platform: h.video.platform,
           takeawayCount: h.video._count.takeaways,
           analyzedAt: h.createdAt,
+          isIndexed: indexedIds.has(h.video.videoId),
         }))
       });
     }
@@ -143,6 +152,71 @@ export async function videoRoutes(fastify: FastifyInstance) {
         })),
       },
     });
+  });
+
+  /**
+   * POST /api/videos/:videoId/re-embed
+   * 重新生成视频及字幕的向量索引
+   */
+  fastify.post('/api/videos/:videoId/re-embed', {
+    schema: {
+      tags: ['Videos'],
+      summary: '重新生成向量索引',
+      description: '当视频分析成功但向量生成失败时，调用此接口重新根据当前配置生成索引，无需重新分析视频。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      response: {
+        200: Schemas.SuccessMessage,
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+    const { getEmbedding, getEmbeddings } = await import('../services/ai.js');
+
+    try {
+      // 1. 获取现有视频和字幕
+      const video = await prisma.video.findUnique({
+        where: { videoId },
+        include: { subtitles: { orderBy: { sortOrder: 'asc' } } }
+      });
+
+      if (!video) return reply.status(404).send({ error: '视频不存在' });
+
+      // 2. 生成标题向量
+      const titleEmbedding = await getEmbedding(video.title || '');
+      await prisma.$executeRaw`UPDATE videos SET embedding = ${`[${titleEmbedding.join(',')}]`}::vector WHERE video_id = ${videoId}`;
+
+      // 3. 批量生成字幕向量
+      const subtitleTexts = video.subtitles.map(s => s.translatedText || s.text);
+      if (subtitleTexts.length > 0) {
+        const embeddings = await getEmbeddings(subtitleTexts);
+
+        // 逐个更新（由于 $executeRaw 的限制，批量更新较为复杂）
+        await Promise.all(embeddings.map((vec, idx) => {
+          const vectorStr = `[${vec.join(',')}]`;
+          const offset = video.subtitles[idx].offset;
+          return prisma.$executeRaw`UPDATE subtitles SET embedding = ${vectorStr}::vector WHERE video_id = ${videoId} AND "offset" = ${offset}`;
+        }));
+      }
+
+      return reply.send({ success: true, message: '语义索引重构完成' });
+    } catch (error: any) {
+      fastify.log.error(`Re-embed failed: ${error.message}`);
+      return reply.status(500).send({
+        error: '重构索引失败',
+        message: error.message,
+      });
+    }
   });
 
   /**

@@ -288,7 +288,8 @@ async function getLocalPipeline() {
  * 支持本地 (transformers.js) 和 云端 (OpenAI 兼容接口)
  */
 export async function getEmbedding(text: string): Promise<number[]> {
-  const strategy = process.env.EMBEDDING_STRATEGY || 'local';
+  const strategyEnv = (process.env.EMBEDDING_STRATEGY || 'local').toLowerCase();
+  const strategy = (strategyEnv === 'false' || strategyEnv === '0' || strategyEnv === 'null') ? 'local' : strategyEnv;
 
   if (strategy === 'local') {
     const pipe = await getLocalPipeline();
@@ -318,7 +319,8 @@ export async function getEmbedding(text: string): Promise<number[]> {
  */
 export async function getEmbeddings(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
-  const strategy = process.env.EMBEDDING_STRATEGY || 'local';
+  const strategyEnv = (process.env.EMBEDDING_STRATEGY || 'local').toLowerCase();
+  const strategy = (strategyEnv === 'false' || strategyEnv === '0' || strategyEnv === 'null') ? 'local' : strategyEnv;
 
   if (strategy === 'local') {
     const pipe = await getLocalPipeline();

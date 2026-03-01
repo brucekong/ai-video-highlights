@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Clock, FileText, Image as ImageIcon, Trash2, AlertTriangle, Loader2, X } from 'lucide-vue-next';
+import { Clock, FileText, Image as ImageIcon, Trash2, AlertTriangle, Loader2, X, RefreshCw, SearchSlash } from 'lucide-vue-next';
 import { useAuth } from '../services/auth';
 
 interface HistoryItem {
@@ -11,6 +11,7 @@ interface HistoryItem {
   platform: string;
   takeawayCount: number;
   analyzedAt: string;
+  isIndexed: boolean;
 }
 
 const props = defineProps<{
@@ -27,6 +28,7 @@ const historyList = ref<HistoryItem[]>([]);
 const showDeleteConfirm = ref(false);
 const deleteTargetItem = ref<HistoryItem | null>(null);
 const isDeleting = ref(false);
+const reindexingVideoId = ref<string | null>(null);
 
 const closeHistory = () => {
   emit('update:modelValue', false);
@@ -97,6 +99,31 @@ const confirmDelete = async () => {
   }
 };
 
+const handleReindex = async (event: Event, item: HistoryItem) => {
+  event.stopPropagation();
+  if (reindexingVideoId.value) return;
+
+  reindexingVideoId.value = item.videoId;
+  try {
+    const res = await fetch(`${API_BASE}/api/videos/${item.videoId}/re-embed`, {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    if (res.ok) {
+      await loadHistory(); // 刷新列表以更新 isIndexed 状态
+      alert('语义搜索索引已成功修复！');
+    } else {
+      const data = await res.json();
+      alert(`修复失败: ${data.error || '未知错误'}`);
+    }
+  } catch (err) {
+    console.error('Re-index failed:', err);
+    alert('重构索引失败，请稍后重试');
+  } finally {
+    reindexingVideoId.value = null;
+  }
+};
+
 // Initial load and listen for events
 onMounted(() => {
   loadHistory();
@@ -162,12 +189,23 @@ watch(() => authState.currentUser, (newUser) => {
                 <Trash2 :size="16" />
               </button>
             </div>
+            <div v-if="!item.isIndexed" class="history-status-row">
+              <button
+                class="btn-repair-inline"
+                :class="{ 'is-loading': reindexingVideoId === item.videoId }"
+                @click="handleReindex($event, item)"
+              >
+                <RefreshCw :size="12" :class="{ spin: reindexingVideoId === item.videoId }" />
+                <span>修复索引</span>
+              </button>
+            </div>
+
             <div class="history-meta">
               <span class="platform-badge" :class="item.platform">{{ item.platform }}</span>
               <span class="meta-date">{{ new Date(item.analyzedAt).toLocaleDateString() }}</span>
-              <span class="meta-takeaways">
+              <span class="meta-takeaways" :title="item.takeawayCount + '个片段'">
                 <FileText :size="12" style="display:inline;vertical-align:-2px;margin-right:2px;"/>
-                {{ item.takeawayCount }}个片段
+                {{ item.takeawayCount }}
               </span>
             </div>
           </div>
@@ -273,7 +311,7 @@ watch(() => authState.currentUser, (newUser) => {
   border: 1px solid var(--border-color);
   overflow: hidden;
   background: rgba(255, 255, 255, 0.02);
-  height: 110px; /* 固定高度确保整齐 */
+  min-height: 110px; /* 移除固定高度，改为最小高度 */
 }
 
 .history-item:hover {
@@ -420,6 +458,60 @@ watch(() => authState.currentUser, (newUser) => {
 .platform-badge.bilibili {
   background: rgba(0, 161, 214, 0.15);
   color: #00a1d6;
+}
+
+
+.history-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-repair-inline {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-repair-inline:hover:not(.is-loading) {
+  background: #f59e0b;
+  color: white;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+.history-meta {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.meta-date {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.meta-takeaways {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .history-empty {

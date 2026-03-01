@@ -29,6 +29,7 @@ export const Schemas = {
       platform: { type: 'string', enum: ['youtube', 'bilibili'], description: '视频平台' },
       takeawayCount: { type: 'integer', description: '要点数量' },
       analyzedAt: { type: 'string', format: 'date-time', description: '分析时间' },
+      isIndexed: { type: 'boolean', description: '是否已生成语义索引' },
     },
   },
   UserProfile: {

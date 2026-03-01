@@ -105,10 +105,22 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       }
 
       // 3. 获取字幕并进行安全检查
-      let transcript: TranscriptSegment[] = platform === 'bilibili' ? await fetchBilibiliTranscript(videoId) : await fetchTranscript(videoId);
+      let transcript: TranscriptSegment[] = [];
+      try {
+        transcript = platform === 'bilibili'
+          ? await fetchBilibiliTranscript(videoId)
+          : await fetchTranscript(videoId);
+      } catch (e: any) {
+        fastify.log.warn(`[Transcript] Primary fetch failed: ${e.message}. Attempting Whisper fallback...`);
+      }
 
       if (!transcript || transcript.length === 0) {
-        transcript = await fallbackToWhisper(videoId, platform);
+        try {
+          fastify.log.info(`[Transcript] Triggering Whisper fallback for ${videoId}...`);
+          transcript = await fallbackToWhisper(videoId, platform);
+        } catch (fbError: any) {
+          fastify.log.error(`[Whisper Fallback Failed] ${fbError.message}`);
+        }
       }
 
       if (!transcript || transcript.length === 0) {

@@ -22,10 +22,10 @@ export async function searchRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (
-    request: FastifyRequest<{ Querystring: { q: string; limit?: number } }>,
+    request: FastifyRequest<{ Querystring: { q: string; limit?: number; min_score?: number } }>,
     reply: FastifyReply,
   ) => {
-    const { q, limit = 10 } = request.query;
+    const { q, limit = 10, min_score = 0.5 } = request.query;
 
     try {
       // 1. 生成查询语义向量
@@ -34,6 +34,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
 
       // 2. 向量检索：使用余弦相似度的距离运算符 <=>
       // 相似度得分 = 1 - 距离
+      // 增加 min_score 过滤，剔除相关性极低的结果
       const results: any[] = await prisma.$queryRaw`
         SELECT
            s.video_id AS "videoId",
@@ -45,6 +46,7 @@ export async function searchRoutes(fastify: FastifyInstance) {
         FROM subtitles s
         JOIN videos v ON s.video_id = v.video_id
         WHERE s.embedding IS NOT NULL
+          AND (1 - (s.embedding <=> ${vectorStr}::vector)) > ${Number(min_score)}
         ORDER BY similarity DESC
         LIMIT ${limit}
       `;

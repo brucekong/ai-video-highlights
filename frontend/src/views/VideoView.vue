@@ -432,13 +432,14 @@ const jumpToTakeaway = (item: Takeaway, index: number) => {
   }
 };
 
-// 点击字幕条目跳转到对应时间（offset 是毫秒）
+// 字幕跳转
 const jumpToTranscript = (seg: TranscriptSegment, index: number) => {
   activeTranscriptIndex.value = index;
   if (playerRef.value) {
     playerRef.value.seekTo(seg.offset / 1000);
   }
 };
+
 
 // 视频时间更新时，自动高亮当前要点和字幕
 const handleDuration = (duration: number) => {
@@ -1502,6 +1503,7 @@ input::placeholder {
   gap: 8px;
   margin: 0;
 }
+
 
 .sidebar-actions {
   display: flex;

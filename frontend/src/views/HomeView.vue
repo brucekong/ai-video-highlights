@@ -202,6 +202,7 @@ const handleSearch = async () => {
   }
 };
 
+
 const goToResult = (res: any) => {
   // 构造对应的视频 URL (考虑到我们之后需要根据 videoId 重新获取分析结果)
   const videoLink = res.videoId.startsWith('BV')
@@ -489,6 +490,44 @@ const formatTimeFromMs = (ms: number) => {
   padding: 40px;
   border-radius: 20px;
   color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.repair-hint {
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.btn-outline-small {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px auto 0;
+  transition: all 0.2s ease;
+}
+
+.btn-outline-small:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-color);
+  color: #fff;
+}
+
+.btn-outline-small:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @keyframes fadeIn {

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
+import VideoSearchModal from '../components/VideoSearchModal.vue';
 import { useAuth } from '../services/auth';
 
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -43,6 +44,7 @@ const videoDuration = ref(0); // 从播放器获取的真实时长
 const isBilingual = ref(true); // 是否开启双语模式
 const mindmapRaw = ref(''); // 脑图 Markdown
 const showMindMap = ref(false); // 是否显示脑图
+const showSearchModal = ref(false); // 是否显示搜索弹窗
 
 // AI 助手相关状态
 const activeSidebarTab = ref<'transcript' | 'chat'>('transcript');
@@ -435,8 +437,13 @@ const jumpToTakeaway = (item: Takeaway, index: number) => {
 // 字幕跳转
 const jumpToTranscript = (seg: TranscriptSegment, index: number) => {
   activeTranscriptIndex.value = index;
+  handleSeek(seg.offset);
+};
+
+// 通用跳转逻辑
+const handleSeek = (offsetMs: number) => {
   if (playerRef.value) {
-    playerRef.value.seekTo(seg.offset / 1000);
+    playerRef.value.seekTo(offsetMs / 1000);
   }
 };
 
@@ -665,6 +672,15 @@ const takeawayMap = computed(() => {
                       <Map :size="14" />
                       <span>查看脑图</span>
                     </button>
+                    <button
+                      v-if="showResult"
+                      class="btn-search-in-video"
+                      @click="showSearchModal = true"
+                      title="语义搜索视频内容"
+                    >
+                      <Search :size="14" />
+                      <span>搜索</span>
+                    </button>
                     <span class="badge">{{ takeaways.length }} 条精选</span>
                   </div>
                </div>
@@ -755,12 +771,13 @@ const takeawayMap = computed(() => {
                   </div>
                </div>
 
-              <div
-                class="transcript-list"
-                @scroll="handleTranscriptScroll"
-                @mouseenter="handleTranscriptMouseEnter"
-                @mouseleave="handleTranscriptMouseLeave"
-              >
+            <div
+              class="transcript-list"
+              @scroll="handleTranscriptScroll"
+              @mouseenter="handleTranscriptMouseEnter"
+              @mouseleave="handleTranscriptMouseLeave"
+              ref="transcriptListRef"
+            >
                 <div
                   v-for="(seg, index) in mergedTranscript"
                   :key="index"
@@ -847,21 +864,29 @@ const takeawayMap = computed(() => {
                   >
                     <Send :size="18" />
                   </button>
-                </div>
-              </div>
             </div>
           </div>
         </div>
-
-        <!-- Mind Map Modal -->
-        <MindMapModal
-          :show="showMindMap"
-          :markdown="mindmapRaw"
-          :title="videoTitle"
-          @close="showMindMap = false"
-        />
       </div>
-    </template>
+
+      <!-- Mind Map Modal -->
+      <MindMapModal
+        :show="showMindMap"
+        :markdown="mindmapRaw"
+        :title="videoTitle"
+        @close="showMindMap = false"
+      />
+
+      <VideoSearchModal
+        :show="showSearchModal"
+        :video-id="videoId"
+        :video-title="videoTitle"
+        @close="showSearchModal = false"
+        @seek="handleSeek"
+      />
+    </div>
+  </div>
+</template>
 
 <style scoped>
 /* App Layout */
@@ -1529,6 +1554,27 @@ input::placeholder {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
   color: var(--text-primary);
+}
+
+.btn-search-in-video {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: var(--accent-color);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-search-in-video:hover {
+  background: var(--accent-color);
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
 }
 
 /* Bilingual Toggle Button */

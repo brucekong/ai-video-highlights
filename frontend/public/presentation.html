@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <title>AI Video Highlights - Premium Presentation</title>
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reset.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/theme/black.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/monokai.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+      :root {
+        --accent: #6366f1;
+        --accent-glow: rgba(99, 102, 241, 0.4);
+        --glass: rgba(255, 255, 255, 0.03);
+        --glass-border: rgba(255, 255, 255, 0.08);
+        --sidebar-w: 240px;
+      }
+
+      body {
+        font-family: 'Outfit', sans-serif !important;
+        background: #020617;
+      }
+
+      .reveal {
+        background: radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+                    radial-gradient(circle at 20% 80%, rgba(192, 132, 252, 0.15) 0%, transparent 40%),
+                    #020617;
+      }
+
+      /* Sidebar Index */
+      #slide-index {
+        position: fixed;
+        left: 20px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: var(--sidebar-w);
+        z-index: 1000;
+        background: rgba(255, 255, 255, 0.02);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 24px 0;
+        pointer-events: auto;
+        opacity: 0.8;
+        transition: opacity 0.3s;
+      }
+      #slide-index:hover { opacity: 1; }
+
+      .index-item {
+        padding: 10px 24px;
+        font-size: 0.8rem;
+        color: rgba(255,255,255,0.4);
+        cursor: pointer;
+        transition: all 0.3s;
+        border-left: 3px solid transparent;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .index-item:hover { color: white; background: rgba(255,255,255,0.05); }
+      .index-item.active {
+        color: white;
+        border-left-color: var(--accent);
+        background: linear-gradient(to right, rgba(99, 102, 241, 0.1), transparent);
+      }
+      .index-num { font-size: 0.7rem; font-weight: 700; opacity: 0.5; font-family: monospace; }
+
+      /* Slide Content Adjustments */
+      .slide-image {
+        width: 100%;
+        max-height: 350px;
+        object-fit: cover;
+        border-radius: 20px;
+        border: 1px solid var(--glass-border);
+        margin-bottom: 24px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      }
+
+      .reveal section {
+        font-size: 0.85em; /* Smaller font as requested */
+      }
+
+      .slide-container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 40px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--glass-border);
+        border-radius: 32px;
+        backdrop-filter: blur(20px);
+        box-shadow: 0 30px 60px rgba(0,0,0,0.4);
+        text-align: left;
+      }
+
+      h1, h2, h3 {
+        text-transform: none !important;
+        letter-spacing: -1px !important;
+      }
+
+      .text-gradient {
+        background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-top: 20px;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--glass-border);
+        border-radius: 16px;
+        padding: 24px;
+        transition: transform 0.3s, border-color 0.3s;
+      }
+      .card:hover {
+        transform: translateY(-5px);
+        border-color: var(--accent);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      }
+      .card h4 { color: var(--accent) !important; margin: 0 0 12px 0 !important; font-size: 1.1em !important; }
+      .card p { font-size: 0.85em; opacity: 0.7; margin: 0; line-height: 1.6; }
+
+      ul { font-size: 0.9em; opacity: 0.8; line-height: 1.8; }
+      li::marker { color: var(--accent); }
+
+      /* Visual Eye Candy */
+      .accent-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        border-radius: 50%;
+        margin-right: 12px;
+        box-shadow: 0 0 10px var(--accent);
+      }
+
+      /* Transitions override */
+      .reveal .slides section { transition: all 0.5s ease-in-out; }
+    </style>
+  </head>
+  <body>
+
+    <!-- Navigation Sidebar -->
+    <div id="slide-index">
+      <div class="index-item" onclick="Reveal.slide(0)"><span class="index-num">01</span> 项目概览</div>
+      <div class="index-item" onclick="Reveal.slide(1)"><span class="index-num">02</span> 行业痛点</div>
+      <div class="index-item" onclick="Reveal.slide(2)"><span class="index-num">03</span> 核心功能</div>
+      <div class="index-item" onclick="Reveal.slide(3)"><span class="index-num">04</span> 工程架构</div>
+      <div class="index-item" onclick="Reveal.slide(4)"><span class="index-num">05</span> 业务逻辑</div>
+      <div class="index-item" onclick="Reveal.slide(5)"><span class="index-num">06</span> 时代结语</div>
+    </div>
+
+    <div class="reveal">
+      <div class="slides">
+
+        <!-- Slide 1: Welcome -->
+        <section>
+          <div class="slide-container" style="text-align: center;">
+            <img src="/images/ppt_hero.png" class="slide-image" alt="AI Video Hero">
+            <p style="text-transform: uppercase; letter-spacing: 4px; font-size: 0.7rem; color: var(--accent); font-weight: 700;">Development Sharing</p>
+            <h1 class="text-gradient" style="font-size: 3.5rem; margin: 20px 0;">AI Video Highlights</h1>
+            <p style="font-size: 1.1rem; opacity: 0.6; font-weight: 300;">基于深度协作的智能视频分析与交互平台</p>
+            <div style="margin-top: 60px; height: 1px; background: var(--glass-border);"></div>
+            <div style="display: flex; justify-content: space-around; margin-top: 30px; font-size: 0.8rem; opacity: 0.5;">
+              <span>PRESENTED BY <strong>XUELEI KONG</strong></span>
+              <span>MARCH 2026</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 2: The Problem -->
+        <section>
+          <div class="slide-container">
+            <h2 class="text-gradient">WHY WE BUILD THIS?</h2>
+            <div class="grid-2">
+              <div class="card">
+                <h4>效率鸿沟</h4>
+                <p>面对动辄 1 小时的长视频，用户难以在数分钟内提取核心干货。</p>
+              </div>
+              <div class="card">
+                <h4>认知壁垒</h4>
+                <p>外语教育及技术类视频在 YouTube/Bilibili 间存在严重的转录翻译断层。</p>
+              </div>
+            </div>
+            <div class="highlight-box fragment" style="margin-top: 40px;">
+              <p style="font-size: 1.2rem; font-weight: 300;">我们通过 <span style="color:var(--accent)">Whisper + DeepSeek</span> 打造全自动的“认知放大镜”。</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 3: Combined Core Features -->
+        <section>
+          <div class="slide-container">
+            <h2 class="text-gradient">全方位智能交互功能</h2>
+            <div class="grid-2">
+              <div class="card">
+                <h4>智能摘要与定位</h4>
+                <p>实时分析视频转录，提取核心要点。支持点击瞬间跳转与页面智能归位。</p>
+              </div>
+              <div class="card">
+                <h4>SVG 动态脑图</h4>
+                <p>将视频结构可视化，支持 Markmap 交互，实现知识点的骨骼化呈现。</p>
+              </div>
+              <div class="card">
+                <h4>流式 AI 对话</h4>
+                <p>基于视频上下文的精准问答，支持时间戳锚点定位。</p>
+              </div>
+            </div>
+            <img src="/images/ppt_summary.png" class="slide-image" style="max-height: 200px; margin-top: 24px; margin-bottom: 0;" alt="Features Visualization">
+          </div>
+        </section>
+
+        <!-- Slide 5: Tech Stack -->
+        <section>
+          <div class="slide-container">
+            <h2 class="text-gradient">工程架构与部署方案</h2>
+            <div class="grid-2" style="grid-template-columns: repeat(3, 1fr);">
+              <div>
+                <h4 style="color: var(--accent); font-size: 0.9em; margin-bottom: 20px;">前端交互</h4>
+                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot"></span> Vue 3 + TS + Vite</p>
+                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot"></span> 玻璃拟态 UI 系统</p>
+                <p style="font-size: 0.8rem;"><span class="accent-dot"></span> Lucide 图标库</p>
+              </div>
+              <div>
+                <h4 style="color: #c084fc; font-size: 0.9em; margin-bottom: 20px;">后端服务</h4>
+                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot" style="background:#c084fc; box-shadow: 0 0 10px #c084fc;"></span> Fastify + Prisma</p>
+                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot" style="background:#c084fc; box-shadow: 0 0 10px #c084fc;"></span> DeepSeek R1 AI</p>
+                <p style="font-size: 0.8rem;"><span class="accent-dot" style="background:#c084fc; box-shadow: 0 0 10px #c084fc;"></span> PostgreSQL 存储</p>
+              </div>
+              <div>
+                <h4 style="color: #10b981; font-size: 0.9em; margin-bottom: 20px;">云端部署</h4>
+                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot" style="background:#10b981; box-shadow: 0 0 10px #10b981;"></span> Vercel (前端)</p>
+                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot" style="background:#10b981; box-shadow: 0 0 10px #10b981;"></span> Railway (后端)</p>
+                <p style="font-size: 0.8rem;"><span class="accent-dot" style="background:#10b981; box-shadow: 0 0 10px #10b981;"></span> GitHub CI/CD</p>
+              </div>
+            </div>
+            <div class="card fragment" style="margin-top: 30px; border-left: 4px solid #10b981;">
+              <h4 style="color: #10b981 !important; font-size: 0.9em !important;">部署方案优势</h4>
+              <p>全自动化 CI/CD 流，支持环境变量动态注入与前后端自动联动，确保系统的高可用性与快速迭代。</p>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- Slide 6: Business Logic -->
+        <section>
+          <div class="slide-container">
+            <h2 class="text-gradient" style="margin-bottom: 20px;">核心业务逻辑与稳定性兜底</h2>
+            <div class="card" style="margin-bottom: 12px; background: rgba(0,0,0,0.2); overflow: hidden; padding: 12px 24px;">
+              <h4 style="font-size: 0.9em !important; margin-bottom: 10px !important;">解析处理流水线 (Pipeline)</h4>
+
+              <svg viewBox="0 0 800 130" style="width: 100%; height: auto;">
+                <defs>
+                  <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+                    <polygon points="0 0, 10 3.5, 0 7" fill="rgba(255,255,255,0.3)" />
+                  </marker>
+                </defs>
+
+                <!-- Nodes -->
+                <rect x="10" y="40" width="90" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
+                <text x="55" y="70" fill="white" font-size="12" text-anchor="middle">URL 输入</text>
+
+                <rect x="150" y="40" width="90" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
+                <text x="195" y="70" fill="white" font-size="12" text-anchor="middle">平台&ID识别</text>
+
+                <path d="M290 65 L330 30 L370 65 L330 100 Z" fill="rgba(99, 102, 241, 0.1)" stroke="var(--accent)" />
+                <text x="330" y="69" fill="white" font-size="10" text-anchor="middle">官方字幕?</text>
+
+                <rect x="420" y="5" width="100" height="40" rx="8" fill="rgba(16, 185, 129, 0.1)" stroke="rgba(16, 185, 129, 0.3)" />
+                <text x="470" y="30" fill="#10b981" font-size="11" text-anchor="middle">API 直接提取</text>
+
+                <rect x="420" y="85" width="100" height="40" rx="8" fill="rgba(239, 68, 68, 0.1)" stroke="rgba(239, 68, 68, 0.3)" />
+                <text x="470" y="110" fill="#ef4444" font-size="11" text-anchor="middle">Whisper 转录</text>
+
+                <rect x="580" y="40" width="90" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
+                <text x="625" y="70" fill="white" font-size="11" text-anchor="middle">AI 内容聚类</text>
+
+                <rect x="710" y="30" width="80" height="70" rx="8" fill="rgba(99, 102, 241, 0.2)" stroke="var(--accent)" />
+                <text x="750" y="60" fill="white" font-size="11" text-anchor="middle" font-weight="bold">多维输出</text>
+                <text x="750" y="80" fill="white" font-size="9" text-anchor="middle" opacity="0.6">摘要/脑图/对话</text>
+
+                <line x1="100" y1="65" x2="150" y2="65" stroke="rgba(255,255,255,0.2)" marker-end="url(#arrowhead)" />
+                <line x1="240" y1="65" x2="290" y2="65" stroke="rgba(255,255,255,0.2)" marker-end="url(#arrowhead)" />
+                <path d="M370 65 C 390 65, 400 25, 420 25" fill="none" stroke="rgba(16, 185, 129, 0.4)" stroke-width="2" />
+                <text x="395" y="40" fill="#10b981" font-size="9" text-anchor="middle">YES</text>
+                <path d="M370 65 C 390 65, 400 105, 420 105" fill="none" stroke="rgba(239, 68, 68, 0.4)" stroke-width="2" />
+                <text x="395" y="100" fill="#ef4444" font-size="9" text-anchor="middle">NO</text>
+                <path d="M520 25 C 540 25, 560 65, 580 65" fill="none" stroke="rgba(255,255,255,0.2)" />
+                <path d="M520 105 C 540 105, 560 65, 580 65" fill="none" stroke="rgba(255,255,255,0.2)" />
+                <line x1="670" y1="65" x2="710" y2="65" stroke="var(--accent)" stroke-width="2" />
+              </svg>
+            </div>
+            <div class="grid-2" style="gap: 16px;">
+              <div class="card" style="padding: 12px 20px;">
+                <h4 style="font-size: 0.9em !important; margin-bottom: 6px !important;">多级字幕兜底</h4>
+                <p style="font-size: 0.75rem;">优先官方字幕；受限时转由 <strong>Whisper</strong> 本地化提取，确保 100% 可解析性。</p>
+              </div>
+              <div class="card" style="padding: 12px 20px;">
+                <h4 style="font-size: 0.9em !important; margin-bottom: 6px !important;">高可用 AI 策略</h4>
+                <p style="font-size: 0.75rem;">内置 <strong>指数退避重试</strong> 机制；利用缓存层实现“一次分析，秒级开”。</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Slide 7: Closing Thought -->
+        <section data-background-gradient="linear-gradient(135deg, #1e1b4b 0%, #4338ca 50%, #7e22ce 100%)">
+          <div class="slide-container" style="border: none; background: rgba(0,0,0,0.2); text-align: center;">
+            <p style="text-transform: uppercase; letter-spacing: 6px; font-size: 0.8rem; color: #a5b4fc; font-weight: 700; margin-bottom: 40px;">Final Thought</p>
+            <h2 style="font-size: 2.2rem; line-height: 1.6; color: white;">
+              在 AI 浪潮中，<br>
+              <span class="text-gradient" style="background: linear-gradient(to right, #fff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">代码已不再是创新的瓶颈</span><br>
+              唯有跨越边界的创意，<br>
+              才是定义未来的唯一标准。
+            </h2>
+            <div style="margin: 40px auto; width: 60px; height: 2px; background: white; opacity: 0.3;"></div>
+            <p style="font-style: italic; opacity: 0.8; font-size: 1.1rem; font-weight: 300;">“ 技术正归于平凡，而灵魂终将闪耀 ”</p>
+            <div style="margin-top: 50px; color: var(--accent); font-weight: 600; font-size: 1.2rem;">THANKS & Q/A</div>
+          </div>
+        </section>
+
+
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/notes/notes.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/markdown/markdown.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/highlight.js"></script>
+    <script>
+      Reveal.initialize({
+        hash: true,
+        plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ],
+        controls: false, // 隐藏默认控件，使用我们自定义的索引
+        progress: true,
+        center: true,
+        transition: 'slide',
+        backgroundTransition: 'fade',
+        mouseWheel: true, // 开启鼠标滑轮支持
+        viewDistance: 3,
+        mobileViewDistance: 2,
+        // 自定义字体大小
+        width: 1200,
+        height: 700,
+        margin: 0.1,
+        minScale: 0.2,
+        maxScale: 2.0
+      });
+
+      // 同步侧边栏索引状态
+      Reveal.on('slidechanged', event => {
+        const indexItems = document.querySelectorAll('.index-item');
+        indexItems.forEach((item, i) => {
+          if (i === event.indexh) {
+            item.classList.add('active');
+          } else {
+            item.classList.remove('active');
+          }
+        });
+      });
+
+      // 初始化第一个索引激活
+      document.querySelector('.index-item').classList.add('active');
+    </script>
+  </body>
+</html>

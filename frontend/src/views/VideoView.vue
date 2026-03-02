@@ -211,9 +211,22 @@ onMounted(() => {
     videoUrl.value = route.query.url as string;
     handleAnalyze();
   }
+  // 如果 URL 中有时间戳且播放器已准备好（虽然初始化时通常没好，但还是检查一下）
+  if (route.query.t && playerRef.value) {
+    const targetTime = parseInt(route.query.t as string);
+    playerRef.value?.seekTo(targetTime);
+  }
 });
 
-// 监听分析成功，如果是从搜索跳过来的，自动跳转到对应时间
+// 监听 URL 中的参数变化，实现同一视频多次搜索跳转
+watch(() => route.query, (newQuery) => {
+  if (newQuery.t && playerRef.value) {
+    const targetTime = parseInt(newQuery.t as string);
+    playerRef.value?.seekTo(targetTime);
+  }
+}, { deep: true });
+
+// 监听分析成功，如果是从搜索跳过来的，且是第一次加载的情况
 window.addEventListener('video-analyzed', () => {
   if (route.query.t && playerRef.value) {
     const targetTime = parseInt(route.query.t as string);

@@ -27,7 +27,8 @@ const goToResult = (res: any) => {
     path: '/video',
     query: {
       url: videoLink,
-      t: Math.floor(res.offset / 1000).toString()
+      t: Math.floor(res.offset / 1000).toString(),
+      _t: Date.now() // Add a nonce to force trigger even if same result
     }
   });
 };

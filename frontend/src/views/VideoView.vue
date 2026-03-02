@@ -52,6 +52,7 @@ const chatInput = ref('');
 const chatMessages = ref<{ role: 'user' | 'assistant'; content: string }[]>([]);
 const isChatLoading = ref(false);
 const chatListRef = ref<HTMLElement | null>(null);
+const isAutoScrollEnabled = ref(true);
 
 // 字幕滚动自动归中行为控制变量
 const isHoveringTranscript = ref(false);
@@ -321,14 +322,36 @@ const fetchChatHistory = async () => {
   }
 };
 
-const scrollToBottom = (force = false) => {
-  if (chatListRef.value) {
-    const { scrollTop, scrollHeight, clientHeight } = chatListRef.value;
-    // 如果用户向上滚动超过 100px，则停止自动滚动，除非 force 为 true
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+let isChatProgrammaticScroll = false;
 
-    if (force || isAtBottom) {
-      chatListRef.value.scrollTop = scrollHeight;
+const handleChatScroll = () => {
+  if (!chatListRef.value || isChatProgrammaticScroll) {
+    isChatProgrammaticScroll = false;
+    return;
+  }
+
+  const { scrollTop, scrollHeight, clientHeight } = chatListRef.value;
+  // If user scrolls up even a little bit, disable auto-scroll
+  // 5px buffer for sub-pixel issues
+  const atBottom = scrollHeight - scrollTop - clientHeight < 5;
+
+  if (!atBottom) {
+    isAutoScrollEnabled.value = false;
+  } else {
+    isAutoScrollEnabled.value = true;
+  }
+};
+
+const scrollToBottom = (force = false) => {
+  if (chatListRef.value && (force || isAutoScrollEnabled.value)) {
+    isChatProgrammaticScroll = true;
+    if (force) {
+      chatListRef.value.scrollTo({
+        top: chatListRef.value.scrollHeight,
+        behavior: 'smooth'
+      });
+    } else {
+      chatListRef.value.scrollTop = chatListRef.value.scrollHeight;
     }
   }
 };
@@ -341,6 +364,7 @@ const sendChatMessage = async () => {
   chatMessages.value.push({ role: 'user', content: userMsg });
   chatMessages.value.push({ role: 'assistant', content: '' });
   isChatLoading.value = true;
+  isAutoScrollEnabled.value = true; // Reset auto-scroll on new message
   nextTick(() => scrollToBottom(true));
 
   try {
@@ -432,7 +456,10 @@ const parseMessageContent = (content: string) => {
 
 // 预热聊天记录
 watch(showResult, (val) => {
-  if (val) fetchChatHistory();
+  if (val) {
+    isAutoScrollEnabled.value = true;
+    fetchChatHistory();
+  }
 });
 
 // 点击要点条目跳转到对应时间（timestamp 是秒）
@@ -816,7 +843,7 @@ const takeawayMap = computed(() => {
 
             <!-- Tab Content: AI Chat -->
             <div v-else class="tab-pane chat-pane">
-              <div ref="chatListRef" class="chat-messages">
+              <div ref="chatListRef" class="chat-messages" @scroll="handleChatScroll">
                 <div v-if="chatMessages.length === 0" class="chat-empty">
                   <div class="empty-icon-wrapper">
                     <Bot :size="40" class="accent-glow-text" />
@@ -1284,7 +1311,8 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  scroll-behavior: smooth;
+  /* Removed scroll-behavior: smooth to prevent jitter during streaming */
+  overflow-anchor: auto;
 }
 
 .chat-empty {

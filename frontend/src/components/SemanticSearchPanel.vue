@@ -87,9 +87,23 @@ const focus = () => {
   input?.focus();
 };
 
+interface SearchResult {
+  videoId: string;
+  videoTitle: string;
+  text: string;
+  translatedText?: string;
+  offset: number;
+  similarity: number;
+}
+
+type UIItem =
+  | { id: string; type: 'skeleton'; index: number }
+  | { id: string; type: 'result'; data: SearchResult; index: number }
+  | { id: string; type: 'empty'; index: number };
+
 defineExpose({ focus, searchQuery });
 
-const uiItems = computed(() => {
+const uiItems = computed<UIItem[]>(() => {
   if (isSearching.value) {
     return [
       { id: 'skel-1', type: 'skeleton', index: 0 },
@@ -98,10 +112,10 @@ const uiItems = computed(() => {
     ];
   }
   if (searchResults.value.length > 0) {
-    return searchResults.value.map((res, i) => ({
+    return searchResults.value.map((res: any, i: number) => ({
       id: `${res.videoId}-${res.offset}`,
       type: 'result',
-      data: res,
+      data: res as SearchResult,
       index: i
     }));
   }

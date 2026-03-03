@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Sparkles, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-vue-next';
-import { useAuth } from '../services/auth';
 
 const props = defineProps<{
   show: boolean;
 }>();
 
 const emit = defineEmits(['close', 'submit-task']);
-
-const { getAuthHeaders } = useAuth();
-const API_BASE = import.meta.env.VITE_API_URL;
 
 interface AnalyzeRequest {
   videoId: string;

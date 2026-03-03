@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, User, Menu, Search, Globe, Video, Bell, CheckCircle2, AlertCircle, X, Loader2 } from 'lucide-vue-next';
+import { Sparkles, User, Menu, Search, Globe, Video, CheckCircle2, AlertCircle, X, Loader2 } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 import GlobalSearchModal from './components/GlobalSearchModal.vue';

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { Sparkles, User, Menu, Search, Globe, Video, Bell, CheckCircle2, AlertCircle, X, Loader2 } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';

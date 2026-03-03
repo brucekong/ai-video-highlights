@@ -91,6 +91,11 @@ export async function fetchTranscript(videoId: string): Promise<TranscriptSegmen
         availableLangs = Array.from(new Set([...availableLangs, ...foundLangs]));
       }
 
+      // 如果视频本身不可用（被删或私密），标记后退出
+      if (error.message.includes('is no longer available or has been removed') || error.message.includes('owner disabling captions or the video not supporting transcripts')) {
+        console.warn(`[Transcript] Video ${videoId} is unavailable according to YouTube. Stopping fallback attempts.`);
+      }
+
       console.warn(`[Transcript] Lang="${label}" failed: ${error.message}`);
       return null;
     }
@@ -98,7 +103,16 @@ export async function fetchTranscript(videoId: string): Promise<TranscriptSegmen
 
   // 2. 依次尝试首选语言
   for (const lang of preferredLangs) {
-    // 关键优化 (修复点): 在发起请求前检查。如果上一个请求已经返回了有哪些可用语种，直接停止盲目重温
+    // 关键提前判定：如果是致命错误 (429 或 视频不存在)，直接熔断，不再发起任何后续请求
+    if (
+      lastError?.message.includes('429') ||
+      lastError?.message.includes('too many requests') ||
+      lastError?.message.includes('is no longer available or has been removed')
+    ) {
+      throw lastError;
+    }
+
+    // 如果上一个请求已经返回了有哪些可用语种，直接停止盲目探测首选列表
     if (availableLangs.length > 0) {
       console.log(`[Transcript] Available languages already detected (${availableLangs.join(', ')}). Skipping further preferred list attempts.`);
       break;
@@ -106,16 +120,16 @@ export async function fetchTranscript(videoId: string): Promise<TranscriptSegmen
 
     const result = await tryLang(lang);
     if (result) return result;
-
-    // 如果是频率限制，直接停止
-    if (lastError?.message.includes('429') || lastError?.message.includes('too many requests')) {
-      break;
-    }
   }
 
   // 3. 动态探测逻辑: 尝试列表中未曾尝试过的可用语言
   const remainingLangs = availableLangs.filter(l => !triedLangs.has(l));
   for (const fallbackLang of remainingLangs) {
+    // 同样在动态探测开始前也要检查
+    if (lastError?.message.includes('429') || lastError?.message.includes('too many requests')) {
+      throw lastError;
+    }
+
     const result = await tryLang(fallbackLang);
     if (result) return result;
   }

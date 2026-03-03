@@ -26,4 +26,6 @@ dist-ssr
 # Documentation (Internal Explanations)
 docs/*
 server/cache/
-server/.env
+.env
+.env.production
+

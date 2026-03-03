@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, User, Menu, Search, Globe } from 'lucide-vue-next';
+import { Sparkles, User, Menu, Search, Globe, Video, Bell, CheckCircle2, AlertCircle, X, Loader2 } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 import GlobalSearchModal from './components/GlobalSearchModal.vue';
+import VideoAnalysisModal from './components/VideoAnalysisModal.vue';
 import { useAuth } from './services/auth';
 
 const { authState, getAuthHeaders } = useAuth();
@@ -17,6 +18,88 @@ const API_BASE = import.meta.env.VITE_API_URL;
 const router = useRouter();
 const showHistory = ref(false);
 const showGlobalSearch = ref(false);
+const showAnalysisModal = ref(false);
+
+interface Notification {
+  id: string;
+  type: 'success' | 'process' | 'error';
+  title: string;
+  message: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+}
+const notifications = ref<Notification[]>([]);
+
+const addNotification = (notif: Omit<Notification, 'id'>) => {
+  const id = Date.now().toString();
+  notifications.value.push({ ...notif, id });
+
+  // 正在处理的通知 3 秒后自动关闭
+  if (notif.type === 'process') {
+    setTimeout(() => {
+      removeNotification(id);
+    }, 3000);
+  }
+  // 其他类型（成功、错误）不自动关闭，需由用户手动关闭或业务逻辑触发
+  return id;
+};
+
+const removeNotification = (id: string) => {
+  notifications.value = notifications.value.filter(n => n.id !== id);
+};
+
+const handleAnalysisTask = async (payload: { videoId: string; url: string; platform: string }) => {
+  const notifId = addNotification({
+    type: 'process',
+    title: '视频解析中',
+    message: '正在 AI 提取摘要和转录文本，完成后会通知提醒'
+  });
+
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/analyze`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    removeNotification(notifId);
+
+    if (data.success) {
+      addNotification({
+        type: 'success',
+        title: '解析已完成',
+        message: `《${data.data.videoTitle || '视频'}》分析成功！`,
+        action: {
+          label: '立即前往',
+          onClick: () => {
+            router.push({ path: '/video', query: { url: payload.url } });
+          }
+        }
+      });
+      // 通知历史列表刷新
+      window.dispatchEvent(new CustomEvent('video-analyzed'));
+    } else {
+      addNotification({
+        type: 'error',
+        title: '分析失败',
+        message: data.error || '解析视频时发生错误'
+      });
+    }
+  } catch (e) {
+    removeNotification(notifId);
+    addNotification({
+      type: 'error',
+      title: '网络错误',
+      message: '无法连接到分析服务器'
+    });
+  }
+};
 
 const goToResult = (res: any) => {
   const videoLink = res.videoId.startsWith('BV')
@@ -131,9 +214,18 @@ onMounted(() => {
           >
             <div class="search-box-mock glass-panel">
               <Search :size="16" />
-              <span>全库检索视频内容...</span>
+              <span>搜索视频内容...</span>
               <kbd class="search-kbd">/</kbd>
             </div>
+          </button>
+
+          <button
+            class="btn-icon-labeled glass-panel"
+            @click="showAnalysisModal = true"
+            title="解析新视频"
+          >
+            <Video :size="18" />
+            <span>解析</span>
           </button>
 
           <div class="user-action">
@@ -163,6 +255,37 @@ onMounted(() => {
       @close="showGlobalSearch = false"
       @result-click="goToResult"
     />
+    <VideoAnalysisModal
+      :show="showAnalysisModal"
+      @close="showAnalysisModal = false"
+      @submit-task="handleAnalysisTask"
+    />
+
+    <!-- Notification Toast System -->
+    <div class="notification-container">
+      <TransitionGroup name="notification">
+        <div v-for="notif in notifications" :key="notif.id" class="notification-toast glass-panel" :class="notif.type">
+          <div class="notif-icon-wrap">
+            <CheckCircle2 v-if="notif.type === 'success'" class="notif-icon success" :size="20" />
+            <Loader2 v-else-if="notif.type === 'process'" class="notif-icon process spin" :size="20" />
+            <AlertCircle v-else class="notif-icon error" :size="20" />
+          </div>
+          <div class="notif-content">
+            <div class="notif-title">{{ notif.title }}</div>
+            <div class="notif-message">{{ notif.message }}</div>
+            <div v-if="notif.action" class="notif-actions">
+              <button class="btn-notif-action" @click="notif.action.onClick(); removeNotification(notif.id)">
+                <span>{{ notif.action.label }}</span>
+                <Globe :size="14" />
+              </button>
+            </div>
+          </div>
+          <button class="notif-close" @click="removeNotification(notif.id)">
+            <X :size="14" />
+          </button>
+        </div>
+      </TransitionGroup>
+    </div>
   </div>
 </template>
 
@@ -242,7 +365,29 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.2);
   color: var(--text-primary);
-  width: 260px;
+  width: 250px;
+}
+
+.btn-icon-labeled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.btn-icon-labeled:hover {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: var(--text-accent);
+  transform: translateY(-1px);
 }
 
 .search-kbd {
@@ -433,6 +578,128 @@ input::placeholder {
 
 @keyframes spinner {
   to { transform: rotate(360deg); }
+}
+
+/* Notification System CSS */
+.notification-container {
+  position: fixed;
+  top: 100px;
+  right: 40px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.notification-toast {
+  pointer-events: auto;
+  width: 360px;
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(15, 15, 18, 0.9);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  position: relative;
+}
+
+.notification-toast.success {
+  border-left: 4px solid #10b981;
+}
+
+.notification-toast.process {
+  border-left: 4px solid var(--accent-color);
+}
+
+.notification-toast.error {
+  border-left: 4px solid #ef4444;
+}
+
+.notif-icon-wrap {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.notif-icon.success { color: #10b981; }
+.notif-icon.process { color: var(--accent-color); }
+.notif-icon.error { color: #ef4444; }
+
+.notif-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.notif-message {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.notif-actions {
+  margin-top: 10px;
+}
+
+.btn-notif-action {
+  background: var(--accent-light);
+  color: #fff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-notif-action:hover {
+  background: var(--accent-color);
+  transform: translateY(-1px);
+}
+
+.notif-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  height: max-content;
+}
+
+.notif-close:hover {
+  opacity: 1;
+  color: #fff;
+}
+
+/* Notification Transitions */
+.notification-enter-active, .notification-leave-active {
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.notification-enter-from {
+  opacity: 0;
+  transform: translateX(50px) scale(0.9);
+}
+
+.notification-leave-to {
+  opacity: 0;
+  transform: translateX(100px);
 }
 
 /* Main Area */

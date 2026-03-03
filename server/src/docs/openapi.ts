@@ -30,6 +30,7 @@ export const Schemas = {
       takeawayCount: { type: 'integer', description: '要点数量' },
       analyzedAt: { type: 'string', format: 'date-time', description: '分析时间' },
       isIndexed: { type: 'boolean', description: '是否已生成语义索引' },
+      duration: { type: 'integer', description: '视频时长（秒）' },
     },
   },
   UserProfile: {

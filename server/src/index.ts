@@ -29,18 +29,27 @@ async function main() {
   // CORS — 允许前端访问
   await fastify.register(cors, {
     origin: (origin, cb) => {
-      // 允许 localhost, Vercel 域名, 以及自定义的 FRONTEND_URL
+      // 允许 localhost, 127.0.0.1 (多个端口), Vercel 域名, 以及自定义的 FRONTEND_URL
       const allowedOrigins = [
         'http://localhost:5173',
         'http://localhost:5174',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:5174',
+        'http://127.0.0.1:5175',
         process.env.FRONTEND_URL
       ].filter(Boolean);
 
-      if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        origin.startsWith('http://localhost:') ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.endsWith('.vercel.app')
+      ) {
         cb(null, true);
         return;
       }
-      cb(new Error('Not allowed by CORS'), false);
+      cb(new Error(`Not allowed by CORS: ${origin}`), false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true

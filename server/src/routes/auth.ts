@@ -19,6 +19,20 @@ const WECHAT_REDIRECT_URI = process.env.WECHAT_REDIRECT_URI || 'http://localhost
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+// 动态获取前端 URL (本地开发环境下优先使用请求的 Origin)
+const getFrontendUrl = (request: FastifyRequest) => {
+  const origin = request.headers.origin || request.headers.referer;
+  if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+    try {
+      const url = new URL(origin);
+      return `${url.protocol}//${url.host}`;
+    } catch (e) {
+      return FRONTEND_URL;
+    }
+  }
+  return FRONTEND_URL;
+};
+
 export async function authRoutes(fastify: FastifyInstance) {
   // === Google Auth ===
   fastify.get('/api/auth/google', {
@@ -67,11 +81,12 @@ export async function authRoutes(fastify: FastifyInstance) {
     reply: FastifyReply
   ) => {
     const { code, state } = request.query;
-    let targetUrl = FRONTEND_URL;
+    const targetBase = getFrontendUrl(request);
+    let targetUrl = targetBase;
     if (state) {
       try {
         const decodedPath = Buffer.from(state, 'base64').toString('utf-8');
-        targetUrl = `${FRONTEND_URL}${decodedPath.startsWith('/') ? '' : '/'}${decodedPath}`;
+        targetUrl = `${targetBase}${decodedPath.startsWith('/') ? '' : '/'}${decodedPath}`;
       } catch (e) {
         console.error('Failed to decode state:', e);
       }
@@ -169,11 +184,12 @@ export async function authRoutes(fastify: FastifyInstance) {
     reply: FastifyReply
   ) => {
     const { code, state } = request.query;
-    let targetUrl = FRONTEND_URL;
+    const targetBase = getFrontendUrl(request);
+    let targetUrl = targetBase;
     if (state && state !== 'STATE') {
       try {
         const decodedPath = Buffer.from(state, 'base64').toString('utf-8');
-        targetUrl = `${FRONTEND_URL}${decodedPath.startsWith('/') ? '' : '/'}${decodedPath}`;
+        targetUrl = `${targetBase}${decodedPath.startsWith('/') ? '' : '/'}${decodedPath}`;
       } catch (e) {
         console.error('Failed to decode state:', e);
       }

@@ -56,6 +56,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           title: h.video.title,
           url: h.video.url,
           platform: h.video.platform,
+          duration: h.video.duration,
           takeawayCount: h.video._count.takeaways,
           analyzedAt: h.createdAt,
           isIndexed: indexedIds.has(h.video.videoId),

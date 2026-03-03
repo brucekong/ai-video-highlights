@@ -32,39 +32,38 @@ function parseNetscapeCookies(content: string): string {
 
 /**
  * 获取 YouTube 视频的字幕/转录文本
- * 回退策略: 英文系列 → 中文系列 → 自动检测 (取第一个)
+ * 策略: 优先级列表尝试 -> 动态探测 fallback
  * @param videoId YouTube video ID
  * @returns 转录文本片段数组
  */
 export async function fetchTranscript(videoId: string): Promise<TranscriptSegment[]> {
-  // 更加详尽的语言回退列表，优先匹配中文和英文的各种变体
-  const langs = ['en', 'zh' ,'zh-CN'];
+  // 1. 扩大首选语言尝试列表，涵盖 YouTube 常用的中文变体
+  const preferredLangs = ['en','zh-CN', 'zh-Hans', 'zh', 'zh-Hant', 'zh-TW'];
 
   let lastError: any = null;
   let availableLangs: string[] = [];
+  const triedLangs = new Set<string>();
 
-  for (const lang of langs) {
+  const tryLang = async (lang: string | undefined): Promise<TranscriptSegment[] | null> => {
+    const label = lang ?? 'auto-detect';
+    console.log(`[Transcript] Trying lang="${label}" for video: ${videoId}`);
+    triedLangs.add(label);
+
+    const cookieHeader = parseNetscapeCookies(process.env.YOUTUBE_COOKIES || '');
+    const customFetch = cookieHeader
+      ? async (params: any) => {
+          const { url, lang: fetchLang, userAgent, method = 'GET', headers = {} } = params;
+          const fetchHeaders: any = {
+            'User-Agent': userAgent || USER_AGENT,
+            ...(fetchLang && { 'Accept-Language': fetchLang }),
+            ...headers,
+            'Cookie': cookieHeader,
+          };
+          return fetch(url, { method, headers: fetchHeaders });
+        }
+      : undefined;
+
     try {
-      const label = lang ?? 'auto-detect';
-      console.log(`[Transcript] Trying lang="${label}" for video: ${videoId}`);
-
-      // 尝试从环境变量获取 Cookie (与 whisper.ts 保持一致)
-      const cookieHeader = parseNetscapeCookies(process.env.YOUTUBE_COOKIES || '');
-
-      // 如果有 Cookie，需要通过自定义 fetch 函数传入，因为 TranscriptConfig 不直接支持 headers
-      const customFetch = cookieHeader
-        ? async (params: any) => {
-            const { url, lang: fetchLang, userAgent, method = 'GET', body, headers = {} } = params;
-            const fetchHeaders: any = {
-              'User-Agent': userAgent || USER_AGENT,
-              ...(fetchLang && { 'Accept-Language': fetchLang }),
-              ...headers,
-              'Cookie': cookieHeader,
-            };
-            return fetch(url, { method, headers: fetchHeaders, body });
-          }
-        : undefined;
-
       const transcriptItems = await fetchYTTranscript(videoId, {
         lang,
         userAgent: USER_AGENT,
@@ -77,40 +76,59 @@ export async function fetchTranscript(videoId: string): Promise<TranscriptSegmen
         console.log(`✅ [Transcript] Got ${transcriptItems.length} segments (lang=${label})`);
         return transcriptItems.map((item) => ({
           text: item.text,
-          offset: Math.round(item.offset * 1000),   // 秒 → 毫秒
-          duration: Math.round(item.duration * 1000), // 秒 → 毫秒
+          offset: Math.round(item.offset * 1000),
+          duration: Math.round(item.duration * 1000),
         }));
       }
+      return null;
     } catch (error: any) {
       lastError = error;
-      const label = lang ?? 'auto-detect';
 
-      // 如果报错中包含可用语言信息，记录下来以便后续分析
-      if (error.availableLangs) {
-        availableLangs = error.availableLangs;
+      // 关键修复：从错误消息中解析可用语言 (格式: "Available languages: zh-Hans, en...")
+      const match = error.message.match(/Available languages: ([^.]+)/);
+      if (match && match[1]) {
+        const foundLangs = match[1].split(',').map((l: string) => l.trim());
+        availableLangs = Array.from(new Set([...availableLangs, ...foundLangs]));
       }
 
       console.warn(`[Transcript] Lang="${label}" failed: ${error.message}`);
+      return null;
+    }
+  };
 
-      // 如果是 IP 被封锁，则没必要继续尝试其他语言了
-      if (error.message.includes('too many requests') || error.message.includes('429')) {
-        break;
-      }
+  // 2. 依次尝试首选语言
+  for (const lang of preferredLangs) {
+    // 关键优化 (修复点): 在发起请求前检查。如果上一个请求已经返回了有哪些可用语种，直接停止盲目重温
+    if (availableLangs.length > 0) {
+      console.log(`[Transcript] Available languages already detected (${availableLangs.join(', ')}). Skipping further preferred list attempts.`);
+      break;
+    }
+
+    const result = await tryLang(lang);
+    if (result) return result;
+
+    // 如果是频率限制，直接停止
+    if (lastError?.message.includes('429') || lastError?.message.includes('too many requests')) {
+      break;
     }
   }
 
-  // 如果遍历完所有语言都失败了
-  const errorMsg = lastError?.message || 'Unknown error';
-  const availableInfo = availableLangs.length > 0 ? ` Available languages: ${availableLangs.join(', ')}` : '';
-
-  console.error(`❌ [Transcript] All attempts failed for ${videoId}.${availableInfo} Error: ${errorMsg}`);
-
-  // 如果是因为 IP 限制，给出更具体的建议
-  if (errorMsg.includes('too many requests') || errorMsg.includes('429')) {
-    throw new Error(`YouTube 访问受限 (Too Many Requests)。线上环境建议在环境变量中配置 YOUTUBE_COOKIES 以绕过机器人检测。`);
+  // 3. 动态探测逻辑: 尝试列表中未曾尝试过的可用语言
+  const remainingLangs = availableLangs.filter(l => !triedLangs.has(l));
+  for (const fallbackLang of remainingLangs) {
+    const result = await tryLang(fallbackLang);
+    if (result) return result;
   }
 
-  throw new Error(`No transcript available for video ${videoId}.${availableInfo}`);
+  // 4. 最终失败处理
+  const errorMsg = lastError?.message || 'Unknown error';
+  const availableInfo = availableLangs.length > 0 ? ` Available: ${availableLangs.join(', ')}` : '';
+
+  if (errorMsg.includes('too many requests') || errorMsg.includes('429')) {
+    throw new Error(`YouTube 访问受限 (429)。请在 .env 中更新 YOUTUBE_COOKIES。`);
+  }
+
+  throw new Error(`No transcript found for ${videoId}.${availableInfo}`);
 }
 
 /**

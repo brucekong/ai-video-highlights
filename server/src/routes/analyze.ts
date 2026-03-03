@@ -145,8 +145,8 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       await prisma.$transaction(async (tx) => {
         await tx.video.upsert({
           where: { videoId },
-          create: { videoId, url, title: aiResult.title, mindmap: aiResult.mindmap, platform },
-          update: { title: aiResult.title, mindmap: aiResult.mindmap, platform },
+          create: { videoId, url, title: aiResult.title, mindmap: aiResult.mindmap, platform, duration: maxDurationSeconds },
+          update: { title: aiResult.title, mindmap: aiResult.mindmap, platform, duration: maxDurationSeconds },
         });
 
         await tx.takeaway.deleteMany({ where: { videoId } });

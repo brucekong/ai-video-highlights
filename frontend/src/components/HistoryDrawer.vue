@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Clock, FileText, Image as ImageIcon, Trash2, AlertTriangle, Loader2, X, RefreshCw, SearchSlash } from 'lucide-vue-next';
+import { Clock, FileText, Image as ImageIcon, Trash2, AlertTriangle, Loader2, X, RefreshCw } from 'lucide-vue-next';
 import { useAuth } from '../services/auth';
 
 interface HistoryItem {
@@ -9,6 +9,7 @@ interface HistoryItem {
   title: string | null;
   url: string;
   platform: string;
+  duration: number | null; // 新增：视频时长（秒）
   takeawayCount: number;
   analyzedAt: string;
   isIndexed: boolean;
@@ -39,6 +40,20 @@ const decodeHtml = (html: string | null) => {
   const txt = document.createElement('textarea');
   txt.innerHTML = html;
   return txt.value;
+};
+
+// 新增：格式化视频时长
+const formatDuration = (seconds: number | null) => {
+  if (seconds === null || seconds === undefined) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+
+  const hDisplay = h > 0 ? `${h}:` : '';
+  const mDisplay = m < 10 && h > 0 ? `0${m}:` : `${m}:`;
+  const sDisplay = s < 10 ? `0${s}` : `${s}`;
+
+  return `${hDisplay}${mDisplay}${sDisplay}`;
 };
 
 const loadHistory = async () => {
@@ -134,9 +149,8 @@ const handleEsc = (e: KeyboardEvent) => {
   }
 };
 
-// Initial load and listen for events
+// Listen for events
 onMounted(() => {
-  loadHistory();
   window.addEventListener('video-analyzed', loadHistory);
   window.addEventListener('keydown', handleEsc);
 });
@@ -193,6 +207,10 @@ watch(() => authState.currentUser, (newUser) => {
             <div v-else class="history-thumb-placeholder" :class="item.platform">
               <ImageIcon :size="24" class="thumb-icon" />
             </div>
+            <!-- 新增：视频时长角标 -->
+            <div v-if="item.duration" class="duration-badge">
+              {{ formatDuration(item.duration) }}
+            </div>
           </div>
           <div class="history-item-content">
             <div class="history-title-row">
@@ -213,7 +231,11 @@ watch(() => authState.currentUser, (newUser) => {
             </div>
 
             <div class="history-meta">
-              <span class="platform-badge" :class="item.platform">{{ item.platform }}</span>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span class="platform-badge" :class="item.platform">{{ item.platform }}</span>
+                <!-- 新增：长视频标记 -->
+                <span v-if="item.duration && item.duration > 2400" class="long-video-badge">长视频</span>
+              </div>
               <span class="meta-date">{{ new Date(item.analyzedAt).toLocaleDateString() }}</span>
               <span class="meta-takeaways" :title="item.takeawayCount + '个片段'">
                 <FileText :size="12" style="display:inline;vertical-align:-2px;margin-right:2px;"/>
@@ -470,6 +492,29 @@ watch(() => authState.currentUser, (newUser) => {
 .platform-badge.bilibili {
   background: rgba(0, 161, 214, 0.15);
   color: #00a1d6;
+}
+
+.duration-badge {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  backdrop-filter: blur(4px);
+}
+
+.long-video-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
 }
 
 

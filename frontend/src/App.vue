@@ -161,9 +161,14 @@ onMounted(() => {
   if (token) {
     localStorage.setItem('auth_token', token);
 
-    // 如果是从 Cookie 获取的，清理 Cookie
+    // 如果是从 Cookie 获取的，清理 Cookie（需要包含 Domain 才能正确清除跨子域名 cookie）
     if (cookieValue) {
-      document.cookie = 'auth_token_handoff=; Path=/; Max-Age=0; SameSite=Lax';
+      const hostname = window.location.hostname;
+      const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+      const domainParts = hostname.split('.');
+      const rootDomain = domainParts.length >= 2 ? domainParts.slice(-2).join('.') : hostname;
+      const domainAttr = isLocal ? '' : `; Domain=.${rootDomain}`;
+      document.cookie = `auth_token_handoff=; Path=/; Max-Age=0; SameSite=Lax${domainAttr}`;
     }
 
     // 3. 彻底从 URL 中移除 token，但保留其他参数 (如 video url)

@@ -19,6 +19,25 @@ const WECHAT_REDIRECT_URI = process.env.WECHAT_REDIRECT_URI || 'http://localhost
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+// 从 FRONTEND_URL 中提取根域名，用于跨子域名 Cookie 共享
+// 例如 https://powneng.top -> .powneng.top，这样 api.powneng.top 设置的 cookie 在 powneng.top 也可见
+const getCookieDomain = (): string => {
+  try {
+    const url = new URL(FRONTEND_URL);
+    const hostname = url.hostname;
+    // localhost 不需要设置 domain
+    if (hostname === 'localhost' || hostname === '127.0.0.1') return '';
+    // 提取根域名（去掉 www. 等前缀），如 powneng.top
+    const parts = hostname.split('.');
+    const rootDomain = parts.length >= 2 ? parts.slice(-2).join('.') : hostname;
+    return `.${rootDomain}`;
+  } catch {
+    return '';
+  }
+};
+const COOKIE_DOMAIN = getCookieDomain();
+const IS_PRODUCTION = FRONTEND_URL.startsWith('https');
+
 // 动态获取前端 URL (本地开发环境下优先使用请求的 Origin)
 const getFrontendUrl = (request: FastifyRequest) => {
   const origin = request.headers.origin || request.headers.referer;
@@ -132,7 +151,10 @@ export async function authRoutes(fastify: FastifyInstance) {
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
       // 5. Redirect back to frontend - Use a short-lived cookie for handoff to keep URL clean
-      reply.header('Set-Cookie', `auth_token_handoff=${token}; Path=/; Max-Age=60; SameSite=Lax`);
+      const cookieParts = [`auth_token_handoff=${token}`, 'Path=/', 'Max-Age=60', 'SameSite=Lax'];
+      if (COOKIE_DOMAIN) cookieParts.push(`Domain=${COOKIE_DOMAIN}`);
+      if (IS_PRODUCTION) cookieParts.push('Secure');
+      reply.header('Set-Cookie', cookieParts.join('; '));
       reply.redirect(targetUrl);
     } catch (e) {
       fastify.log.error(e);
@@ -235,7 +257,10 @@ export async function authRoutes(fastify: FastifyInstance) {
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
 
       // 5. Redirect back to frontend - Use a short-lived cookie for handoff
-      reply.header('Set-Cookie', `auth_token_handoff=${token}; Path=/; Max-Age=60; SameSite=Lax`);
+      const cookieParts = [`auth_token_handoff=${token}`, 'Path=/', 'Max-Age=60', 'SameSite=Lax'];
+      if (COOKIE_DOMAIN) cookieParts.push(`Domain=${COOKIE_DOMAIN}`);
+      if (IS_PRODUCTION) cookieParts.push('Secure');
+      reply.header('Set-Cookie', cookieParts.join('; '));
       reply.redirect(targetUrl);
     } catch (e) {
       fastify.log.error(e);

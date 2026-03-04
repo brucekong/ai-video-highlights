@@ -22,7 +22,7 @@ model Video {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   mindmap   String?  @map("mindmap")              // 脑图 Markdown 文本
-  embedding Unsupported("vector(512)")?          // 视频核心向量 (通用 512 维)
+  embedding Unsupported("vector(1024)")?          // 视频核心向量 (bge-m3 1024 维)
 
   takeaways Takeaway[]
   subtitles Subtitle[]
@@ -105,7 +105,7 @@ model Subtitle {
   offset         Int                                    // 开始时间（毫秒）
   duration       Int                                    // 持续时长（毫秒）
   sortOrder      Int      @default(0) @map("sort_order") // 排序
-  embedding      Unsupported("vector(512)")?          // 字幕语义向量 (通用 512 维)
+  embedding      Unsupported("vector(1024)")?          // 字幕语义向量 (bge-m3 1024 维)
   createdAt      DateTime @default(now()) @map("created_at")
 
   video Video @relation(fields: [videoId], references: [videoId], onDelete: Cascade)

@@ -51,6 +51,7 @@ export async function fetchTranscript(videoId: string): Promise<TranscriptSegmen
 
     const attempt = async (useCookies: boolean) => {
       const cookieHeader = useCookies ? parseNetscapeCookies(process.env.YOUTUBE_COOKIES || '') : '';
+      console.log(`[Transcript] 正在尝试通过 youtube-transcript-plus 获取视频字幕, lang=${lang}, useCookies=${useCookies}`);
       const customFetch = cookieHeader
         ? async (params: any) => {
             const { url, lang: fetchLang, userAgent, method = 'GET', headers = {} } = params;

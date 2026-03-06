@@ -144,6 +144,7 @@ export async function analyzeTranscript(
 /**
  * 翻译字幕片段
  * 为了提高效率，这里采用批量翻译的方式（每批 30-50 条）
+ * 改进：使用对象键值对确保 1-to-1 映射，避免行偏移
  */
 export async function translateTranscriptSegments(
   texts: string[]
@@ -161,24 +162,35 @@ export async function translateTranscriptSegments(
   });
 
   const BATCH_SIZE = 40;
-  const results: string[] = [];
+  const results: string[] = new Array(texts.length);
 
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
 
+    // 将 batch 转化为带索引的对象，防止 LLM 合并或遗漏
+    const batchObj: Record<string, string> = {};
+    batch.forEach((text, index) => {
+      batchObj[index] = text;
+    });
+
     try {
-      console.log(`🤖 Translating transcript batch ${Math.floor(i / BATCH_SIZE) + 1}...`);
+      console.log(`🤖 Translating transcript batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(texts.length / BATCH_SIZE)}...`);
 
       const completion = await client.chat.completions.create({
         model: 'deepseek-chat',
         messages: [
           {
             role: 'system',
-            content: '你是一个专业的翻译助手。请将用户提供的字幕片段列表翻译成中文。保持原意，语言地道。请严格按照原始列表的顺序返回一个 JSON 数组，数组中只包含翻译后的字符串。不要返回任何其他解释。',
+            content: `你是一个专业的翻译助手。你的任务是将用户提供的字幕片段列表翻译成中文。
+要求：
+1. 语言地道、自然，符合技术/视频背景。
+2. **严禁合并或拆分片段**：原始数据是一个以索引为键的消息对象，你必须返回一个相同结构的 JSON 对象。
+3. 每个键对应的原始文本可能只是半句话，请直接翻译这部分，不要试图补全。
+4. 严格按照 JSON 格式返回，只包含翻译后的键值对。`,
           },
           {
             role: 'user',
-            content: JSON.stringify(batch),
+            content: JSON.stringify(batchObj),
           },
         ],
         temperature: 0.1,
@@ -188,18 +200,23 @@ export async function translateTranscriptSegments(
       const content = completion.choices[0]?.message?.content;
       if (content) {
         const parsed = JSON.parse(content);
-        // 如果返回的是对象形式 { "translations": [...] } 或直接是数组
-        const translatedBatch = Array.isArray(parsed) ? parsed : (parsed.translations || Object.values(parsed)[0]);
-        if (Array.isArray(translatedBatch)) {
-          results.push(...translatedBatch.map(s => String(s)));
-        } else {
-          // 兜底：如果格式不对，填充原文占位
-          results.push(...batch);
-        }
+        // 提取翻译结果，确保放回正确的位置
+        batch.forEach((_, index) => {
+          const translated = parsed[index] || parsed[String(index)];
+          results[i + index] = translated ? String(translated) : batch[index];
+        });
+      } else {
+        // 无返回内容，填充原文
+        batch.forEach((text, index) => {
+          results[i + index] = text;
+        });
       }
     } catch (error) {
       console.error('Batch translation failed:', error);
-      results.push(...batch); // 失败时回退到原文
+      // 失败时回退到原文
+      batch.forEach((text, index) => {
+        results[i + index] = text;
+      });
     }
   }
 

@@ -92,7 +92,7 @@ const handleTranscriptMouseLeave = () => {
   }
 };
 
-// 合并过密的字幕（两两合并），减少前端列表频繁跳动
+// 智能合并字幕：不再是死板的两两合并，而是根据标点、时长、行数判断，保持语义完整性
 const mergedTranscript = computed(() => {
   if (transcript.value.length === 0) return [];
   const merged: TranscriptSegment[] = [];
@@ -100,36 +100,56 @@ const mergedTranscript = computed(() => {
 
   for (let i = 0; i < transcript.value.length; i++) {
     const seg = transcript.value[i];
-    if (i % 2 === 0) {
-      if (current) merged.push(current);
+
+    if (!current) {
       current = { ...seg };
-    } else if (current) {
-      // 1. 合并原文
-      const lastChar = current.text.trim().slice(-1);
-      const hasPunctuation = /[.,?!，。？！、;；]/.test(lastChar);
+      continue;
+    }
+
+    // 判断逻辑：
+    // 1. 如果当前累积的文本还没有标点结尾
+    // 2. 或者当前累积时长太短（比如小于 3.5 秒）
+    // 3. 且合并后的总时长不超过 10 秒
+    const lastChar = current.text.trim().slice(-1);
+    const hasEndingPunctuation = /[.?!。？！]/.test(lastChar);
+    const currentDuration = (current.duration || 0);
+    const combinedDuration = (seg.offset + seg.duration) - current.offset;
+
+    // 如果满足合并条件 (没结束 或是 还是太短)，则继续合入下一条
+    const shouldMerge = (!hasEndingPunctuation || currentDuration < 3500) && combinedDuration < 10000;
+
+    if (shouldMerge) {
+      // 合并原文
       const isChinese = /[\u4e00-\u9fa5]/.test(seg.text);
+      const lastTextChar = current.text.trim().slice(-1);
+      const hasAnyPunc = /[.,?!，。？！、;；]/.test(lastTextChar);
       let sep = '';
-      if (!hasPunctuation) {
-        sep = isChinese ? '，' : ', ';
+      if (!hasAnyPunc) {
+        sep = isChinese ? '，' : ' ';
       } else {
-        sep = isChinese ? '' : ' ';
+        sep = ' ';
       }
       current.text = current.text.trim() + sep + seg.text.trim();
 
-      // 2. 合并译文
+      // 合并译文
       if (seg.translatedText) {
         const lastTransChar = (current.translatedText || '').trim().slice(-1);
-        const hasTransPunctuation = /[.,?!，。？！、;；]/.test(lastTransChar);
+        const hasTransPunc = /[.,?!，。？！、;；]/.test(lastTransChar);
         let transSep = '';
-        if (current.translatedText && !hasTransPunctuation) {
+        if (current.translatedText && !hasTransPunc) {
           transSep = '，';
         }
         current.translatedText = (current.translatedText || '').trim() + transSep + seg.translatedText.trim();
       }
 
-      current.duration = (seg.offset + seg.duration) - current.offset;
+      current.duration = combinedDuration;
+    } else {
+      // 达到断句条件，推入结果并开启新包
+      merged.push(current);
+      current = { ...seg };
     }
   }
+
   if (current) merged.push(current);
   return merged;
 });

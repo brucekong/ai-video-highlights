@@ -49,38 +49,57 @@ export async function fetchTranscript(videoId: string): Promise<TranscriptSegmen
     console.log(`[Transcript] Trying lang="${label}" for video: ${videoId}`);
     triedLangs.add(label);
 
-    const cookieHeader = parseNetscapeCookies(process.env.YOUTUBE_COOKIES || '');
-    const customFetch = cookieHeader
-      ? async (params: any) => {
-          const { url, lang: fetchLang, userAgent, method = 'GET', headers = {} } = params;
-          const fetchHeaders: any = {
-            'User-Agent': userAgent || USER_AGENT,
-            ...(fetchLang && { 'Accept-Language': fetchLang }),
-            ...headers,
-            'Cookie': cookieHeader,
-          };
-          return fetch(url, { method, headers: fetchHeaders });
+    const attempt = async (useCookies: boolean) => {
+      const cookieHeader = useCookies ? parseNetscapeCookies(process.env.YOUTUBE_COOKIES || '') : '';
+      const customFetch = cookieHeader
+        ? async (params: any) => {
+            const { url, lang: fetchLang, userAgent, method = 'GET', headers = {} } = params;
+            const fetchHeaders: any = {
+              'User-Agent': userAgent || USER_AGENT,
+              ...(fetchLang && { 'Accept-Language': fetchLang }),
+              ...headers,
+              'Cookie': cookieHeader,
+            };
+            return fetch(url, { method, headers: fetchHeaders });
+          }
+        : undefined;
+
+      try {
+        const transcriptItems = await fetchYTTranscript(videoId, {
+          lang,
+          userAgent: USER_AGENT,
+          videoFetch: customFetch,
+          playerFetch: customFetch,
+          transcriptFetch: customFetch,
+        });
+
+        if (transcriptItems && transcriptItems.length > 0) {
+          console.log(`✅ [Transcript] Got ${transcriptItems.length} segments (lang=${label}, cookies=${useCookies})`);
+          return transcriptItems.map((item) => ({
+            text: item.text,
+            offset: Math.round(item.offset * 1000),
+            duration: Math.round(item.duration * 1000),
+          }));
         }
-      : undefined;
-
-    try {
-      const transcriptItems = await fetchYTTranscript(videoId, {
-        lang,
-        userAgent: USER_AGENT,
-        videoFetch: customFetch,
-        playerFetch: customFetch,
-        transcriptFetch: customFetch,
-      });
-
-      if (transcriptItems && transcriptItems.length > 0) {
-        console.log(`✅ [Transcript] Got ${transcriptItems.length} segments (lang=${label})`);
-        return transcriptItems.map((item) => ({
-          text: item.text,
-          offset: Math.round(item.offset * 1000),
-          duration: Math.round(item.duration * 1000),
-        }));
+      } catch (error: any) {
+        // 如果不带 Cookie 失败了，且我们还没尝试带 Cookie，则允许继续下一次 attempt
+        if (!useCookies && process.env.YOUTUBE_COOKIES) {
+          console.warn(`[Transcript] Fetch without cookies failed for ${label}, retrying with cookies...`);
+          return null;
+        }
+        throw error;
       }
       return null;
+    };
+
+    try {
+      // 策略：先尝试不带 Cookie (用户反馈不带 Cookie 反而容易成功)
+      let result = await attempt(false);
+      // 如果没有结果且有 Cookie 配置，尝试带 Cookie
+      if (!result && process.env.YOUTUBE_COOKIES) {
+        result = await attempt(true);
+      }
+      return result;
     } catch (error: any) {
       lastError = error;
 

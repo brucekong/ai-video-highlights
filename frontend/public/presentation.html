@@ -252,14 +252,14 @@
         </section>
 
 
-        <!-- Slide 6: Business Logic -->
+         <!-- Slide 6: Business Logic -->
         <section>
           <div class="slide-container">
             <h2 class="text-gradient" style="margin-bottom: 20px;">核心业务逻辑与稳定性兜底</h2>
             <div class="card" style="margin-bottom: 12px; background: rgba(0,0,0,0.2); overflow: hidden; padding: 12px 24px;">
-              <h4 style="font-size: 0.9em !important; margin-bottom: 10px !important;">解析处理流水线 (Pipeline)</h4>
+              <h4 style="font-size: 0.9em !important; margin-bottom: 10px !important;">转录解析流水线 (Enhanced Pipeline)</h4>
 
-              <svg viewBox="0 0 800 130" style="width: 100%; height: auto;">
+              <svg viewBox="0 0 800 160" style="width: 100%; height: auto;">
                 <defs>
                   <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
                     <polygon points="0 0, 10 3.5, 0 7" fill="rgba(255,255,255,0.3)" />
@@ -267,47 +267,51 @@
                 </defs>
 
                 <!-- Nodes -->
-                <rect x="10" y="40" width="90" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
-                <text x="55" y="70" fill="white" font-size="12" text-anchor="middle">URL 输入</text>
+                <rect x="10" y="55" width="80" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
+                <text x="50" y="85" fill="white" font-size="11" text-anchor="middle">URL 提交</text>
 
-                <rect x="150" y="40" width="90" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
-                <text x="195" y="70" fill="white" font-size="12" text-anchor="middle">平台&ID识别</text>
+                <rect x="120" y="55" width="100" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
+                <text x="170" y="85" fill="white" font-size="11" text-anchor="middle">API 解析 (无Cookie)</text>
 
-                <path d="M290 65 L330 30 L370 65 L330 100 Z" fill="rgba(99, 102, 241, 0.1)" stroke="var(--accent)" />
-                <text x="330" y="69" fill="white" font-size="10" text-anchor="middle">官方字幕?</text>
+                <path d="M250 80 L280 50 L310 80 L280 110 Z" fill="rgba(99, 102, 241, 0.1)" stroke="var(--accent)" />
+                <text x="280" y="84" fill="white" font-size="9" text-anchor="middle">解析成功?</text>
 
-                <rect x="420" y="5" width="100" height="40" rx="8" fill="rgba(16, 185, 129, 0.1)" stroke="rgba(16, 185, 129, 0.3)" />
-                <text x="470" y="30" fill="#10b981" font-size="11" text-anchor="middle">API 直接提取</text>
+                <rect x="350" y="10" width="120" height="40" rx="8" fill="rgba(16, 185, 129, 0.1)" stroke="rgba(16, 185, 129, 0.3)" />
+                <text x="410" y="35" fill="#10b981" font-size="11" text-anchor="middle">AI 内容聚类</text>
 
-                <rect x="420" y="85" width="100" height="40" rx="8" fill="rgba(239, 68, 68, 0.1)" stroke="rgba(239, 68, 68, 0.3)" />
-                <text x="470" y="110" fill="#ef4444" font-size="11" text-anchor="middle">Whisper 转录</text>
+                <rect x="350" y="110" width="120" height="40" rx="8" fill="rgba(239, 68, 68, 0.1)" stroke="rgba(239, 68, 68, 0.3)" />
+                <text x="410" y="135" fill="#ef4444" font-size="11" text-anchor="middle">MWEB 手动回退</text>
 
-                <rect x="580" y="40" width="90" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
-                <text x="625" y="70" fill="white" font-size="11" text-anchor="middle">AI 内容聚类</text>
+                <rect x="520" y="110" width="100" height="40" rx="8" fill="rgba(239, 68, 68, 0.1)" stroke="rgba(239, 68, 68, 0.3)" />
+                <text x="570" y="135" fill="#ef4444" font-size="11" text-anchor="middle">Whisper ASR</text>
 
-                <rect x="710" y="30" width="80" height="70" rx="8" fill="rgba(99, 102, 241, 0.2)" stroke="var(--accent)" />
-                <text x="750" y="60" fill="white" font-size="11" text-anchor="middle" font-weight="bold">多维输出</text>
-                <text x="750" y="80" fill="white" font-size="9" text-anchor="middle" opacity="0.6">摘要/脑图/对话</text>
+                <rect x="680" y="55" width="110" height="50" rx="8" fill="rgba(99, 102, 241, 0.2)" stroke="var(--accent)" />
+                <text x="735" y="80" fill="white" font-size="11" text-anchor="middle" font-weight="bold">多维输出</text>
+                <text x="735" y="95" fill="white" font-size="9" text-anchor="middle" opacity="0.6">摘要/脑图/异步翻译</text>
 
-                <line x1="100" y1="65" x2="150" y2="65" stroke="rgba(255,255,255,0.2)" marker-end="url(#arrowhead)" />
-                <line x1="240" y1="65" x2="290" y2="65" stroke="rgba(255,255,255,0.2)" marker-end="url(#arrowhead)" />
-                <path d="M370 65 C 390 65, 400 25, 420 25" fill="none" stroke="rgba(16, 185, 129, 0.4)" stroke-width="2" />
-                <text x="395" y="40" fill="#10b981" font-size="9" text-anchor="middle">YES</text>
-                <path d="M370 65 C 390 65, 400 105, 420 105" fill="none" stroke="rgba(239, 68, 68, 0.4)" stroke-width="2" />
-                <text x="395" y="100" fill="#ef4444" font-size="9" text-anchor="middle">NO</text>
-                <path d="M520 25 C 540 25, 560 65, 580 65" fill="none" stroke="rgba(255,255,255,0.2)" />
-                <path d="M520 105 C 540 105, 560 65, 580 65" fill="none" stroke="rgba(255,255,255,0.2)" />
-                <line x1="670" y1="65" x2="710" y2="65" stroke="var(--accent)" stroke-width="2" />
+                <!-- Lines -->
+                <line x1="90" y1="80" x2="120" y2="80" stroke="white" opacity="0.2" marker-end="url(#arrowhead)" />
+                <line x1="220" y1="80" x2="250" y2="80" stroke="white" opacity="0.2" marker-end="url(#arrowhead)" />
+
+                <path d="M310 80 C 330 80, 330 30, 350 30" fill="none" stroke="#10b981" stroke-width="2" opacity="0.4" />
+                <text x="330" y="45" fill="#10b981" font-size="9">YES</text>
+
+                <path d="M310 80 C 330 80, 330 130, 350 130" fill="none" stroke="#ef4444" stroke-width="2" opacity="0.4" />
+                <text x="330" y="115" fill="#ef4444" font-size="9">NO</text>
+
+                <line x1="470" y1="130" x2="520" y2="130" stroke="#ef4444" opacity="0.3" marker-end="url(#arrowhead)" />
+                <line x1="620" y1="130" x2="680" y2="80" stroke="white" opacity="0.2" />
+                <line x1="470" y1="30" x2="680" y2="80" stroke="white" opacity="0.2" />
               </svg>
             </div>
             <div class="grid-2" style="gap: 16px;">
               <div class="card" style="padding: 12px 20px;">
-                <h4 style="font-size: 0.9em !important; margin-bottom: 6px !important;">多级字幕兜底</h4>
-                <p style="font-size: 0.75rem;">优先官方字幕；受限时转由 <strong>Whisper</strong> 本地化提取，确保 100% 可解析性。</p>
+                <h4 style="font-size: 0.9em !important; margin-bottom: 6px !important;">对抗式反爬策略</h4>
+                <p style="font-size: 0.75rem;">“裸跑优先”+“手动MWEB模拟”+“Cookie自动回退”，彻底解决 YouTube Bot 检测导致的解析失败。</p>
               </div>
               <div class="card" style="padding: 12px 20px;">
-                <h4 style="font-size: 0.9em !important; margin-bottom: 6px !important;">高可用 AI 策略</h4>
-                <p style="font-size: 0.75rem;">内置 <strong>指数退避重试</strong> 机制；利用缓存层实现“一次分析，秒级开”。</p>
+                <h4 style="font-size: 0.9em !important; margin-bottom: 6px !important;">异步后台任务</h4>
+                <p style="font-size: 0.75rem;">主线分析秒开，<strong>翻译与向量生成</strong>转入后台异步处理，前端通过长轮询平滑展示对照字幕。</p>
               </div>
             </div>
           </div>

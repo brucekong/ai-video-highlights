@@ -14,6 +14,7 @@ interface AnalyzeBody {
   url: string;
   platform?: 'youtube' | 'bilibili';
   forceRefresh?: boolean;
+  providedTranscript?: TranscriptSegment[];
 }
 
 export async function analyzeRoutes(fastify: FastifyInstance) {
@@ -34,6 +35,18 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           url: { type: 'string', description: '视频完整 URL' },
           platform: { type: 'string', enum: ['youtube', 'bilibili'], default: 'youtube' },
           forceRefresh: { type: 'boolean', default: false },
+          providedTranscript: {
+            type: 'array',
+            nullable: true,
+            items: {
+              type: 'object',
+              properties: {
+                text: { type: 'string' },
+                offset: { type: 'number' },
+                duration: { type: 'number' }
+              }
+            }
+          }
         },
       },
       response: {
@@ -57,7 +70,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (request: FastifyRequest<{ Body: AnalyzeBody }>, reply: FastifyReply) => {
-    const { videoId, url, platform = 'youtube', forceRefresh = false } = request.body;
+    const { videoId, url, platform = 'youtube', forceRefresh = false, providedTranscript } = request.body;
 
     try {
       // 1. 检查缓存
@@ -106,27 +119,36 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
 
       // 3. 获取字幕并进行安全检查
       let transcript: TranscriptSegment[] = [];
-      try {
-        transcript = platform === 'bilibili'
-          ? await fetchBilibiliTranscript(videoId)
-          : await fetchTranscript(videoId);
-      } catch (e: any) {
-        fastify.log.warn(`[Transcript] Primary fetch failed: ${e.message}. Attempting Whisper fallback...`);
-      }
 
-      if (!transcript || transcript.length === 0) {
+      if (providedTranscript && providedTranscript.length > 0) {
+        fastify.log.info(`[Analyze] Using provided transcript from extension for ${videoId}`);
+        transcript = providedTranscript;
+      } else {
+        if (process.env.ENABLE_SERVER_SCRAPING === 'false') {
+          return reply.status(403).send({ error: '生产环境防风控：请安装浏览器插件以获取字幕' });
+        }
         try {
-          fastify.log.info(`[Transcript] Triggering Whisper fallback for ${videoId}...`);
-          transcript = await fallbackToWhisper(videoId, platform);
-        } catch (fbError: any) {
-          fastify.log.error(`[Whisper Fallback Failed] ${fbError.message}`);
+          transcript = platform === 'bilibili'
+            ? await fetchBilibiliTranscript(videoId)
+            : await fetchTranscript(videoId);
+        } catch (e: any) {
+          fastify.log.warn(`[Transcript] Primary fetch failed: ${e.message}. Attempting Whisper fallback...`);
+        }
+
+        if (!transcript || transcript.length === 0) {
+          try {
+            fastify.log.info(`[Transcript] Triggering Whisper fallback for ${videoId}...`);
+            transcript = await fallbackToWhisper(videoId, platform);
+          } catch (fbError: any) {
+            fastify.log.error(`[Whisper Fallback Failed] ${fbError.message}`);
+          }
         }
       }
 
       if (!transcript || transcript.length === 0) {
         return reply.status(422).send({ error: '无法获取该视频转录文本。' });
       }
-
+      return;
       const formattedText = formatTranscriptForAI(transcript);
       if (containsSensitiveContent(formattedText)) {
         return reply.status(403).send({ error: '安全拦截：转录内容涉及受限话题。' });

@@ -244,6 +244,46 @@ watch(() => route.query.url, (newUrl) => {
   }
 });
 
+// 探测插件获取字幕的逻辑
+const requestTranscriptFromExtension = (videoId: string, platform: string): Promise<any[] | null> => {
+  return new Promise((resolve) => {
+    if (!document.documentElement.hasAttribute('data-ai-video-ext-installed')) {
+      console.log("[Extension Probe] Extension not detected via attribute.");
+      return resolve(null);
+    }
+    const messageId = Date.now().toString() + Math.random().toString().substring(2, 6);
+    let resolved = false;
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        window.removeEventListener('message', listener);
+        console.warn(`[Extension Probe] Timeout waiting for transcript for ${videoId}`);
+        resolve(null);
+      }
+    }, 15000);
+
+    const listener = (event: MessageEvent) => {
+      if (event.source !== window || !event.data || event.data.type !== 'AI_VIDEO_EXT_RESPONSE_TRANSCRIPT') return;
+      if (event.data.messageId === messageId) {
+        resolved = true;
+        clearTimeout(timeout);
+        window.removeEventListener('message', listener);
+        if (event.data.success) {
+          console.log(`[Extension Probe] Successfully got ${event.data.data.length} segments via extension`);
+          resolve(event.data.data);
+        } else {
+          console.warn(`[Extension Probe] Extension failed to get transcript: ${event.data.error}`);
+          resolve(null);
+        }
+      }
+    };
+
+    window.addEventListener('message', listener);
+    window.postMessage({ type: 'AI_VIDEO_EXT_REQUEST_TRANSCRIPT', videoId, platform, messageId }, '*');
+  });
+};
+
 // 调用后端 AI 分析接口
 const handleAnalyze = async () => {
   await waitForAuth(); // 等待认证初始化完成
@@ -258,17 +298,30 @@ const handleAnalyze = async () => {
   currentVideoTime.value = 0;
 
   try {
+    let providedTranscript = null;
+    try {
+      providedTranscript = await requestTranscriptFromExtension(videoId.value, platform.value);
+    } catch (err) {
+      console.log("[Extension Probe] Internal error", err);
+    }
+
+    const payload: any = {
+      videoId: videoId.value,
+      url: videoUrl.value,
+      platform: platform.value,
+    };
+
+    if (providedTranscript) {
+      payload.providedTranscript = providedTranscript;
+    }
+
     const response = await fetch(`${API_BASE}/api/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...getAuthHeaders()
       },
-      body: JSON.stringify({
-        videoId: videoId.value,
-        url: videoUrl.value,
-        platform: platform.value,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {

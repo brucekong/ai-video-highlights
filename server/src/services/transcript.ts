@@ -39,7 +39,8 @@ function parseNetscapeCookies(content: string): string {
 export async function fetchTranscript(videoId: string): Promise<TranscriptSegment[]> {
   // 1. 扩大首选语言尝试列表，涵盖 YouTube 常用的中文变体
   const preferredLangs = ['en','zh-CN', 'zh-Hans', 'zh', 'zh-Hant', 'zh-TW'];
-
+  // TODO
+  return;
   let lastError: any = null;
   let availableLangs: string[] = [];
   const triedLangs = new Set<string>();

@@ -13,6 +13,7 @@ interface AnalyzeRequest {
   url: string;
   platform: 'youtube' | 'bilibili';
   forceRefresh?: boolean;
+  providedTranscript?: any[];
 }
 
 const videoUrl = ref('');
@@ -51,18 +52,83 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleEsc);
 });
 
-const handleAnalyze = () => {
+const requestTranscriptFromExtension = (videoId: string, platform: string): Promise<any[] | null> => {
+  return new Promise((resolve) => {
+    // 1. 如果全局标记不存在，说明没装插件，直接跳过探测
+    if (!document.documentElement.hasAttribute('data-ai-video-ext-installed')) {
+      console.log("[Extension Probe] Extension not detected via attribute.");
+      return resolve(null);
+    }
+
+    const messageId = Date.now().toString() + Math.random().toString().substring(2, 6);
+    let resolved = false;
+
+    // 2. 超时兜底 (15秒没反应当做没装或者获取失败，YouTube 页面加载可能较慢)
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        window.removeEventListener('message', listener);
+        console.warn(`[Extension Probe] Timeout waiting for transcript for ${videoId}`);
+        resolve(null);
+      }
+    }, 15000);
+
+    // 3. 监听插件回传的结果
+    const listener = (event: MessageEvent) => {
+      if (event.source !== window || !event.data || event.data.type !== 'AI_VIDEO_EXT_RESPONSE_TRANSCRIPT') return;
+
+      if (event.data.messageId === messageId) {
+        resolved = true;
+        clearTimeout(timeout);
+        window.removeEventListener('message', listener);
+
+        if (event.data.success) {
+          console.log(`[Extension Probe] Successfully got ${event.data.data.length} segments via extension`);
+          resolve(event.data.data);
+        } else {
+          console.warn(`[Extension Probe] Extension failed to get transcript: ${event.data.error}`);
+          resolve(null);
+        }
+      }
+    };
+
+    window.addEventListener('message', listener);
+
+    // 4. 发送获取请求
+    window.postMessage({
+      type: 'AI_VIDEO_EXT_REQUEST_TRANSCRIPT',
+      videoId,
+      platform,
+      messageId
+    }, '*');
+  });
+};
+
+const handleAnalyze = async () => {
   if (!videoInfo.value) return;
+
+  isAnalyzing.value = true;
+  errorMsg.value = '';
+
+  // 尝试让插件去拿字幕
+  let providedTranscript = null;
+  try {
+     providedTranscript = await requestTranscriptFromExtension(videoInfo.value.videoId, videoInfo.value.platform);
+  } catch (err) {
+     console.log("[Extension Probe] Internal error", err);
+  }
 
   const payload: AnalyzeRequest = {
     url: videoUrl.value,
     videoId: videoInfo.value.videoId,
-    platform: videoInfo.value.platform
+    platform: videoInfo.value.platform,
+    ...(providedTranscript ? { providedTranscript } : {})
   };
 
   // 立即发出任务并关闭弹窗
   emit('submit-task', payload);
   videoUrl.value = '';
+  isAnalyzing.value = false;
   emit('close');
 };
 </script>

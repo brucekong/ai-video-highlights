@@ -57,6 +57,8 @@ const isAutoScrollEnabled = ref(true);
 // 字幕滚动自动归中行为控制变量
 const isHoveringTranscript = ref(false);
 const autoScrollPaused = ref(false);
+const isTranslating = ref(false);
+let pollingInterval: any = null;
 let resumeScrollTimeout: any = null;
 let programmaticScrollTimeout: any = null;
 let isProgrammaticScroll = false;
@@ -131,7 +133,7 @@ const mergedTranscript = computed(() => {
       }
       current.text = current.text.trim() + sep + seg.text.trim();
 
-      // 合并译文
+      // 合并译文 (如果存在)
       if (seg.translatedText) {
         const lastTransChar = (current.translatedText || '').trim().slice(-1);
         const hasTransPunc = /[.,?!，。？！、;；]/.test(lastTransChar);
@@ -140,6 +142,9 @@ const mergedTranscript = computed(() => {
           transSep = '，';
         }
         current.translatedText = (current.translatedText || '').trim() + transSep + seg.translatedText.trim();
+      } else if (current.translatedText) {
+         // 如果当前已有译文但下一条没有，保持译文状态（哪怕是部分翻译）
+         current.translatedText = current.translatedText;
       }
 
       current.duration = combinedDuration;
@@ -239,6 +244,11 @@ onMounted(() => {
   }
 });
 
+import { onUnmounted } from 'vue';
+onUnmounted(() => {
+  if (pollingInterval) clearInterval(pollingInterval);
+});
+
 // 监听 URL 中的参数变化，实现同一视频多次搜索跳转
 watch(() => route.query, (newQuery) => {
   if (newQuery.t && playerRef.value) {
@@ -264,6 +274,41 @@ watch(() => route.query.url, (newUrl) => {
   }
 });
 
+// 轮询更新字幕（异步翻译）
+const pollTranscript = async () => {
+  if (!videoId.value || !isTranslating.value) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/transcript/${videoId.value}`, {
+      headers: getAuthHeaders()
+    });
+    const result = await res.json();
+
+    if (result.success && result.data && result.data.segments) {
+      // 更新翻译
+      const newData = result.data.segments;
+      let hasMissing = false;
+
+      transcript.value = transcript.value.map((seg, i) => {
+        const updated = newData[i];
+        if (updated && updated.translatedText) {
+          return { ...seg, translatedText: decodeHtml(updated.translatedText) };
+        }
+        if (updated && !updated.translatedText) hasMissing = true;
+        return seg;
+      });
+
+      // 如果全部翻译完成，停止轮询
+      if (!hasMissing) {
+        isTranslating.value = false;
+        if (pollingInterval) clearInterval(pollingInterval);
+      }
+    }
+  } catch (e) {
+    console.error('Polling transcript failed:', e);
+  }
+};
+
 // 调用后端 AI 分析接口
 const handleAnalyze = async () => {
   await waitForAuth(); // 等待认证初始化完成
@@ -271,6 +316,8 @@ const handleAnalyze = async () => {
   if (!videoId.value || !platform.value) return;
   isLoading.value = true;
   showResult.value = false;
+  isTranslating.value = false;
+  if (pollingInterval) clearInterval(pollingInterval);
   errorMsg.value = '';
   // 重置视频状态防止上一个视频的进度导致当前页面错乱闪烁
   activeTakeawayIndex.value = null;
@@ -304,15 +351,28 @@ const handleAnalyze = async () => {
         title: decodeHtml(ta.title),
         summary: decodeHtml(ta.summary)
       }));
-      transcript.value = (result.data.transcript || []).map((seg: any) => ({
+
+      const rawTranscript = result.data.transcript || [];
+      transcript.value = rawTranscript.map((seg: any) => ({
         ...seg,
         text: decodeHtml(seg.text),
         translatedText: decodeHtml(seg.translatedText)
       }));
+
       videoTitle.value = decodeHtml(result.data.videoTitle || '');
       mindmapRaw.value = result.data.mindmap || '';
       showResult.value = true;
       window.dispatchEvent(new Event('video-analyzed')); // 刷新历史
+
+      // 检查是否需要开启异步翻译轮询
+      const needsTrans = transcript.value.length > 0 &&
+                        transcript.value.slice(0, 10).some(s => !/[\u4e00-\u9fa5]/.test(s.text)) &&
+                        transcript.value.every(s => !s.translatedText);
+
+      if (needsTrans) {
+        isTranslating.value = true;
+        pollingInterval = setInterval(pollTranscript, 3000);
+      }
     } else {
       throw new Error('Invalid response format');
     }
@@ -818,6 +878,10 @@ const takeawayMap = computed(() => {
                    <h3>视频转录</h3>
                  </div>
                   <div class="sidebar-actions">
+                    <div v-if="isTranslating" class="translating-hint">
+                      <Loader2 :size="12" class="spin" />
+                      <span>正在翻译中文...</span>
+                    </div>
                     <button
                       v-if="hasBilingualData"
                       class="toggle-bilingual-btn"
@@ -1597,6 +1661,17 @@ input::placeholder {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.translating-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--accent-color);
+  opacity: 0.8;
+  padding-right: 8px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Premium Badge Style */

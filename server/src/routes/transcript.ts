@@ -77,6 +77,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
             segmentCount: cachedSubtitles.length,
             segments: cachedSubtitles.map((s) => ({
               text: s.text,
+              translatedText: s.translatedText,
               offset: s.offset,
               duration: s.duration,
             })),
@@ -135,6 +136,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
           segmentCount: transcript.length,
           segments: transcript.map((seg) => ({
             text: seg.text,
+            translatedText: null, // 新生成的此时还没翻译
             offset: seg.offset,
             duration: seg.duration,
           })),

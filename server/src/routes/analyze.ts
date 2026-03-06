@@ -132,16 +132,12 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
         return reply.status(403).send({ error: '安全拦截：转录内容涉及受限话题。' });
       }
 
-      // 4. AI 分析与翻译
+      // 4. AI 分析 (此时不等待翻译)
       const lastSegment = transcript[transcript.length - 1];
       const maxDurationSeconds = Math.ceil((lastSegment.offset + lastSegment.duration) / 1000);
       const aiResult = await analyzeTranscript(formattedText, maxDurationSeconds);
 
-      // 判断翻译
-      const needsTranslation = transcript.slice(0, 10).filter(s => !/[\u4e00-\u9fa5]/.test(s.text)).length > 5;
-      const translatedTexts = needsTranslation ? await translateTranscriptSegments(transcript.map(s => s.text)) : [];
-
-      // 5. 保存结果
+      // 5. 保存基础结果 (视频信息, 摘要, 原始字幕)
       await prisma.$transaction(async (tx) => {
         await tx.video.upsert({
           where: { videoId },
@@ -156,25 +152,53 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
 
         await tx.subtitle.deleteMany({ where: { videoId } });
         await tx.subtitle.createMany({
-          data: transcript.map((seg, i) => ({ videoId, text: seg.text, translatedText: translatedTexts[i] || null, offset: seg.offset, duration: seg.duration, sortOrder: i })),
+          data: transcript.map((seg, i) => ({ videoId, text: seg.text, offset: seg.offset, duration: seg.duration, sortOrder: i })),
         });
       });
 
-      // 6. 生成向量并异步保存 (这里简单点处理)
-      try {
-        const titleEmbedding = await getEmbedding(aiResult.title);
-        const subtitleEmbeddings = await getEmbeddings(translatedTexts.length > 0 ? translatedTexts : transcript.map(s => s.text));
+      // 6. 开启后台异步任务：翻译 & 向量生成
+      const backgroundTask = async () => {
+        try {
+          console.log(`[Background] Starting translation & embedding for ${videoId}...`);
 
-        await prisma.$executeRaw`UPDATE videos SET embedding = ${`[${titleEmbedding.join(',')}]`}::vector WHERE video_id = ${videoId}`;
+          // A. 翻译
+          const needsTranslation = transcript.slice(0, 10).filter(s => !/[\u4e00-\u9fa5]/.test(s.text)).length > 5;
+          let translatedTexts: string[] = [];
 
-        await Promise.all(subtitleEmbeddings.map((vec, idx) => {
-          const vectorStr = `[${vec.join(',')}]`;
-          const offset = transcript[idx].offset;
-          return prisma.$executeRaw`UPDATE subtitles SET embedding = ${vectorStr}::vector WHERE video_id = ${videoId} AND "offset" = ${offset}`;
-        }));
-      } catch (e) {
-        fastify.log.warn('Embedding generation failed silently: ' + e);
-      }
+          if (needsTranslation) {
+            translatedTexts = await translateTranscriptSegments(transcript.map(s => s.text));
+            // 批量更新数据库中的译文
+            for (let i = 0; i < translatedTexts.length; i++) {
+              if (translatedTexts[i]) {
+                await prisma.subtitle.updateMany({
+                  where: { videoId, sortOrder: i },
+                  data: { translatedText: translatedTexts[i] }
+                });
+              }
+            }
+            console.log(`[Background] Translation completed for ${videoId}`);
+          }
+
+          // B. 向量生成 (Embedding)
+          const titleEmbedding = await getEmbedding(aiResult.title);
+          const subtitleEmbeddings = await getEmbeddings(translatedTexts.length > 0 ? translatedTexts : transcript.map(s => s.text));
+
+          await prisma.$executeRaw`UPDATE videos SET embedding = ${`[${titleEmbedding.join(',')}]`}::vector WHERE video_id = ${videoId}`;
+
+          await Promise.all(subtitleEmbeddings.map((vec, idx) => {
+            const vectorStr = `[${vec.join(',')}]`;
+            const offset = transcript[idx].offset;
+            return prisma.$executeRaw`UPDATE subtitles SET embedding = ${vectorStr}::vector WHERE video_id = ${videoId} AND "offset" = ${offset}`;
+          }));
+
+          console.log(`[Background] Embedding generation completed for ${videoId}`);
+        } catch (err) {
+          console.error(`[Background Task Failed] ${videoId}:`, err);
+        }
+      };
+
+      // 触发后台任务，不等待
+      backgroundTask();
 
       const userId = getUserId(request);
       if (userId) {
@@ -185,6 +209,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
         });
       }
 
+      // 立即返回初始分析结果 (翻译字段为空，由前端后续轮询)
       return reply.send({
         success: true,
         cached: false,
@@ -194,7 +219,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           takeaways: aiResult.takeaways,
           transcript: transcript.map((s, i) => ({
             text: s.text,
-            translatedText: translatedTexts[i] || null,
+            translatedText: null, // 初始返回为空
             offset: s.offset,
             duration: s.duration,
           })),

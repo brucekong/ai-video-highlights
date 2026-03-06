@@ -1,0 +1,1112 @@
+[
+  {
+    "text": "Wait, am I in trouble? This is my first",
+    "duration": 4.959,
+    "offset": 0.4,
+    "lang": "en"
+  },
+  {
+    "text": "day in New York.",
+    "duration": 3.76,
+    "offset": 3.76,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Good afternoon, ma&#39;am. Turn off the",
+    "duration": 7.001,
+    "offset": 5.359,
+    "lang": "en"
+  },
+  {
+    "text": "engine and put your hands on the wheel.",
+    "duration": 4.84,
+    "offset": 7.52,
+    "lang": "en"
+  },
+  {
+    "text": "[screaming]",
+    "duration": 4.435,
+    "offset": 12.445,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; My vacation is a nightmare. Do you want",
+    "duration": 6.119,
+    "offset": 14.16,
+    "lang": "en"
+  },
+  {
+    "text": "to see why?",
+    "duration": 3.399,
+    "offset": 16.88,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I&#39;m driving to my hotel.",
+    "duration": 5.92,
+    "offset": 20.96,
+    "lang": "en"
+  },
+  {
+    "text": "This is my first time driving here.",
+    "duration": 5.759,
+    "offset": 23.84,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Good afternoon, ma&#39;am. Please turn off",
+    "duration": 5.44,
+    "offset": 26.88,
+    "lang": "en"
+  },
+  {
+    "text": "the engine. Put your hands on the",
+    "duration": 5.361,
+    "offset": 29.599,
+    "lang": "en"
+  },
+  {
+    "text": "steering wheel. Do you know why I",
+    "duration": 3.84,
+    "offset": 32.32,
+    "lang": "en"
+  },
+  {
+    "text": "stopped you?",
+    "duration": 5.52,
+    "offset": 34.96,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I&#39;m not sure. Was I driving too fast?",
+    "duration": 7.84,
+    "offset": 36.16,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; May I see your driver&#39;s license, please?",
+    "duration": 6.72,
+    "offset": 40.48,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes. One moment. Here you are.",
+    "duration": 7.44,
+    "offset": 44,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; You were driving 45. This road is 30.",
+    "duration": 5.839,
+    "offset": 47.2,
+    "lang": "en"
+  },
+  {
+    "text": "That&#39;s too fast.",
+    "duration": 5.279,
+    "offset": 51.44,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Oh, I&#39;m very sorry. This is a rental",
+    "duration": 7.281,
+    "offset": 53.039,
+    "lang": "en"
+  },
+  {
+    "text": "car. I&#39;m going to my hotel. I&#39;m checking",
+    "duration": 7.681,
+    "offset": 56.719,
+    "lang": "en"
+  },
+  {
+    "text": "in. I didn&#39;t see the speed limit sign.",
+    "duration": 8.08,
+    "offset": 60.32,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I understand, but speeding is dangerous.",
+    "duration": 6,
+    "offset": 64.4,
+    "lang": "en"
+  },
+  {
+    "text": "It can hurt people.",
+    "duration": 5.92,
+    "offset": 68.4,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes, I understand. I&#39;m very sorry.",
+    "duration": 7.039,
+    "offset": 70.4,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; This time, I&#39;ll give you a warning.",
+    "duration": 5.119,
+    "offset": 74.32,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Thank you very much.",
+    "duration": 3.921,
+    "offset": 77.439,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Here is your license, and you may go",
+    "duration": 2.801,
+    "offset": 79.439,
+    "lang": "en"
+  },
+  {
+    "text": "now.",
+    "duration": 2.24,
+    "offset": 81.36,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Thank you.",
+    "duration": 3.519,
+    "offset": 82.24,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Drive safely.",
+    "duration": 6.32,
+    "offset": 83.6,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay. No more speeding. I just want to",
+    "duration": 8,
+    "offset": 85.759,
+    "lang": "en"
+  },
+  {
+    "text": "get to the hotel now. I finally arrive",
+    "duration": 8.08,
+    "offset": 89.92,
+    "lang": "en"
+  },
+  {
+    "text": "at my hotel. Now I want to check in.",
+    "duration": 7.761,
+    "offset": 93.759,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Good afternoon. Welcome to the AFU",
+    "duration": 6,
+    "offset": 98,
+    "lang": "en"
+  },
+  {
+    "text": "hotel. How can I help you?",
+    "duration": 4.72,
+    "offset": 101.52,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Hi, I want to check in.",
+    "duration": 4.88,
+    "offset": 104,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; May I see your passport, please?",
+    "duration": 4.64,
+    "offset": 106.24,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes, here you go.",
+    "duration": 5.279,
+    "offset": 108.88,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Thank you. Let me check your booking.",
+    "duration": 7.199,
+    "offset": 110.88,
+    "lang": "en"
+  },
+  {
+    "text": "You have a room for three nights. It is",
+    "duration": 7.121,
+    "offset": 114.159,
+    "lang": "en"
+  },
+  {
+    "text": "a king room. Is that correct?",
+    "duration": 5.281,
+    "offset": 118.079,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes, that is correct.",
+    "duration": 6.32,
+    "offset": 121.28,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Great. We need a credit card. This is",
+    "duration": 8.56,
+    "offset": 123.36,
+    "lang": "en"
+  },
+  {
+    "text": "for a deposit. It is $50. You get it",
+    "duration": 6.639,
+    "offset": 127.6,
+    "lang": "en"
+  },
+  {
+    "text": "back after checkout.",
+    "duration": 5.6,
+    "offset": 131.92,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Sorry, what is the deposit for?",
+    "duration": 7.281,
+    "offset": 134.239,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; It is for extra costs. for example, mini",
+    "duration": 7.92,
+    "offset": 137.52,
+    "lang": "en"
+  },
+  {
+    "text": "bar or room service. If there is no",
+    "duration": 7.6,
+    "offset": 141.52,
+    "lang": "en"
+  },
+  {
+    "text": "extra cost, you get all the money back.",
+    "duration": 6.56,
+    "offset": 145.44,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay, here is my card. Thank you very",
+    "duration": 7.119,
+    "offset": 149.12,
+    "lang": "en"
+  },
+  {
+    "text": "much. Your room number is 512.",
+    "duration": 7.76,
+    "offset": 152,
+    "lang": "en"
+  },
+  {
+    "text": "Checkout time is 11:00 a.m. Breakfast is",
+    "duration": 7.28,
+    "offset": 156.239,
+    "lang": "en"
+  },
+  {
+    "text": "free for two people. Breakfast is from 8",
+    "duration": 6.88,
+    "offset": 159.76,
+    "lang": "en"
+  },
+  {
+    "text": "to 10. The elevator is on the left.",
+    "duration": 6.161,
+    "offset": 163.519,
+    "lang": "en"
+  },
+  {
+    "text": "Enjoy your stay. Please tell us if you",
+    "duration": 4.08,
+    "offset": 166.64,
+    "lang": "en"
+  },
+  {
+    "text": "need help.",
+    "duration": 5.12,
+    "offset": 169.68,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Thank you. I checked in already. Now I",
+    "duration": 9.2,
+    "offset": 170.72,
+    "lang": "en"
+  },
+  {
+    "text": "am going to find my room. What is this?",
+    "duration": 8.48,
+    "offset": 174.8,
+    "lang": "en"
+  },
+  {
+    "text": "This is a closet, not a room.",
+    "duration": 7.84,
+    "offset": 179.92,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Hello, this is the AFU Hotel front desk.",
+    "duration": 6.08,
+    "offset": 183.28,
+    "lang": "en"
+  },
+  {
+    "text": "How can I help you?",
+    "duration": 6,
+    "offset": 187.76,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Hi, I am calling from room 512. I think",
+    "duration": 7.68,
+    "offset": 189.36,
+    "lang": "en"
+  },
+  {
+    "text": "there is a problem. I booked a king",
+    "duration": 7.04,
+    "offset": 193.76,
+    "lang": "en"
+  },
+  {
+    "text": "room, but this room is small. Is this",
+    "duration": 5.279,
+    "offset": 197.04,
+    "lang": "en"
+  },
+  {
+    "text": "the wrong room?",
+    "duration": 4.32,
+    "offset": 200.8,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I&#39;m very sorry. May I have your name,",
+    "duration": 3.681,
+    "offset": 202.319,
+    "lang": "en"
+  },
+  {
+    "text": "please?",
+    "duration": 2.64,
+    "offset": 205.12,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; My name is Maya.",
+    "duration": 4.4,
+    "offset": 206,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Do you have your reservation number?",
+    "duration": 5.52,
+    "offset": 207.76,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes, it is 0007.",
+    "duration": 6.559,
+    "offset": 210.4,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Thank you, I am checking the system. I&#39;m",
+    "duration": 7.599,
+    "offset": 213.28,
+    "lang": "en"
+  },
+  {
+    "text": "sorry, we do not have a king room now.",
+    "duration": 5.84,
+    "offset": 216.959,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; What?",
+    "duration": 6.08,
+    "offset": 220.879,
+    "lang": "en"
+  },
+  {
+    "text": "I booked a king room. This is not okay.",
+    "duration": 7.681,
+    "offset": 222.799,
+    "lang": "en"
+  },
+  {
+    "text": "I planned this trip for a long time. I",
+    "duration": 7.521,
+    "offset": 226.959,
+    "lang": "en"
+  },
+  {
+    "text": "am not happy. I may write a bad review.",
+    "duration": 7.759,
+    "offset": 230.48,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I understand. I&#39;m very sorry about this.",
+    "duration": 6.88,
+    "offset": 234.48,
+    "lang": "en"
+  },
+  {
+    "text": "Please wait a moment. I need to talk to",
+    "duration": 4.241,
+    "offset": 238.239,
+    "lang": "en"
+  },
+  {
+    "text": "my manager.",
+    "duration": 1.92,
+    "offset": 241.36,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay.",
+    "duration": 3.679,
+    "offset": 242.48,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Thank you for waiting. Good news. We",
+    "duration": 6,
+    "offset": 243.28,
+    "lang": "en"
+  },
+  {
+    "text": "have a king room now. We can change your",
+    "duration": 6.401,
+    "offset": 246.159,
+    "lang": "en"
+  },
+  {
+    "text": "room today. We are very sorry for the",
+    "duration": 6.4,
+    "offset": 249.28,
+    "lang": "en"
+  },
+  {
+    "text": "mistake. That is good. Thank you for",
+    "duration": 4.16,
+    "offset": 252.56,
+    "lang": "en"
+  },
+  {
+    "text": "helping me.",
+    "duration": 3.679,
+    "offset": 255.68,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; You&#39;re welcome. Someone will help you",
+    "duration": 5.12,
+    "offset": 256.72,
+    "lang": "en"
+  },
+  {
+    "text": "soon. Enjoy your stay.",
+    "duration": 6.161,
+    "offset": 259.359,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I changed to a new room. Now I can",
+    "duration": 6.16,
+    "offset": 261.84,
+    "lang": "en"
+  },
+  {
+    "text": "finally sleep.",
+    "duration": 7.44,
+    "offset": 265.52,
+    "lang": "en"
+  },
+  {
+    "text": "Wait, why is it so hot? Is the AC on?",
+    "duration": 8.479,
+    "offset": 268,
+    "lang": "en"
+  },
+  {
+    "text": "Hello? You have got to be kidding me.",
+    "duration": 7.44,
+    "offset": 272.96,
+    "lang": "en"
+  },
+  {
+    "text": "Excuse me. I&#39;m in room 612. The air",
+    "duration": 6.961,
+    "offset": 276.479,
+    "lang": "en"
+  },
+  {
+    "text": "conditioner is not working. I&#39;m very",
+    "duration": 6.239,
+    "offset": 280.4,
+    "lang": "en"
+  },
+  {
+    "text": "sorry. I will send someone to check it.",
+    "duration": 4.96,
+    "offset": 283.44,
+    "lang": "en"
+  },
+  {
+    "text": "Please wait a moment.",
+    "duration": 5.761,
+    "offset": 286.639,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Hello, I am from maintenance. I am here",
+    "duration": 7.12,
+    "offset": 288.4,
+    "lang": "en"
+  },
+  {
+    "text": "to check the air conditioner.",
+    "duration": 4.32,
+    "offset": 292.4,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay.",
+    "duration": 4.08,
+    "offset": 295.52,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I checked the air conditioner. It is",
+    "duration": 6.72,
+    "offset": 296.72,
+    "lang": "en"
+  },
+  {
+    "text": "broken. We cannot fix it now. It will",
+    "duration": 6.72,
+    "offset": 299.6,
+    "lang": "en"
+  },
+  {
+    "text": "take a long time. You need to change",
+    "duration": 4.08,
+    "offset": 303.44,
+    "lang": "en"
+  },
+  {
+    "text": "rooms.",
+    "duration": 5.36,
+    "offset": 306.32,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Oh no. I just unpacked my bags. Do I",
+    "duration": 5.76,
+    "offset": 307.52,
+    "lang": "en"
+  },
+  {
+    "text": "have to move?",
+    "duration": 5.84,
+    "offset": 311.68,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes, I&#39;m sorry. The front desk will help",
+    "duration": 7.84,
+    "offset": 313.28,
+    "lang": "en"
+  },
+  {
+    "text": "you. We can help with your bags.",
+    "duration": 6.8,
+    "offset": 317.52,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I&#39;m very sorry for the trouble. We have",
+    "duration": 8.4,
+    "offset": 321.12,
+    "lang": "en"
+  },
+  {
+    "text": "a new room for you. It is room 618.",
+    "duration": 8.48,
+    "offset": 324.32,
+    "lang": "en"
+  },
+  {
+    "text": "It is down the hall. [sighs and gasps] I",
+    "duration": 8.16,
+    "offset": 329.52,
+    "lang": "en"
+  },
+  {
+    "text": "am so tired. I I just got off the plane.",
+    "duration": 7.76,
+    "offset": 332.8,
+    "lang": "en"
+  },
+  {
+    "text": "This is not a good experience. I",
+    "duration": 6.72,
+    "offset": 337.68,
+    "lang": "en"
+  },
+  {
+    "text": "understand. I&#39;m very sorry again. Dinner",
+    "duration": 8,
+    "offset": 340.56,
+    "lang": "en"
+  },
+  {
+    "text": "tonight is free. The spa is also free.",
+    "duration": 6.079,
+    "offset": 344.4,
+    "lang": "en"
+  },
+  {
+    "text": "Okay. Thank you.",
+    "duration": 4.56,
+    "offset": 348.56,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; You&#39;re welcome. Please enjoy your dinner",
+    "duration": 3.761,
+    "offset": 350.479,
+    "lang": "en"
+  },
+  {
+    "text": "and spa.",
+    "duration": 6.88,
+    "offset": 353.12,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Room 618. I&#39;m here. I am so tired.",
+    "duration": 8.799,
+    "offset": 354.24,
+    "lang": "en"
+  },
+  {
+    "text": "But I have a free dinner. Let&#39;s see what",
+    "duration": 4.72,
+    "offset": 360,
+    "lang": "en"
+  },
+  {
+    "text": "I can order.",
+    "duration": 4.961,
+    "offset": 363.039,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Good evening. Room service. How can I",
+    "duration": 7.759,
+    "offset": 364.72,
+    "lang": "en"
+  },
+  {
+    "text": "help you? Hi, this is Maya. I am in room",
+    "duration": 6.08,
+    "offset": 368,
+    "lang": "en"
+  },
+  {
+    "text": "618.",
+    "duration": 4.321,
+    "offset": 372.479,
+    "lang": "en"
+  },
+  {
+    "text": "I want to order dinner. I also need dry",
+    "duration": 6.959,
+    "offset": 374.08,
+    "lang": "en"
+  },
+  {
+    "text": "cleaning. Of course, your dinner is free",
+    "duration": 6.88,
+    "offset": 376.8,
+    "lang": "en"
+  },
+  {
+    "text": "tonight. This is for the air conditioner",
+    "duration": 3.761,
+    "offset": 381.039,
+    "lang": "en"
+  },
+  {
+    "text": "problem.",
+    "duration": 3.2,
+    "offset": 383.68,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay, thank you.",
+    "duration": 4.88,
+    "offset": 384.8,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; What would you like for dinner? I would",
+    "duration": 5.28,
+    "offset": 386.88,
+    "lang": "en"
+  },
+  {
+    "text": "like a steak. Medium.",
+    "duration": 6.32,
+    "offset": 389.68,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay. Would you like a salad and water?",
+    "duration": 7.36,
+    "offset": 392.16,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes. Salad and sparkling water.",
+    "duration": 6.639,
+    "offset": 396,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay. Would you like potatoes? And do",
+    "duration": 5.04,
+    "offset": 399.52,
+    "lang": "en"
+  },
+  {
+    "text": "you need salt and pepper?",
+    "duration": 5.921,
+    "offset": 402.639,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes. Mashed potatoes, please. Thank you.",
+    "duration": 6.96,
+    "offset": 404.56,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Do you need forks and napkins?",
+    "duration": 4.16,
+    "offset": 408.56,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; That&#39;s good.",
+    "duration": 3.519,
+    "offset": 411.52,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; What time would you like dinner?",
+    "duration": 3.599,
+    "offset": 412.72,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; 7:30.",
+    "duration": 5.041,
+    "offset": 415.039,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay. Dinner at 7:30.",
+    "duration": 7.521,
+    "offset": 416.319,
+    "lang": "en"
+  },
+  {
+    "text": "Now, about dry cleaning. What clothes do",
+    "duration": 5.2,
+    "offset": 420.08,
+    "lang": "en"
+  },
+  {
+    "text": "you have?",
+    "duration": 5.6,
+    "offset": 423.84,
+    "lang": "en"
+  },
+  {
+    "text": "One jacket, one shirt, one pair of",
+    "duration": 5.44,
+    "offset": 425.28,
+    "lang": "en"
+  },
+  {
+    "text": "pants.",
+    "duration": 5.039,
+    "offset": 429.44,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay, pick up tonight or tomorrow?",
+    "duration": 5.36,
+    "offset": 430.72,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Tonight is fine.",
+    "duration": 5.761,
+    "offset": 434.479,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay, someone will come in 15 minutes.",
+    "duration": 6.559,
+    "offset": 436.08,
+    "lang": "en"
+  },
+  {
+    "text": "Do you need a laundry bag?",
+    "duration": 4.88,
+    "offset": 440.24,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes. One more hanger?",
+    "duration": 6.721,
+    "offset": 442.639,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; No problem. Dinner at 7:30. Dry cleaning",
+    "duration": 8.479,
+    "offset": 445.12,
+    "lang": "en"
+  },
+  {
+    "text": "in 15 minutes. Is that correct? Yes,",
+    "duration": 5.52,
+    "offset": 449.36,
+    "lang": "en"
+  },
+  {
+    "text": "that&#39;s correct.",
+    "duration": 2.88,
+    "offset": 453.599,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Anything else?",
+    "duration": 4.8,
+    "offset": 454.88,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; No, that&#39;s all. Thank you very much.",
+    "duration": 6.401,
+    "offset": 456.479,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; You&#39;re welcome. Have a nice evening.",
+    "duration": 6.56,
+    "offset": 459.68,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; I&#39;m at the airport. I need a phone SIM",
+    "duration": 6.08,
+    "offset": 462.88,
+    "lang": "en"
+  },
+  {
+    "text": "card. Let&#39;s go.",
+    "duration": 6.239,
+    "offset": 466.24,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Hi, welcome to Wireless Hub. How can I",
+    "duration": 4.48,
+    "offset": 468.96,
+    "lang": "en"
+  },
+  {
+    "text": "help you?",
+    "duration": 5.921,
+    "offset": 472.479,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Hi, I have a phone. I need a SIM card.",
+    "duration": 8.08,
+    "offset": 473.44,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay, no problem. Are you new to",
+    "duration": 4.4,
+    "offset": 478.4,
+    "lang": "en"
+  },
+  {
+    "text": "America?",
+    "duration": 3.679,
+    "offset": 481.52,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes, I just arrived.",
+    "duration": 6.56,
+    "offset": 482.8,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Great. Do you want prepaid or monthly?",
+    "duration": 7.44,
+    "offset": 485.199,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Sorry. What is prepaid?",
+    "duration": 6.959,
+    "offset": 489.36,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Prepaid means you pay first. You pay",
+    "duration": 7.28,
+    "offset": 492.639,
+    "lang": "en"
+  },
+  {
+    "text": "every month. There is no contract.",
+    "duration": 6.401,
+    "offset": 496.319,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay. I want prepaid.",
+    "duration": 6.081,
+    "offset": 499.919,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Sure. Do you want unlimited data?",
+    "duration": 7.52,
+    "offset": 502.72,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes, unlimited data. How much per month?",
+    "duration": 8.8,
+    "offset": 506,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; It&#39;s $50 a month. This includes calls,",
+    "duration": 6.88,
+    "offset": 510.24,
+    "lang": "en"
+  },
+  {
+    "text": "texts, and data.",
+    "duration": 4.799,
+    "offset": 514.8,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay, I want this plan.",
+    "duration": 5.359,
+    "offset": 517.12,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Great. Can I see your passport?",
+    "duration": 4.961,
+    "offset": 519.599,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes. Here you are.",
+    "duration": 5.841,
+    "offset": 522.479,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Thank you. Here is your SIM card. Put it",
+    "duration": 6.88,
+    "offset": 524.56,
+    "lang": "en"
+  },
+  {
+    "text": "in your phone and restart.",
+    "duration": 6.16,
+    "offset": 528.32,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Okay. How do I pay every month?",
+    "duration": 6.399,
+    "offset": 531.44,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; You can pay online or in the store.",
+    "duration": 5.919,
+    "offset": 534.48,
+    "lang": "en"
+  },
+  {
+    "text": "Okay, I will pay online.",
+    "duration": 5.841,
+    "offset": 537.839,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Perfect. Let me know if you need help.",
+    "duration": 7.361,
+    "offset": 540.399,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; Yes, I&#39;m connected. Now, let&#39;s rent a",
+    "duration": 7.839,
+    "offset": 543.68,
+    "lang": "en"
+  },
+  {
+    "text": "car and drive to the hotel. We made it",
+    "duration": 6.16,
+    "offset": 547.76,
+    "lang": "en"
+  },
+  {
+    "text": "through the first day. If you want to",
+    "duration": 4.801,
+    "offset": 551.519,
+    "lang": "en"
+  },
+  {
+    "text": "see day two, please subscribe to my",
+    "duration": 4.96,
+    "offset": 553.92,
+    "lang": "en"
+  },
+  {
+    "text": "channel.",
+    "duration": 2.56,
+    "offset": 556.32,
+    "lang": "en"
+  }
+]

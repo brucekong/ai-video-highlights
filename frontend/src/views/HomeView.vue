@@ -38,7 +38,7 @@
             @keyup.enter="handleAnalyze"
           />
           <button class="btn-primary" @click="handleAnalyze" :disabled="!hasValidUrl">
-            <Sparkles class="icon" :size="18" />
+            <Sparkles :size="18" />
             <span>AI 分析</span>
           </button>
         </div>

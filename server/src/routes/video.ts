@@ -100,6 +100,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
                   items: Schemas.TakeawayItem,
                 },
                 mindmap: { type: 'string', nullable: true, description: '视频结构脑图 Markdown' },
+                isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 transcript: {
                   type: 'array',
                   items: Schemas.TranscriptSegment,
@@ -133,11 +134,18 @@ export async function videoRoutes(fastify: FastifyInstance) {
       return reply.status(404).send({ error: 'Video not found' });
     }
 
+    const videoIndexedResult: any[] = await prisma.$queryRaw`SELECT 1 FROM videos WHERE video_id = ${videoId} AND "embedding" IS NOT NULL`;
+    const subtitlesIndexedResult: any[] = await prisma.$queryRaw`SELECT 1 FROM subtitles WHERE video_id = ${videoId} AND "embedding" IS NOT NULL LIMIT 1`;
+    const isIndexed = videoIndexedResult.length > 0 || subtitlesIndexedResult.length > 0;
+
+    console.log(`[Video Route] ID: ${videoId}, isIndexed: ${isIndexed} (Video: ${videoIndexedResult.length}, Subtitles: ${subtitlesIndexedResult.length})`);
+
     return reply.send({
       success: true,
       data: {
         videoTitle: video.title,
         mindmap: video.mindmap,
+        isIndexed,
         takeaways: video.takeaways.map((t) => ({
           id: t.id,
           title: t.title,

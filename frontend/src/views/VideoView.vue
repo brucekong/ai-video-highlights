@@ -274,40 +274,95 @@ watch(() => route.query.url, (newUrl) => {
   }
 });
 
-// 轮询更新字幕（异步翻译）
-const pollTranscript = async () => {
-  if (!videoId.value || !isTranslating.value) return;
+const isAnalyzingSummary = ref(false); // 是否正在分析摘要/脑图
+const isIndexing = ref(false); // 是否正在进行向量化索引（用于语义搜索）
+
+// 轮询更新摘要、脑图、翻译和索引
+const pollAnalysisStatus = async () => {
+  if (!videoId.value || (!isAnalyzingSummary.value && !isIndexing.value && !isTranslating.value)) {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+    return;
+  }
 
   try {
-    const res = await fetch(`${API_BASE}/api/transcript/${videoId.value}`, {
+    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}`, {
       headers: getAuthHeaders()
     });
     const result = await res.json();
 
-    if (result.success && result.data && result.data.segments) {
-      // 更新翻译
-      const newData = result.data.segments;
-      let hasMissing = false;
+    if (result.success && result.data) {
+      // 1. 更新标题
+      if (result.data.videoTitle) {
+        videoTitle.value = decodeHtml(result.data.videoTitle);
+      }
 
-      transcript.value = transcript.value.map((seg, i) => {
-        const updated = newData[i];
-        if (updated && updated.translatedText) {
-          return { ...seg, translatedText: decodeHtml(updated.translatedText) };
+      // 2. 更新摘要
+      if (result.data.takeaways && result.data.takeaways.length > 0) {
+        takeaways.value = result.data.takeaways.map((ta: any) => ({
+          ...ta,
+          title: decodeHtml(ta.title),
+          summary: decodeHtml(ta.summary)
+        }));
+      }
+
+      // 只要摘要或脑图有一个出来了，通常表示 AI 解析已完成
+      if ((result.data.takeaways && result.data.takeaways.length > 0) || result.data.mindmap) {
+        isAnalyzingSummary.value = false;
+      }
+
+      // 3. 更新脑图
+      if (result.data.mindmap) {
+        mindmapRaw.value = result.data.mindmap;
+      }
+
+      // 4. 更新索引状态 (只要后端返回 true，就释放前端按钮)
+      if (result.data.isIndexed !== undefined) {
+         if (result.data.isIndexed) {
+           isIndexing.value = false;
+         } else {
+           isIndexing.value = true;
+         }
+      }
+
+      // 5. 更新翻译
+      if (result.data.transcript && result.data.transcript.length > 0) {
+        let hasMissingTrans = false;
+        let transCount = 0;
+        transcript.value = transcript.value.map((seg, i) => {
+          const updated = result.data.transcript[i];
+          if (updated && updated.translatedText) {
+            transCount++;
+            return { ...seg, translatedText: decodeHtml(updated.translatedText) };
+          }
+          if (updated && !updated.translatedText && !/[\u4e00-\u9fa5]/.test(seg.text)) {
+            hasMissingTrans = true;
+          }
+          return seg;
+        });
+
+        // 严格判定：只有当所有需要翻译的片段都完成后，才停止翻译状态
+        if (!hasMissingTrans) {
+          isTranslating.value = false;
         }
-        if (updated && !updated.translatedText) hasMissing = true;
-        return seg;
-      });
+      }
 
-      // 如果全部翻译完成，停止轮询
-      if (!hasMissing) {
-        isTranslating.value = false;
-        if (pollingInterval) clearInterval(pollingInterval);
+      // 如果全部完成，停止轮询
+      if (!isAnalyzingSummary.value && !isIndexing.value && !isTranslating.value) {
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+          pollingInterval = null;
+          console.log('✅ Polling stopped: All tasks finished.');
+        }
       }
     }
   } catch (e) {
-    console.error('Polling transcript failed:', e);
+    console.error('Polling analysis status failed:', e);
   }
 };
+
 
 // 调用后端 AI 分析接口
 const handleAnalyze = async () => {
@@ -317,6 +372,9 @@ const handleAnalyze = async () => {
   isLoading.value = true;
   showResult.value = false;
   isTranslating.value = false;
+  isAnalyzingSummary.value = false;
+  isIndexing.value = false;
+
   if (pollingInterval) clearInterval(pollingInterval);
   errorMsg.value = '';
   // 重置视频状态防止上一个视频的进度导致当前页面错乱闪烁
@@ -346,11 +404,9 @@ const handleAnalyze = async () => {
     const result = await response.json();
 
     if (result.success && result.data) {
-      takeaways.value = (result.data.takeaways || []).map((ta: any) => ({
-        ...ta,
-        title: decodeHtml(ta.title),
-        summary: decodeHtml(ta.summary)
-      }));
+      // 核心原则：即便 AI 摘要还没好，也要先把视频和字幕展示出来
+      videoTitle.value = decodeHtml(result.data.videoTitle || '');
+      mindmapRaw.value = result.data.mindmap || '';
 
       const rawTranscript = result.data.transcript || [];
       transcript.value = rawTranscript.map((seg: any) => ({
@@ -359,20 +415,44 @@ const handleAnalyze = async () => {
         translatedText: decodeHtml(seg.translatedText)
       }));
 
-      videoTitle.value = decodeHtml(result.data.videoTitle || '');
-      mindmapRaw.value = result.data.mindmap || '';
+      // 处理摘要
+      if (result.data.takeaways && result.data.takeaways.length > 0) {
+        takeaways.value = result.data.takeaways.map((ta: any) => ({
+          ...ta,
+          title: decodeHtml(ta.title),
+          summary: decodeHtml(ta.summary)
+        }));
+        isAnalyzingSummary.value = false;
+      } else {
+        // 如果摘要为空，开启异步分析状态
+        takeaways.value = [];
+        isAnalyzingSummary.value = true;
+      }
+
+      // 索引状态
+      if (!result.data.isIndexed) {
+         isIndexing.value = true;
+      }
+
+      // 检查是否需要开启异步翻译状态
+      // 判定逻辑：如果不是纯中文视频，且当前译文尚未全量覆盖，则进入翻译状态
+      const isChineseVideo = transcript.value.slice(0, 10).every(s => /[\u4e00-\u9fa5]/.test(s.text));
+      const hasMissingTranslation = transcript.value.some(s => !s.translatedText);
+
+      if (!isChineseVideo && hasMissingTranslation) {
+        isTranslating.value = true;
+        isBilingual.value = true; // 自动开启双语显示
+      }
+
+
       showResult.value = true;
       window.dispatchEvent(new Event('video-analyzed')); // 刷新历史
 
-      // 检查是否需要开启异步翻译轮询
-      const needsTrans = transcript.value.length > 0 &&
-                        transcript.value.slice(0, 10).some(s => !/[\u4e00-\u9fa5]/.test(s.text)) &&
-                        transcript.value.every(s => !s.translatedText);
-
-      if (needsTrans) {
-        isTranslating.value = true;
-        pollingInterval = setInterval(pollTranscript, 3000);
+      // 开启轮询 (如果任何一个异步状态处于 active)
+      if (isAnalyzingSummary.value || isIndexing.value || isTranslating.value) {
+        pollingInterval = setInterval(pollAnalysisStatus, 3000);
       }
+
     } else {
       throw new Error('Invalid response format');
     }
@@ -383,6 +463,7 @@ const handleAnalyze = async () => {
     isLoading.value = false;
   }
 };
+
 
 // --- AI 聊天逻辑 ---
 
@@ -777,7 +858,7 @@ const takeawayMap = computed(() => {
             </div>
 
             <!-- AI Takeaways (below video) -->
-            <div v-if="showResult && takeaways.length > 0" class="takeaways-section glass-panel animate-slide-in">
+            <div v-if="showResult && (takeaways.length > 0 || isAnalyzingSummary)" class="takeaways-section glass-panel animate-slide-in">
               <div class="sidebar-header">
                 <div class="sidebar-title-area">
                    <h3><Sparkles class="icon accent" :size="20"/> 核心摘要</h3>
@@ -785,23 +866,26 @@ const takeawayMap = computed(() => {
                  </div>
                   <div class="sidebar-actions">
                     <button
-                      v-if="mindmapRaw"
                       class="btn-mindmap"
+                      :disabled="!mindmapRaw"
                       @click="showMindMap = true"
                     >
-                      <Map :size="14" />
+                      <Loader2 v-if="!mindmapRaw && isAnalyzingSummary" :size="14" class="spin" />
+                      <Map v-else :size="14" />
                       <span>查看脑图</span>
                     </button>
                     <button
                       v-if="showResult"
                       class="btn-search-in-video"
+                      :disabled="isIndexing"
                       @click="showSearchModal = true"
                       title="语义搜索视频内容"
                     >
-                      <Search :size="14" />
+                      <Loader2 v-if="isIndexing" :size="14" class="spin" />
+                      <Search v-else :size="14" />
                       <span>语义搜索</span>
                     </button>
-                    <span class="badge">{{ takeaways.length }} 条精选</span>
+                    <span v-if="takeaways.length > 0" class="badge animate-fade-in">{{ takeaways.length }} 条精选</span>
                   </div>
                </div>
 
@@ -822,7 +906,18 @@ const takeawayMap = computed(() => {
                 </div>
               </div>
 
-              <div class="takeaways-list">
+              <!-- Summary Loading State -->
+              <div v-if="isAnalyzingSummary && takeaways.length === 0" class="takeaway-loading-placeholder animate-fade-in">
+                <div class="loading-icon-pulse">
+                  <Sparkles :size="32" class="spin" />
+                </div>
+                <div class="loading-text">
+                  <h4>AI 正在提取核心摘要...</h4>
+                  <p>我们正在深度分析视频文本并为您生成关键跳转点，请稍候。</p>
+                </div>
+              </div>
+
+              <div v-else class="takeaways-list">
                 <div
                   v-for="item in takeawayMap"
                   :key="item.id || item.index"
@@ -847,6 +942,7 @@ const takeawayMap = computed(() => {
               </div>
             </div>
           </div>
+
 
           <!-- Right Sidebar: Transcript & Chat -->
           <div v-if="showResult" class="outline-sidebar glass-panel animate-slide-in">
@@ -2078,4 +2174,51 @@ input::placeholder {
 }
 
 
+.btn-search-in-video:disabled, .btn-mindmap:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+
+.takeaway-loading-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  gap: 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 16px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  margin: 20px 0;
+  text-align: center;
+}
+
+.loading-icon-pulse {
+  background: rgba(99, 102, 241, 0.1);
+  padding: 20px;
+  border-radius: 50%;
+  color: var(--accent-color);
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+.loading-text h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #fff;
+}
+
+.loading-text p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  max-width: 400px;
+}
+
+@keyframes pulse-glow {
+  0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+  70% { box-shadow: 0 0 0 15px rgba(99, 102, 241, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
 </style>
+

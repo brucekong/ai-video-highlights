@@ -161,11 +161,19 @@ export async function translateTranscriptSegments(
     apiKey,
   });
 
-  const BATCH_SIZE = 40;
+  const BATCH_SIZE = 100;
   const results: string[] = new Array(texts.length);
+  const batches: string[][] = [];
 
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts.slice(i, i + BATCH_SIZE);
+    batches.push(texts.slice(i, i + BATCH_SIZE));
+  }
+
+  console.log(`🤖 Starting translation for ${texts.length} segments in ${batches.length} parallel batches...`);
+
+  // 并行处理所有批次，提升效率
+  await Promise.all(batches.map(async (batch, batchIdx) => {
+    const startIndex = batchIdx * BATCH_SIZE;
 
     // 将 batch 转化为带索引的对象，防止 LLM 合并或遗漏
     const batchObj: Record<string, string> = {};
@@ -174,19 +182,19 @@ export async function translateTranscriptSegments(
     });
 
     try {
-      console.log(`🤖 Translating transcript batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(texts.length / BATCH_SIZE)}...`);
+      console.log(`[Batch ${batchIdx + 1}] Processing...`);
 
       const completion = await client.chat.completions.create({
         model: 'deepseek-chat',
         messages: [
           {
             role: 'system',
-            content: `你是一个专业的翻译助手。你的任务是将用户提供的字幕片段列表翻译成中文。
+            content: `你是一个专业的语义翻译助手。你的任务是将用户提供的字幕片段（JSON 对象，键为索引，值为片段文本）翻译成中文。
 要求：
-1. 语言地道、自然，符合技术/视频背景。
-2. **严禁合并或拆分片段**：原始数据是一个以索引为键的消息对象，你必须返回一个相同结构的 JSON 对象。
-3. 每个键对应的原始文本可能只是半句话，请直接翻译这部分，不要试图补全。
-4. 严格按照 JSON 格式返回，只包含翻译后的键值对。`,
+1. **语义连贯**：虽然是片段，但请结合前后文（由索引顺序体现）进行翻译，使中文表达通顺。
+2. **严禁合并或拆分**：返回一个相同结构的 JSON 对象。每个输入的键必须出现在输出中。
+3. **保持原样**：如果内容是代码、专有名词或已经包含中文且不需要翻译，请保持原样。
+4. **格式严格**：只返回 JSON 对象，不要有任何 Markdown 代码块或多余文字。`,
           },
           {
             role: 'user',
@@ -200,27 +208,21 @@ export async function translateTranscriptSegments(
       const content = completion.choices[0]?.message?.content;
       if (content) {
         const parsed = JSON.parse(content);
-        // 提取翻译结果，确保放回正确的位置
         batch.forEach((_, index) => {
           const translated = parsed[index] || parsed[String(index)];
-          results[i + index] = translated ? String(translated) : batch[index];
+          results[startIndex + index] = translated ? String(translated) : batch[index];
         });
       } else {
-        // 无返回内容，填充原文
-        batch.forEach((text, index) => {
-          results[i + index] = text;
-        });
+        batch.forEach((text, index) => { results[startIndex + index] = text; });
       }
     } catch (error) {
-      console.error('Batch translation failed:', error);
-      // 失败时回退到原文
-      batch.forEach((text, index) => {
-        results[i + index] = text;
-      });
+      console.error(`[Batch ${batchIdx + 1}] Translation failed:`, error);
+      batch.forEach((text, index) => { results[startIndex + index] = text; });
     }
-  }
+  }));
 
   return results;
+
 }
 
 /**

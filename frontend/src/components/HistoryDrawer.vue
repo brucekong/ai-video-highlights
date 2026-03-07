@@ -381,9 +381,11 @@ const handleReindex = async (event: Event, item: HistoryItem) => {
     });
     if (res.ok) {
       // 乐观更新：立即在本地列表中标记为已索引，让按钮消失
-      item.isIndexed = true;
-      await loadHistory();
-      notify('修复成功', '语义搜索索引已在后台开始重构，稍后即可进行语义搜索。', 'success');
+      setTimeout(() => {
+        item.isIndexed = true;
+        notify('修复成功', '语义搜索索引已在后台开始重构，稍后即可进行语义搜索。', 'success');
+      }, 1000);
+
     } else {
       const data = await res.json();
       notify('修复失败', data.error || '重构索引时发生错误', 'error');
@@ -1297,13 +1299,22 @@ watch(() => authState.currentUser, (newUser) => {
 
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: all 0.3s ease;
+  transition: opacity 0.3s ease;
+}
+
+.modal-fade-enter-active .confirm-modal,
+.modal-fade-leave-active .confirm-modal {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-fade-enter-from,
 .modal-fade-leave-to {
   opacity: 0;
-  transform: scale(0.9);
+}
+
+.modal-fade-enter-from .confirm-modal,
+.modal-fade-leave-to .confirm-modal {
+  transform: scale(0.95);
 }
 
 /* Pagination Styles */

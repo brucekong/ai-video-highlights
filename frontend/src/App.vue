@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { Sparkles, User, Menu, Search, Globe, Video, CheckCircle2, AlertCircle, X, Loader2 } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
@@ -145,6 +145,14 @@ const logout = () => {
   // loadHistory() is handled by HistoryDrawer's watch on authState
 };
 
+const handleGlobalKeyDown = (e: KeyboardEvent) => {
+  // Toggle search focus with Cmd/Ctrl + K
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    showGlobalSearch.value = !showGlobalSearch.value;
+  }
+};
+
 onMounted(() => {
   // 1. 尝试从 Cookie 中获取 Handoff Token (最优化方案)
   const cookieValue = document.cookie
@@ -188,6 +196,11 @@ onMounted(() => {
   }
 
   checkAuth();
+  window.addEventListener('keydown', handleGlobalKeyDown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleGlobalKeyDown);
 });
 
 </script>

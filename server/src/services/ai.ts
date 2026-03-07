@@ -13,6 +13,8 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
 
 {
   "title": "视频的简短标题",
+  "category": "视频分类（如：技术、职场、财商、生活、其它）",
+  "tags": ["标签1", "标签2", "标签3"],
   "takeaways": [
     {
       "title": "要点标题（简洁有力，10-20个字）",
@@ -32,8 +34,11 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
 5. 摘要需要概括该段落的核心内容
 6. 时间戳必须从小到大排列
 7. 如果转录文本是英文，请将标题和摘要翻译成中文
-8. 生成一份完整的视频结构脑图Markdown文本，使用层级标题（# 为根，## 为二级，### 为三级），确保能够被 Markmap 渲染
-9. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
+8. 根据内容判定一个最准确的分类（建议：技术、职场、教育、自媒体、财商、人文、生活、运动、其它）
+9. 提取 3-5 个核心关键词作为标签
+10. 生成一份完整的视频结构脑图Markdown文本，使用层级标题（# 为根，## 为二级，### 为三级），确保能够被 Markmap 渲染
+11. 只返回 JSON，不要有任何其他文字或 markdown 标记`
+;
 
 // 重试配置
 const MAX_RETRIES = 3;
@@ -54,7 +59,7 @@ function sleep(ms: number): Promise<void> {
 export async function analyzeTranscript(
   formattedTranscript: string,
   maxDurationSeconds?: number,
-): Promise<{ title: string; takeaways: AITakeaway[]; mindmap: string }> {
+): Promise<{ title: string; takeaways: AITakeaway[]; mindmap: string; category?: string; tags?: string[] }> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error('DEEPSEEK_API_KEY is not configured. Please set DEEPSEEK_API_KEY in server/.env');
@@ -117,6 +122,8 @@ export async function analyzeTranscript(
           title: parsed.title || 'Untitled Video',
           takeaways: finalTakeaways,
           mindmap: parsed.mindmap || '',
+          category: parsed.category || '其它',
+          tags: Array.isArray(parsed.tags) ? parsed.tags : [],
         };
       } catch {
         console.error('Failed to parse AI response:', text);

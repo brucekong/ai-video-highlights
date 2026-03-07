@@ -203,12 +203,14 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               const maxDurationSeconds = Math.ceil((lastSegment.offset + lastSegment.duration) / 1000);
               const aiResult = await analyzeTranscript(formattedText, maxDurationSeconds);
 
-              // 更新视频标题和脑图
+              // 更新视频标题、脑图、分类和标签
               await prisma.video.update({
                 where: { videoId },
                 data: {
                   title: aiResult.title,
                   mindmap: aiResult.mindmap,
+                  category: aiResult.category,
+                  tags: Array.isArray(aiResult.tags) ? aiResult.tags.join(',') : '',
                   duration: maxDurationSeconds
                 }
               });

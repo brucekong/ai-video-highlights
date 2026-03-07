@@ -49,7 +49,6 @@ watch(() => props.show, (newVal) => {
           <div class="modal-header">
             <div class="header-info">
               <div class="search-badge">
-                <Globe :size="12" />
                 <span>全库搜索</span>
               </div>
               <h3>语义搜索所有视频</h3>

@@ -212,6 +212,14 @@ onMounted(() => {
         </div>
 
         <div class="header-right">
+           <button
+            class="btn-icon-labeled glass-panel"
+            @click="showAnalysisModal = true"
+            title="解析新视频"
+          >
+            <Video :size="18" />
+            <span>解析</span>
+          </button>
           <button
             class="global-search-entry"
             @click="showGlobalSearch = true"
@@ -220,18 +228,11 @@ onMounted(() => {
             <div class="search-box-mock glass-panel">
               <Search :size="16" />
               <span>搜索视频内容...</span>
-              <kbd class="search-kbd">/</kbd>
+              <kbd class="search-kbd">⌘+K</kbd>
             </div>
           </button>
 
-          <button
-            class="btn-icon-labeled glass-panel"
-            @click="showAnalysisModal = true"
-            title="解析新视频"
-          >
-            <Video :size="18" />
-            <span>解析</span>
-          </button>
+
 
           <div class="user-action">
             <div v-if="authState.currentUser" class="user-profile">

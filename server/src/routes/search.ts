@@ -30,55 +30,96 @@ export async function searchRoutes(fastify: FastifyInstance) {
     const { q, videoId, limit = 10, min_score = 0.5 } = request.query;
 
     try {
-      // 1. 生成查询语义向量
       const queryEmbedding = await getEmbedding(q);
       const vectorStr = `[${queryEmbedding.join(',')}]`;
+      const threshold = Number(min_score);
+      const isShortQuery = q.length <= 3;
+      const isPlainNumber = /^\d+$/.test(q); // 是否是纯数字查询，如 "12"
 
-      // 拆分关键词以进行多词匹配奖励（特别是技术术语）
-      const words = q.split(/\s+/).filter(w => w.length > 1);
+      const query = Prisma.sql`
+        WITH matches AS (
+          -- 视频标题匹配
+          SELECT
+            v.video_id AS "videoId",
+            v.title AS "videoTitle",
+            v.title AS "text",
+            NULL AS "translatedText",
+            0 AS "offset",
+            v.duration AS "duration",
+            'title' AS "matchType",
+            GREATEST(
+              COALESCE(1 - (v.embedding <=> ${vectorStr}::vector), 0),
+              COALESCE(1 - (v.translated_embedding <=> ${vectorStr}::vector), 0)
+            ) AS "base_similarity"
+          FROM videos v
+          WHERE (v.embedding IS NOT NULL OR v.translated_embedding IS NOT NULL)
+            ${videoId ? Prisma.sql`AND v.video_id = ${videoId}` : Prisma.empty}
 
-      const results: any[] = await prisma.$queryRaw`
-        SELECT
-           s.video_id AS "videoId",
-           v.title AS "videoTitle",
-           s.text AS "text",
-           s.translated_text AS "translatedText",
-           s."offset" AS "offset",
-           LEAST(1.0,
-             GREATEST(
-               COALESCE(1 - (s.embedding <=> ${vectorStr}::vector), 0),
-               COALESCE(1 - (s.translated_embedding <=> ${vectorStr}::vector), 0)
-             ) +
-             -- 精确或包含匹配奖励 (最高 0.3)
-             (CASE
-                WHEN s.text ILIKE ${q} OR s.translated_text ILIKE ${q} THEN 0.3
-                WHEN s.text ILIKE ${'%' + q + '%'} OR s.translated_text ILIKE ${'%' + q + '%'} THEN 0.15
-                -- 单词点击奖励（处理中英文混合匹配，如 "json mode" 匹配 "JSON 模式" 中的 "JSON"）
-                ELSE LEAST(0.14, (
-                  ${words.length > 0 ? words.map(w => Prisma.sql`(CASE WHEN s.text ILIKE ${'%' + w + '%'} OR s.translated_text ILIKE ${'%' + w + '%'} THEN 0.05 ELSE 0 END)`).reduce((a, b) => Prisma.sql`${a} + ${b}`) : Prisma.sql`0`}
-                ))
-              END)
-           ) AS "similarity"
-        FROM subtitles s
-        JOIN videos v ON s.video_id = v.video_id
-        WHERE (s.embedding IS NOT NULL OR s.translated_embedding IS NOT NULL)
-          AND (
+          UNION ALL
+
+          -- 字幕内容匹配
+          SELECT
+            s.video_id AS "videoId",
+            v.title AS "videoTitle",
+            s.text AS "text",
+            s.translated_text AS "translatedText",
+            s."offset" AS "offset",
+            v.duration AS "duration",
+            'subtitle' AS "matchType",
             GREATEST(
               COALESCE(1 - (s.embedding <=> ${vectorStr}::vector), 0),
               COALESCE(1 - (s.translated_embedding <=> ${vectorStr}::vector), 0)
-            ) +
-            (CASE
-               WHEN s.text ILIKE ${q} OR s.translated_text ILIKE ${q} THEN 0.3
-               WHEN s.text ILIKE ${'%' + q + '%'} OR s.translated_text ILIKE ${'%' + q + '%'} THEN 0.15
-               ELSE LEAST(0.14, (
-                 ${words.length > 0 ? words.map(w => Prisma.sql`(CASE WHEN s.text ILIKE ${'%' + w + '%'} OR s.translated_text ILIKE ${'%' + w + '%'} THEN 0.05 ELSE 0 END)`).reduce((a, b) => Prisma.sql`${a} + ${b}`) : Prisma.sql`0`}
-               ))
-             END)
-          ) > ${Number(min_score)}
-          ${videoId ? Prisma.sql`AND s.video_id = ${videoId}` : Prisma.empty}
-        ORDER BY similarity DESC
+            ) AS "base_similarity"
+          FROM subtitles s
+          JOIN videos v ON s.video_id = v.video_id
+          WHERE (s.embedding IS NOT NULL OR s.translated_embedding IS NOT NULL)
+            ${videoId ? Prisma.sql`AND s.video_id = ${videoId}` : Prisma.empty}
+            -- 即使是字幕匹配，也要排除极端短句噪音
+            AND LENGTH(COALESCE(s.translated_text, s.text)) >= 2
+        ),
+        scored_matches AS (
+          SELECT
+            *,
+            LEAST(1.0, (
+              -- 针对数字类查询，极大提高文本匹配的权重。
+              CASE
+                WHEN ${isPlainNumber} THEN (
+                  CASE
+                    WHEN text ILIKE ${'%' + q + '%'} THEN base_similarity + 0.5
+                    ELSE base_similarity * 0.4 -- 非数字包含的内容，分数大幅折损
+                  END
+                )
+                ELSE (
+                   base_similarity *
+                   -- 长度惩罚：短句如果没有精确匹配，降权
+                   (CASE
+                      WHEN LENGTH(text) <= 5 AND NOT (text ILIKE ${'%' + q + '%'}) THEN 0.6
+                      ELSE 1.0
+                   END) +
+                   -- 普通文本精确匹配加分
+                   (CASE
+                      WHEN text ILIKE ${q} THEN 0.3
+                      WHEN text ILIKE ${'%' + q + '%'} THEN 0.1
+                      ELSE 0
+                   END)
+                )
+              END
+            )) AS "similarity"
+          FROM matches
+        )
+        SELECT * FROM scored_matches
+        WHERE (
+          -- 针对数字查询，如果没有精确包含，则相似度必须极高（防止干扰）
+          (${isPlainNumber} AND ("similarity" >= 0.7 OR text ILIKE ${'%' + q + '%'}))
+          OR (NOT ${isPlainNumber} AND "similarity" >= ${threshold})
+        )
+        ORDER BY
+          (CASE WHEN text ILIKE ${'%' + q + '%'} THEN 1 ELSE 0 END) DESC,
+          "similarity" DESC
         LIMIT ${limit}
       `;
+
+      const results: any[] = await prisma.$queryRaw(query);
 
       return reply.send({
         success: true,

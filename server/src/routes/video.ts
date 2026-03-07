@@ -19,6 +19,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
         properties: {
           page: { type: 'integer', default: 1, minimum: 1 },
           limit: { type: 'integer', default: 20, minimum: 1, maximum: 100 },
+          startDate: { type: 'string', format: 'date-time' },
+          endDate: { type: 'string', format: 'date-time' },
         },
       },
       response: {
@@ -44,19 +46,26 @@ export async function videoRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (
-    request: FastifyRequest<{ Querystring: { page?: number; limit?: number } }>,
+    request: FastifyRequest<{ Querystring: { page?: number; limit?: number; startDate?: string; endDate?: string } }>,
     reply: FastifyReply,
   ) => {
     const userId = getUserId(request);
-    const { page = 1, limit = 20 } = request.query;
+    const { page = 1, limit = 20, startDate, endDate } = request.query;
 
     if (userId) {
       const skip = (page - 1) * limit;
 
+      const where: any = { userId };
+      if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) where.createdAt.gte = new Date(startDate);
+        if (endDate) where.createdAt.lte = new Date(endDate);
+      }
+
       const [totalCount, history] = await Promise.all([
-        prisma.userHistory.count({ where: { userId } }),
+        prisma.userHistory.count({ where }),
         prisma.userHistory.findMany({
-          where: { userId },
+          where,
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
@@ -86,6 +95,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
           takeawayCount: h.video._count.takeaways,
           analyzedAt: h.createdAt,
           isIndexed: indexedIds.has(h.video.videoId),
+          category: h.video.category,
+          tags: h.video.tags ? h.video.tags.split(',') : [],
         })),
         meta: {
           totalCount,
@@ -192,6 +203,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
           offset: s.offset,
           duration: s.duration,
         })),
+        category: video.category,
+        tags: video.tags ? video.tags.split(',') : [],
       },
     });
   });
@@ -223,41 +236,256 @@ export async function videoRoutes(fastify: FastifyInstance) {
     reply: FastifyReply,
   ) => {
     const { videoId } = request.params;
-    const { getEmbedding, getEmbeddings } = await import('../services/ai.js');
+
+    // 1. 验证视频是否存在并获取基础信息
+    const video = await prisma.video.findUnique({
+      where: { videoId },
+      include: { subtitles: { orderBy: { sortOrder: 'asc' } } }
+    });
+
+    if (!video) return reply.status(404).send({ error: '视频不存在' });
+
+    // 2. 将耗时的向量生成过程转入后台任务，立即返回响应
+    const backgroundReindex = async () => {
+      try {
+        const { getEmbedding, getEmbeddings } = await import('../services/ai.js');
+        console.log(`[Re-index] Starting background indexing for ${videoId}...`);
+
+        // A. 标题向量 (原文 & 译文)
+        const titleEmbedding = await getEmbedding(video.title || '');
+        await prisma.$executeRawUnsafe(
+          `UPDATE videos SET "embedding" = $1::vector WHERE video_id = $2`,
+          `[${titleEmbedding.join(',')}]`,
+          videoId
+        );
+
+        // 如果已经有译文，也重构译文向量
+        const hasChinese = /[\u4e00-\u9fa5]/.test(video.title || '');
+        if (!hasChinese) {
+           // 简单探测是否需要重新生成译文向量（暂时先重构原文，译文逻辑通常随翻译流程走）
+        }
+
+        // B. 批量处理字幕向量 (每批 50 条)
+        const BATCH_SIZE = 50;
+        const totalSegments = video.subtitles.length;
+
+        for (let i = 0; i < totalSegments; i += BATCH_SIZE) {
+          const batch = video.subtitles.slice(i, i + BATCH_SIZE);
+
+          // 原文向量
+          const batchTexts = batch.map(s => s.text);
+          const embeddings = await getEmbeddings(batchTexts);
+
+          for (let j = 0; j < batch.length; j++) {
+            const vec = embeddings[j];
+            const sortOrder = batch[j].sortOrder;
+            await prisma.$executeRawUnsafe(
+              `UPDATE subtitles SET "embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+              `[${vec.join(',')}]`,
+              videoId,
+              sortOrder
+            );
+          }
+
+          // 译文向量 (如果有)
+          const batchTransTexts = batch.map(s => s.translatedText).filter((t): t is string => !!t);
+          if (batchTransTexts.length > 0) {
+            const transEmbeddings = await getEmbeddings(batchTransTexts);
+            let transIdx = 0;
+            for (let j = 0; j < batch.length; j++) {
+              if (batch[j].translatedText) {
+                const vec = transEmbeddings[transIdx++];
+                const sortOrder = batch[j].sortOrder;
+                await prisma.$executeRawUnsafe(
+                  `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+                  `[${vec.join(',')}]`,
+                  videoId,
+                  sortOrder
+                );
+              }
+            }
+          }
+          console.log(`[Re-index] Processed batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(totalSegments / BATCH_SIZE)} for ${videoId}`);
+        }
+
+        console.log(`[Re-index] Successfully completed background indexing for ${videoId}`);
+      } catch (err: any) {
+        console.error(`[Re-index Failed] ${videoId}:`, err);
+      }
+    };
+
+    // 触发后台任务
+    backgroundReindex();
+
+    return reply.send({
+      success: true,
+      message: '语义索引重构已在后台启动，您可以继续浏览其他页面'
+    });
+  });
+
+  /**
+   * GET /api/videos/search
+   * 全局语义搜索记录
+   */
+  fastify.get('/api/videos/search', {
+    schema: {
+      tags: ['Videos'],
+      summary: '全局语义搜索',
+      description: '基于向量相似度，在所有已索引的视频及其字幕内容中进行语义检索。',
+      querystring: {
+        type: 'object',
+        required: ['q'],
+        properties: {
+          q: { type: 'string', description: '搜索关键词或描述' },
+          page: { type: 'integer', default: 1, minimum: 1 },
+          limit: { type: 'integer', default: 20 },
+        },
+      },
+    },
+  }, async (request: FastifyRequest<{ Querystring: { q: string; page?: number; limit?: number } }>, reply) => {
+    const { q, page = 1, limit = 20 } = request.query;
+    const { getEmbedding } = await import('../services/ai.js');
+    const offset = (page - 1) * limit;
 
     try {
-      // 1. 获取现有视频和字幕
-      const video = await prisma.video.findUnique({
-        where: { videoId },
-        include: { subtitles: { orderBy: { sortOrder: 'asc' } } }
+      const queryVector = await getEmbedding(q);
+      const vectorStr = `[${queryVector.join(',')}]`;
+      const threshold = 0.35; // Base threshold
+      const isPlainNumber = /^\d+$/.test(q);
+
+      // 使用原生 SQL 进行跨表向量搜索并去重
+      const [results, totalResult]: [any[], any[]] = await Promise.all([
+        prisma.$queryRaw`
+          WITH all_raw_matches AS (
+            SELECT
+              v.video_id,
+              v.title,
+              v.platform,
+              v.duration,
+              v.category,
+              v.tags,
+              v.url,
+              'title' as match_type,
+              v.title as matched_text,
+              0 as match_offset,
+              GREATEST(
+                COALESCE(1 - (v.embedding <=> ${vectorStr}::vector), 0),
+                COALESCE(1 - (v.translated_embedding <=> ${vectorStr}::vector), 0)
+              ) as base_score
+            FROM videos v
+            WHERE v.embedding IS NOT NULL OR v.translated_embedding IS NOT NULL
+
+            UNION ALL
+
+            SELECT
+              v.video_id,
+              v.title,
+              v.platform,
+              v.duration,
+              v.category,
+              v.tags,
+              v.url,
+              'subtitle' as match_type,
+              COALESCE(s.translated_text, s.text) as matched_text,
+              s.offset as match_offset,
+              GREATEST(
+                COALESCE(1 - (s.embedding <=> ${vectorStr}::vector), 0),
+                COALESCE(1 - (s.translated_embedding <=> ${vectorStr}::vector), 0)
+              ) as base_score
+            FROM subtitles s
+            JOIN videos v ON s.video_id = v.video_id
+            WHERE s.embedding IS NOT NULL OR s.translated_embedding IS NOT NULL
+              -- 排除短噪音
+              AND LENGTH(COALESCE(s.translated_text, s.text)) >= 2
+          ),
+          scored_matches AS (
+            SELECT
+              *,
+              LEAST(1.0, (
+                CASE
+                  WHEN ${isPlainNumber} THEN (
+                    CASE
+                      WHEN matched_text ILIKE ${'%' + q + '%'} THEN base_score + 0.5
+                      ELSE base_score * 0.4
+                    END
+                  )
+                  ELSE (
+                    base_score *
+                    (CASE WHEN LENGTH(matched_text) <= 5 AND NOT (matched_text ILIKE ${'%' + q + '%'}) THEN 0.6 ELSE 1.0 END) +
+                    (CASE WHEN matched_text ILIKE ${'%' + q + '%'} THEN 0.15 ELSE 0 END)
+                  )
+                END
+              )) as score
+            FROM all_raw_matches
+          ),
+          filtered_matches AS (
+            SELECT * FROM scored_matches
+            WHERE (
+              (${isPlainNumber} AND (score >= 0.7 OR matched_text ILIKE ${'%' + q + '%'}))
+              OR (NOT ${isPlainNumber} AND score >= ${threshold})
+            )
+          ),
+          best_matches_per_video AS (
+            SELECT DISTINCT ON (video_id) *
+            FROM filtered_matches
+            ORDER BY video_id, score DESC
+          )
+          SELECT * FROM best_matches_per_video
+          ORDER BY (CASE WHEN matched_text ILIKE ${'%' + q + '%'} THEN 1 ELSE 0 END) DESC, score DESC
+          OFFSET ${offset}
+          LIMIT ${limit}
+        `,
+        prisma.$queryRaw`
+          WITH all_raw_matches AS (
+            SELECT video_id, GREATEST(COALESCE(1 - (embedding <=> ${vectorStr}::vector), 0), COALESCE(1 - (translated_embedding <=> ${vectorStr}::vector), 0)) as score, title as text FROM videos
+            UNION ALL
+            SELECT video_id, GREATEST(COALESCE(1 - (embedding <=> ${vectorStr}::vector), 0), COALESCE(1 - (translated_embedding <=> ${vectorStr}::vector), 0)) as score, COALESCE(translated_text, text) as text FROM subtitles
+          ),
+          scored AS (
+            SELECT video_id,
+            LEAST(1.0, (
+              CASE
+                WHEN ${isPlainNumber} THEN (CASE WHEN text ILIKE ${'%' + q + '%'} THEN score + 0.5 ELSE score * 0.4 END)
+                ELSE score
+              END
+            )) as final_score, text FROM all_raw_matches
+          )
+          SELECT COUNT(DISTINCT video_id)::integer as count FROM scored
+          WHERE (
+            (${isPlainNumber} AND (final_score >= 0.7 OR text ILIKE ${'%' + q + '%'}))
+            OR (NOT ${isPlainNumber} AND final_score >= ${threshold})
+          )
+        `
+      ]);
+
+      const totalCount = totalResult[0]?.count || 0;
+      const hasMore = offset + results.length < totalCount;
+
+      return reply.send({
+        success: true,
+        data: results.map(r => ({
+          videoId: r.video_id,
+          title: r.title,
+          platform: r.platform,
+          duration: r.duration,
+          category: r.category,
+          tags: r.tags ? r.tags.split(',') : [],
+          url: r.url,
+          matchType: r.match_type,
+          matchedText: r.matched_text,
+          offset: Number(r.match_offset),
+          score: Number(r.score)
+        })),
+        meta: {
+          page,
+          limit,
+          totalCount,
+          hasMore
+        }
       });
-
-      if (!video) return reply.status(404).send({ error: '视频不存在' });
-
-      // 2. 生成标题向量
-      const titleEmbedding = await getEmbedding(video.title || '');
-      await prisma.$executeRaw`UPDATE videos SET embedding = ${`[${titleEmbedding.join(',')}]`}::vector WHERE video_id = ${videoId}`;
-
-      // 3. 批量生成字幕向量
-      const subtitleTexts = video.subtitles.map(s => s.translatedText || s.text);
-      if (subtitleTexts.length > 0) {
-        const embeddings = await getEmbeddings(subtitleTexts);
-
-        // 逐个更新（由于 $executeRaw 的限制，批量更新较为复杂）
-        await Promise.all(embeddings.map((vec, idx) => {
-          const vectorStr = `[${vec.join(',')}]`;
-          const offset = video.subtitles[idx].offset;
-          return prisma.$executeRaw`UPDATE subtitles SET embedding = ${vectorStr}::vector WHERE video_id = ${videoId} AND "offset" = ${offset}`;
-        }));
-      }
-
-      return reply.send({ success: true, message: '语义索引重构完成' });
-    } catch (error: any) {
-      fastify.log.error(`Re-embed failed: ${error.message}`);
-      return reply.status(500).send({
-        error: '重构索引失败',
-        message: error.message,
-      });
+    } catch (err: any) {
+      fastify.log.error(`Semantic search failed: ${err.message}`);
+      return reply.status(500).send({ error: '搜索服务异常' });
     }
   });
 

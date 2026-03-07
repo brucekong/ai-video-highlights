@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted, computed } from 'vue';
-import { Search, Loader2, Clock, FileText, SearchSlash } from 'lucide-vue-next';
+import { Search, Loader2, Clock, FileText, SearchSlash, Video, MessageSquare, MapPin } from 'lucide-vue-next';
 import { useAuth } from '../services/auth';
 
 const props = defineProps<{
@@ -71,6 +71,29 @@ const getScoreColor = (score: number) => {
   return '#F59E0B'; // 普通 - 琥珀橙
 };
 
+const highlightText = (text: string, query: string) => {
+  if (!query || !text) return text;
+
+  // Escape HTML to prevent injection
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+  const words = query.trim().split(/\s+/).filter(w => w.length > 0);
+  if (words.length === 0) return escaped;
+
+  // Create a regex to match any of the words (case insensitive)
+  const pattern = words
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) // escape regex special chars
+    .join('|');
+
+  const regex = new RegExp(`(${pattern})`, 'gi');
+  return escaped.replace(regex, '<span class="highlight-mark">$1</span>');
+};
+
 const handleResultClick = (result: any) => {
   emit('result-click', result);
 };
@@ -80,6 +103,19 @@ const formatTimeFromMs = (ms: number) => {
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
   return `${m}:${s < 10 ? '0' : ''}${s}`;
+};
+
+const formatDuration = (seconds: number | null) => {
+  if (seconds === null || seconds === undefined) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+
+  const hDisplay = h > 0 ? `${h}:` : '';
+  const mDisplay = m < 10 && h > 0 ? `0${m}:` : `${m}:`;
+  const sDisplay = s < 10 ? `0${s}` : `${s}`;
+
+  return `${hDisplay}${mDisplay}${sDisplay}`;
 };
 
 const focus = () => {
@@ -93,7 +129,9 @@ interface SearchResult {
   text: string;
   translatedText?: string;
   offset: number;
+  duration?: number;
   similarity: number;
+  matchType: 'title' | 'subtitle';
 }
 
 type UIItem =
@@ -124,6 +162,15 @@ const uiItems = computed<UIItem[]>(() => {
   }
   return [];
 });
+
+const getThumbnailUrl = (item: SearchResult) => {
+  // 假设只有 youtube 平台，或者根据 videoId 判断
+  // 如果后端返回了 platform 更好，如果没有则默认尝试 youtube
+  if (item.videoId) {
+    return `https://img.youtube.com/vi/${item.videoId}/mqdefault.jpg`;
+  }
+  return '';
+};
 
 onUnmounted(() => {
   if (debounceTimeout) clearTimeout(debounceTimeout);
@@ -163,12 +210,13 @@ onUnmounted(() => {
             :style="{ '--index': item.index }"
           >
             <div class="skeleton-shimmer"></div>
-            <div class="result-main">
+            <div class="result-main-horizontal">
+              <div class="skeleton-thumb"></div>
               <div class="result-content">
                 <div class="skeleton-line title"></div>
+                <div class="skeleton-line full"></div>
                 <div class="skeleton-line meta"></div>
               </div>
-              <div class="skeleton-circle"></div>
             </div>
           </div>
 
@@ -179,30 +227,49 @@ onUnmounted(() => {
             :style="{ '--index': item.index }"
             @click="handleResultClick(item.data)"
           >
-            <div class="result-main">
-              <div class="result-content">
-                <div class="result-text-summary">
-                  <div class="main-text">{{ item.data.translatedText || item.data.text }}</div>
-                  <div v-if="item.data.translatedText" class="sub-text">{{ item.data.text }}</div>
-                </div>
-                <div class="result-meta">
-                  <span v-if="!videoId" class="video-title">
-                    <FileText :size="12" />
-                    {{ item.data.videoTitle }}
-                  </span>
-                  <span v-if="!videoId" class="dot">•</span>
-                  <span class="timestamp">
-                    <Clock :size="12" />
-                    {{ formatTimeFromMs(item.data.offset) }}
-                  </span>
+            <div class="result-main-horizontal">
+              <!-- Thumbnail on the left -->
+              <div class="result-thumbnail-wrap">
+                <img :src="getThumbnailUrl(item.data)" class="result-thumbnail" loading="lazy" />
+                <!-- Duration Badge on Thumbnail -->
+                <div v-if="item.data.duration" class="thumb-duration-badge">
+                  {{ formatDuration(item.data.duration) }}
                 </div>
               </div>
-              <div class="result-score-wrap">
-                <div class="score-circle" :style="{
-                  '--score-color': getScoreColor(item.data.similarity),
-                  '--score-opacity': item.data.similarity
-                }">
-                  {{ Math.round(item.data.similarity * 100) }}
+
+              <!-- Content in the middle -->
+              <div class="result-content">
+                <!-- Video Title as the first row -->
+                <div v-if="!videoId" class="result-video-header">
+                  <Video :size="14" class="icon-accent" />
+                  <span class="video-title-bold" v-html="highlightText(item.data.videoTitle, searchQuery)"></span>
+                </div>
+
+                <!-- Match detail with integrated icon -->
+                <div class="result-text-summary">
+                  <div class="main-text">
+                    <component
+                      :is="item.data.matchType === 'title' ? Video : MessageSquare"
+                      :size="12"
+                      class="match-type-icon-inline"
+                      :class="item.data.matchType"
+                    />
+                    <span v-html="highlightText(item.data.translatedText || item.data.text, searchQuery)"></span>
+                  </div>
+                  <div v-if="item.data.translatedText" class="sub-text" v-html="highlightText(item.data.text, searchQuery)"></div>
+                </div>
+              </div>
+
+              <!-- Score and Time on the far right -->
+              <div class="score-column">
+                <div class="score-badge-premium" :style="{ '--score-color': getScoreColor(item.data.similarity) }">
+                  <span class="score-val">{{ Math.round(item.data.similarity * 100) }}</span>
+                  <span class="score-percent">%</span>
+                </div>
+
+                <div class="timestamp-column">
+                  <Clock :size="12" class="location-icon" />
+                  <span>{{ formatTimeFromMs(item.data.offset) }}</span>
                 </div>
               </div>
             </div>
@@ -251,7 +318,14 @@ onUnmounted(() => {
 }
 
 .search-icon {
-  color: var(--text-secondary);
+  color: var(--text-muted);
+}
+
+:deep(.highlight-mark) {
+  color: #fbbf24;
+  font-weight: 700;
+  background: transparent;
+  padding: 0 1px;
 }
 
 .search-input-inner {
@@ -336,11 +410,116 @@ onUnmounted(() => {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 }
 
-.result-main {
+.result-main-horizontal {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.result-thumbnail-wrap {
+  position: relative;
+  width: 140px;
+  height: 80px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.thumb-duration-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.result-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s;
+}
+
+.search-result-card:hover .result-thumbnail {
+  transform: scale(1.05);
+}
+
+.score-column {
+  margin-left: auto;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 12px;
+  min-width: 80px;
+}
+
+.timestamp-column {
   display: flex;
   align-items: center;
-  gap: 16px;
-  justify-content: space-between;
+  gap: 4px;
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent-light);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.location-icon {
+  opacity: 0.9;
+}
+
+.search-result-card:hover .score-badge-premium {
+  transform: scale(1.1);
+  filter: brightness(1.2);
+}
+
+.score-badge-premium {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  color: var(--score-color);
+  font-family: 'Outfit', sans-serif;
+  transition: all 0.3s;
+}
+
+.score-val {
+  font-size: 1.2rem;
+  font-weight: 900;
+  text-shadow: 0 0 20px color-mix(in srgb, var(--score-color) 40%, transparent);
+}
+
+.score-percent {
+  font-size: 0.75rem;
+  font-weight: 700;
+  opacity: 0.8;
+}
+
+.match-type-icon-inline {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 6px;
+  margin-top: -2px;
+  opacity: 0.9;
+}
+
+.match-type-icon-inline.title {
+  color: var(--accent-color);
+}
+
+.match-type-icon-inline.subtitle {
+  color: #fbbf24;
 }
 
 .result-content {
@@ -351,15 +530,49 @@ onUnmounted(() => {
   gap: 6px;
 }
 
-.result-text-summary {
-  font-size: 1rem;
-  color: var(--text-primary);
-  max-width: 480px;
-  font-weight: 500;
-  line-height: 1.5;
+
+.location-icon {
+  color: var(--accent-light);
+  transform: translateY(-1px);
+}
+
+.highlight-location {
+  color: var(--accent-light) !important;
+  font-weight: 700;
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 4px;
+  background: rgba(var(--accent-rgb), 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.result-video-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.icon-accent {
+  color: var(--accent-color); opacity: 0.8;
+}
+
+.video-title-bold {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-text-summary {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-top: 4px;
 }
 
 .main-text {
@@ -368,64 +581,20 @@ onUnmounted(() => {
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  opacity: 0.9;
 }
 
-.sub-text {
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  opacity: 0.7;
-  font-style: italic;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+/* Skeleton Enhancements */
+.skeleton-thumb {
+  width: 140px;
+  height: 80px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  flex-shrink: 0;
 }
 
-.result-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
-
-.video-title {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--accent-color);
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.timestamp {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-.dot { opacity: 0.3; }
-
-.score-circle {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  border: 2px solid var(--score-color, var(--accent-color));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.85rem;
-  font-weight: 800;
-  color: var(--score-color, var(--accent-color));
-  background: color-mix(in srgb, var(--score-color, var(--accent-color)) 10%, transparent);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 0 15px color-mix(in srgb, var(--score-color, var(--accent-color)) 20%, transparent);
-}
+.skeleton-line.full { width: 100%; margin-bottom: 4px; }
+.skeleton-line.title { width: 50%; height: 14px; margin-bottom: 8px; background: rgba(var(--accent-rgb), 0.1); }
 
 /* Skeleton Styles */
 .skeleton-card {
@@ -504,4 +673,11 @@ onUnmounted(() => {
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+
+:deep(.highlight-mark) {
+  color: #fbbf24;
+  font-weight: 700;
+  background: transparent;
+  padding: 0 1px;
+}
 </style>

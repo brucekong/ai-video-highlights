@@ -71,13 +71,12 @@ export const swaggerOptions: FastifyDynamicSwaggerOptions = {
       description: `
 ## 🎬 AI 视频精要提取服务
 
-AI Video Highlights 是一个智能视频分析平台，支持 YouTube 和 Bilibili 视频，
+AI Video Highlights 是一个智能视频分析平台，支持 YouTube 视频，
 自动提取关键要点、管理字幕、并提供用户认证功能。
 
 ### 核心功能
 - **视频分析**：AI 驱动的视频内容分析与要点提取
 - **字幕提取**：自动获取和缓存视频字幕，支持 Whisper 兜底
-- **多平台支持**：YouTube / Bilibili
 - **用户系统**：Google / 微信 OAuth 登录
 - **历史管理**：用户分析历史记录管理
 

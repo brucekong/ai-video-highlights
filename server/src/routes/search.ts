@@ -34,10 +34,9 @@ export async function searchRoutes(fastify: FastifyInstance) {
       const queryEmbedding = await getEmbedding(q);
       const vectorStr = `[${queryEmbedding.join(',')}]`;
 
-      // 2. 向量检索：使用余弦相似度的距离运算符 <=>
-      // 相似度得分 = 1 - 距离
-      // 增加 min_score 过滤，剔除相关性极低的结果
-      // 如果指定了 videoId，则增加 video_id 过滤
+      // 拆分关键词以进行多词匹配奖励（特别是技术术语）
+      const words = q.split(/\s+/).filter(w => w.length > 1);
+
       const results: any[] = await prisma.$queryRaw`
         SELECT
            s.video_id AS "videoId",
@@ -46,23 +45,36 @@ export async function searchRoutes(fastify: FastifyInstance) {
            s.translated_text AS "translatedText",
            s."offset" AS "offset",
            LEAST(1.0,
-             (1 - (s.embedding <=> ${vectorStr}::vector)) +
+             GREATEST(
+               COALESCE(1 - (s.embedding <=> ${vectorStr}::vector), 0),
+               COALESCE(1 - (s.translated_embedding <=> ${vectorStr}::vector), 0)
+             ) +
+             -- 精确或包含匹配奖励 (最高 0.3)
              (CASE
                 WHEN s.text ILIKE ${q} OR s.translated_text ILIKE ${q} THEN 0.3
                 WHEN s.text ILIKE ${'%' + q + '%'} OR s.translated_text ILIKE ${'%' + q + '%'} THEN 0.15
-                ELSE 0
+                -- 单词点击奖励（处理中英文混合匹配，如 "json mode" 匹配 "JSON 模式" 中的 "JSON"）
+                ELSE LEAST(0.14, (
+                  ${words.length > 0 ? words.map(w => Prisma.sql`(CASE WHEN s.text ILIKE ${'%' + w + '%'} OR s.translated_text ILIKE ${'%' + w + '%'} THEN 0.05 ELSE 0 END)`).reduce((a, b) => Prisma.sql`${a} + ${b}`) : Prisma.sql`0`}
+                ))
               END)
            ) AS "similarity"
         FROM subtitles s
         JOIN videos v ON s.video_id = v.video_id
-        WHERE s.embedding IS NOT NULL
-          AND ( (1 - (s.embedding <=> ${vectorStr}::vector)) +
-                (CASE
-                   WHEN s.text ILIKE ${q} OR s.translated_text ILIKE ${q} THEN 0.3
-                   WHEN s.text ILIKE ${'%' + q + '%'} OR s.translated_text ILIKE ${'%' + q + '%'} THEN 0.15
-                   ELSE 0
-                 END)
-              ) > ${Number(min_score)}
+        WHERE (s.embedding IS NOT NULL OR s.translated_embedding IS NOT NULL)
+          AND (
+            GREATEST(
+              COALESCE(1 - (s.embedding <=> ${vectorStr}::vector), 0),
+              COALESCE(1 - (s.translated_embedding <=> ${vectorStr}::vector), 0)
+            ) +
+            (CASE
+               WHEN s.text ILIKE ${q} OR s.translated_text ILIKE ${q} THEN 0.3
+               WHEN s.text ILIKE ${'%' + q + '%'} OR s.translated_text ILIKE ${'%' + q + '%'} THEN 0.15
+               ELSE LEAST(0.14, (
+                 ${words.length > 0 ? words.map(w => Prisma.sql`(CASE WHEN s.text ILIKE ${'%' + w + '%'} OR s.translated_text ILIKE ${'%' + w + '%'} THEN 0.05 ELSE 0 END)`).reduce((a, b) => Prisma.sql`${a} + ${b}`) : Prisma.sql`0`}
+               ))
+             END)
+          ) > ${Number(min_score)}
           ${videoId ? Prisma.sql`AND s.video_id = ${videoId}` : Prisma.empty}
         ORDER BY similarity DESC
         LIMIT ${limit}

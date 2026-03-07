@@ -182,7 +182,8 @@ onUnmounted(() => {
             <div class="result-main">
               <div class="result-content">
                 <div class="result-text-summary">
-                  {{ item.data.translatedText || item.data.text }}
+                  <div class="main-text">{{ item.data.translatedText || item.data.text }}</div>
+                  <div v-if="item.data.translatedText" class="sub-text">{{ item.data.text }}</div>
                 </div>
                 <div class="result-meta">
                   <span v-if="!videoId" class="video-title">
@@ -353,12 +354,30 @@ onUnmounted(() => {
 .result-text-summary {
   font-size: 1rem;
   color: var(--text-primary);
-  max-width: 400px;
+  max-width: 480px;
   font-weight: 500;
   line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.main-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sub-text {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  font-style: italic;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

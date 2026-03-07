@@ -211,6 +211,14 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                 }
               });
 
+              // 同时更新标题的原文向量（基于 AI 优化的新标题）
+              const newTitleEmbedding = await getEmbedding(aiResult.title);
+              await prisma.$executeRawUnsafe(
+                `UPDATE videos SET "embedding" = $1::vector WHERE video_id = $2`,
+                `[${newTitleEmbedding.join(',')}]`,
+                videoId
+              );
+
               await prisma.takeaway.deleteMany({ where: { videoId } });
               await prisma.takeaway.createMany({
                 data: aiResult.takeaways.map((t, i) => ({ videoId, title: t.title, summary: t.summary, timestamp: t.timestamp, duration: t.duration, sortOrder: i })),
@@ -249,12 +257,23 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                  if (translatedTexts[i]) {
                    const vec = transEmbeds[transIdx++];
                    await prisma.$executeRawUnsafe(
-                     `UPDATE subtitles SET "embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+                     `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
                      `[${vec.join(',')}]`,
                      videoId,
                      i
                    );
                  }
+               }
+
+               // 同时也更新视频标题的翻译向量（如果有的话）
+               const translatedTitle = await translateTranscriptSegments([metadata.title || videoId]);
+               if (translatedTitle[0]) {
+                  const titleTransEmbed = await getEmbedding(translatedTitle[0]);
+                  await prisma.$executeRawUnsafe(
+                    `UPDATE videos SET "translated_embedding" = $1::vector WHERE video_id = $2`,
+                    `[${titleTransEmbed.join(',')}]`,
+                    videoId
+                  );
                }
                console.log(`[Background] Stage 3: Translation and secondary indexing completed.`);
              } catch (err) {

@@ -14,6 +14,12 @@
 - **传送门 (Teleportation)**:
   - 核心弹窗组件建议使用 `<Teleport to="body">` 渲染，以确保定位不受父级容器 `transform` 或 `overflow` 的影响。
 
+### 1.2 用户反馈与提示 / User Feedback & Notifications
+- **[Critical] 友好交互原则 (Friendly UI)**:
+  - **禁止使用原生提示**: 严禁直接使用 `window.alert()`、`window.confirm()` 或 `window.prompt()`。
+  - **一致性**: 所有全局级别的通知、错误提示、操作反馈必须通过自定义的 UI 组件（如 Friendly Modals, Toasts）实现，且需包含明确的图标和色彩区分（Success/Error/Info）。
+  - **加载反馈 (Loading States)**: 长耗时操作（异步请求）必须为触发按钮或相关区域增加加载反馈（如 `Loader` 旋转图标、按钮文本切换、禁用重复点击）。
+
 ---
 
 ## 2. 搜索逻辑规范 / Search Logic Standards
@@ -43,3 +49,8 @@
   - **[Problem]**: Fastify 使用 `fast-json-stringify` 进行序列化。如果代码中 `reply.send()` 返回了某个字段，但该字段未在路由的 `schema.response` 中声明，该字段会在输出时被自动剔除（Stripped），导致前端无法接收。
   - **[Requirement]**: 每一个需要传递给前端的字段（尤其是新增加的状态位，如 `isIndexed` 等），**必须**在路由定义文件的 `response` schema 中进行完整声明。
   - **[Checklist]**: 如果日志显示后台已发送数据，但前端 `Network` 面板中响应体缺失该字段，请务必检查路由架构定义。
+
+### 4.2 数据交互规范 / Data Interaction Standards
+- **分页检索 (Pagination)**:
+  - **集合限制**: 对于历史列表、日志等潜在的大型数据集，必须支持分页查询 (`page`, `limit`)，杜绝一次性全量加载。
+  - **元数据补充**: 分页响应应统一包含 `meta` 结构，包含 `totalCount`, `page`, `limit` 及 `hasMore` 等状态位。

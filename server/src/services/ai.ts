@@ -189,12 +189,13 @@ export async function translateTranscriptSegments(
         messages: [
           {
             role: 'system',
-            content: `你是一个专业的语义翻译助手。你的任务是将用户提供的字幕片段（JSON 对象，键为索引，值为片段文本）翻译成中文。
+            content: `你是一个专业的语义翻译专家。你的任务是将用户提供的字幕片段（JSON 对象，键为索引，值为英文片段文本）**全部**翻译成自然流畅的中文。
 要求：
-1. **语义连贯**：虽然是片段，但请结合前后文（由索引顺序体现）进行翻译，使中文表达通顺。
-2. **严禁合并或拆分**：返回一个相同结构的 JSON 对象。每个输入的键必须出现在输出中。
-3. **保持原样**：如果内容是代码、专有名词或已经包含中文且不需要翻译，请保持原样。
-4. **格式严格**：只返回 JSON 对象，不要有任何 Markdown 代码块或多余文字。`,
+1. **全量翻译**：每一个输入的片段都必须提供对应的中文翻译。除纯代码段外，**禁止**保留原英文。
+2. **语义连贯**：请结合前后文（由索引顺序体现）进行翻译，确保中文表达符合中文语言习惯，不要生硬直译。
+3. **术语处理**：对于技术术语（如 ADK, API, JSON mode, Gemini 等），在保留英文专业词汇的同时，确保整句语义被完整翻译成中文。
+4. **严禁合并或拆分**：返回一个相同结构的 JSON 对象。每个输入的键必须出现在输出中，且顺序一致。
+5. **纯净输出**：只返回 JSON 对象，不要有任何 Markdown 代码块标签、注释或说明文字。`,
           },
           {
             role: 'user',
@@ -296,8 +297,9 @@ import { pipeline } from '@xenova/transformers';
 let localPipe: any = null;
 async function getLocalPipeline() {
   if (!localPipe) {
-    console.log('📦 Loading local embedding model (Xenova/bge-small-zh-v1.5)...');
-    localPipe = await pipeline('feature-extraction', 'Xenova/bge-small-zh-v1.5');
+    console.log('📦 Loading local embedding model (Xenova/bge-m3)...');
+    // bge-m3 默认输出 1024 维向量，匹配数据库 schema
+    localPipe = await pipeline('feature-extraction', 'Xenova/bge-m3');
   }
   return localPipe;
 }
@@ -326,7 +328,7 @@ export async function getEmbedding(text: string): Promise<number[]> {
     const response = await client.embeddings.create({
       model,
       input: text.replace(/\n/g, ' '),
-      dimensions: model.includes('text-embedding-3') ? 512 : undefined, // OpenAI 支持指定维度
+      dimensions: model.includes('text-embedding-3') ? 1024 : undefined, // OpenAI 支持指定维度
     });
 
     return response.data[0].embedding;
@@ -362,7 +364,7 @@ export async function getEmbeddings(texts: string[]): Promise<number[][]> {
     const response = await client.embeddings.create({
       model,
       input: texts.map(t => t.replace(/\n/g, ' ')),
-      dimensions: model.includes('text-embedding-3') ? 512 : undefined,
+      dimensions: model.includes('text-embedding-3') ? 1024 : undefined,
     });
 
     return response.data.map(d => d.embedding);

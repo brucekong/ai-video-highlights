@@ -12,8 +12,15 @@ export async function videoRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Videos'],
       summary: '获取视频列表',
-      description: '获取已分析的视频列表。如果用户已登录（携带 Bearer Token），返回该用户的历史记录（最多50条）。',
+      description: '获取已分析的视频列表。如果用户已登录，返回该用户的历史记录。支持分页。',
       security: [{ bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          page: { type: 'integer', default: 1, minimum: 1 },
+          limit: { type: 'integer', default: 20, minimum: 1, maximum: 100 },
+        },
+      },
       response: {
         200: {
           type: 'object',
@@ -23,24 +30,43 @@ export async function videoRoutes(fastify: FastifyInstance) {
               type: 'array',
               items: Schemas.VideoListItem,
             },
+            meta: {
+              type: 'object',
+              properties: {
+                totalCount: { type: 'integer' },
+                page: { type: 'integer' },
+                limit: { type: 'integer' },
+                hasMore: { type: 'boolean' },
+              }
+            }
           },
         },
       },
     },
-  }, async (request, reply) => {
+  }, async (
+    request: FastifyRequest<{ Querystring: { page?: number; limit?: number } }>,
+    reply: FastifyReply,
+  ) => {
     const userId = getUserId(request);
+    const { page = 1, limit = 20 } = request.query;
 
     if (userId) {
-      const history = await prisma.userHistory.findMany({
-        where: { userId },
-        orderBy: { createdAt: 'desc' },
-        take: 50,
-        include: {
-          video: {
-            include: { _count: { select: { takeaways: true } } }
+      const skip = (page - 1) * limit;
+
+      const [totalCount, history] = await Promise.all([
+        prisma.userHistory.count({ where: { userId } }),
+        prisma.userHistory.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+          include: {
+            video: {
+              include: { _count: { select: { takeaways: true } } }
+            }
           }
-        }
-      });
+        })
+      ]);
 
       // 提取本页所有的 videoId 用于查向量状态
       const videoIds = history.map(h => h.video.videoId);
@@ -60,13 +86,20 @@ export async function videoRoutes(fastify: FastifyInstance) {
           takeawayCount: h.video._count.takeaways,
           analyzedAt: h.createdAt,
           isIndexed: indexedIds.has(h.video.videoId),
-        }))
+        })),
+        meta: {
+          totalCount,
+          page,
+          limit,
+          hasMore: skip + history.length < totalCount
+        }
       });
     }
 
     return reply.send({
       success: true,
       data: [],
+      meta: { totalCount: 0, page, limit, hasMore: false }
     });
   });
 

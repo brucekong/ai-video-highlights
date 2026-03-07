@@ -26,10 +26,30 @@ const API_BASE = import.meta.env.VITE_API_URL;
 const router = useRouter();
 
 const historyList = ref<HistoryItem[]>([]);
+const page = ref(1);
+const limit = 20;
+const hasMore = ref(false);
+const isLoading = ref(false);
+const isLoadingMore = ref(false);
+
 const showDeleteConfirm = ref(false);
 const deleteTargetItem = ref<HistoryItem | null>(null);
 const isDeleting = ref(false);
+
 const reindexingVideoId = ref<string | null>(null);
+
+// 通知 Modal 状态
+const showNotification = ref(false);
+const notificationTitle = ref('');
+const notificationMessage = ref('');
+const notificationType = ref<'success' | 'error' | 'info'>('info');
+
+const notify = (title: string, message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  notificationTitle.value = title;
+  notificationMessage.value = message;
+  notificationType.value = type;
+  showNotification.value = true;
+};
 
 const closeHistory = () => {
   emit('update:modelValue', false);
@@ -56,18 +76,56 @@ const formatDuration = (seconds: number | null) => {
   return `${hDisplay}${mDisplay}${sDisplay}`;
 };
 
-const loadHistory = async () => {
+let lastLoadTime = 0;
+const loadHistory = async (append = false) => {
+  // Guard against simultaneous calls
+  if (isLoading.value || isLoadingMore.value) return;
+
+  // Throttle sequential calls to avoid redundant loading on page load
+  const now = Date.now();
+  if (!append && now - lastLoadTime < 800) {
+    console.log('[History] Skipping redundant loadHistory call (throttled)');
+    return;
+  }
+
+  if (append) {
+    isLoadingMore.value = true;
+    page.value++;
+  } else {
+    page.value = 1;
+    isLoading.value = true;
+  }
+
   try {
-    const res = await fetch(`${API_BASE}/api/videos`, { headers: getAuthHeaders() });
+    const res = await fetch(`${API_BASE}/api/videos?page=${page.value}&limit=${limit}`, { headers: getAuthHeaders() });
     const result = await res.json();
     if (result.success) {
-      historyList.value = result.data.map((item: any) => ({
+      lastLoadTime = Date.now();
+      const newItems = result.data.map((item: any) => ({
         ...item,
         title: decodeHtml(item.title)
       }));
+
+      if (append) {
+        historyList.value = [...historyList.value, ...newItems];
+      } else {
+        historyList.value = newItems;
+      }
+      hasMore.value = result.meta?.hasMore || false;
     }
   } catch (error) {
     console.error('Failed to load history:', error);
+    notify('加载失败', '无法获取历史记录，请待会再试', 'error');
+  } finally {
+    isLoading.value = false;
+    isLoadingMore.value = false;
+  }
+};
+
+const handleLoadMore = () => {
+  if (hasMore.value && !isLoadingMore.value) {
+    page.value++;
+    loadHistory(true);
   }
 };
 
@@ -103,12 +161,13 @@ const confirmDelete = async () => {
       await loadHistory();
       showDeleteConfirm.value = false;
       deleteTargetItem.value = null;
+      notify('删除成功', '视频分析记录已彻底从云端移除', 'success');
     } else {
-      alert(result.error || '删除失败');
+      notify('删除失败', result.error || '无法执行删除操作', 'error');
     }
   } catch (error) {
     console.error('Delete history failed:', error);
-    alert('删除失败，请检查网络连接');
+    notify('网络错误', '删除失败，请检查网络连接', 'error');
   } finally {
     isDeleting.value = false;
   }
@@ -125,15 +184,15 @@ const handleReindex = async (event: Event, item: HistoryItem) => {
       headers: getAuthHeaders()
     });
     if (res.ok) {
-      await loadHistory(); // 刷新列表以更新 isIndexed 状态
-      alert('语义搜索索引已成功修复！');
+      await loadHistory();
+      notify('修复成功', '语义搜索索引已成功重构！', 'success');
     } else {
       const data = await res.json();
-      alert(`修复失败: ${data.error || '未知错误'}`);
+      notify('修复失败', data.error || '重构索引时发生错误', 'error');
     }
   } catch (err) {
     console.error('Re-index failed:', err);
-    alert('重构索引失败，请稍后重试');
+    notify('重构失败', '请检查网络连接或稍后重试', 'error');
   } finally {
     reindexingVideoId.value = null;
   }
@@ -141,7 +200,9 @@ const handleReindex = async (event: Event, item: HistoryItem) => {
 
 const handleEsc = (e: KeyboardEvent) => {
   if (e.key === 'Escape') {
-    if (showDeleteConfirm.value) {
+    if (showNotification.value) {
+      showNotification.value = false;
+    } else if (showDeleteConfirm.value) {
       showDeleteConfirm.value = false;
     } else if (props.modelValue) {
       closeHistory();
@@ -151,12 +212,12 @@ const handleEsc = (e: KeyboardEvent) => {
 
 // Listen for events
 onMounted(() => {
-  window.addEventListener('video-analyzed', loadHistory);
+  window.addEventListener('video-analyzed', () => loadHistory(false));
   window.addEventListener('keydown', handleEsc);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('video-analyzed', loadHistory);
+  window.removeEventListener('video-analyzed', () => loadHistory(false));
   window.removeEventListener('keydown', handleEsc);
 });
 
@@ -207,9 +268,14 @@ watch(() => authState.currentUser, (newUser) => {
             <div v-else class="history-thumb-placeholder" :class="item.platform">
               <ImageIcon :size="24" class="thumb-icon" />
             </div>
-            <!-- 新增：视频时长角标 -->
-            <div v-if="item.duration" class="duration-badge">
+            <!-- 视频时长角标：基础样式更醒目 -->
+            <div v-if="item.duration" class="duration-badge" :class="{ 'is-long-duration': item.duration > 2400 }">
               {{ formatDuration(item.duration) }}
+            </div>
+            <!-- 长视频特别标记：增加图标 -->
+            <div v-if="item.duration && item.duration > 2400" class="long-video-badge-overlay">
+              <Clock :size="10" stroke-width="3" />
+              <span>长视频</span>
             </div>
           </div>
           <div class="history-item-content">
@@ -233,8 +299,6 @@ watch(() => authState.currentUser, (newUser) => {
             <div class="history-meta">
               <div style="display: flex; align-items: center; gap: 4px;">
                 <span class="platform-badge" :class="item.platform">{{ item.platform }}</span>
-                <!-- 新增：长视频标记 -->
-                <span v-if="item.duration && item.duration > 2400" class="long-video-badge">长视频</span>
               </div>
               <span class="meta-date">{{ new Date(item.analyzedAt).toLocaleDateString() }}</span>
               <span class="meta-takeaways" :title="item.takeawayCount + '个片段'">
@@ -244,11 +308,37 @@ watch(() => authState.currentUser, (newUser) => {
             </div>
           </div>
         </div>
-        <div v-if="historyList.length === 0" class="history-empty">
+        <div v-if="historyList.length === 0 && !isLoading" class="history-empty">
           暂无历史记录。
+        </div>
+
+        <!-- Load More Button -->
+        <div v-if="hasMore" class="load-more-container">
+          <button class="btn-load-more" :disabled="isLoadingMore" @click="handleLoadMore">
+            <Loader2 v-if="isLoadingMore" :size="16" class="spin" />
+            <span>{{ isLoadingMore ? '正在加载...' : '加载更多历史记录' }}</span>
+          </button>
         </div>
       </div>
     </aside>
+
+    <!-- Friendly Notification Modal -->
+    <Transition name="modal-fade">
+      <div v-if="showNotification" class="confirm-modal-overlay" @click.self="showNotification = false">
+        <div class="confirm-modal glass-panel">
+          <div class="confirm-icon-wrap" :class="notificationType">
+            <Loader2 v-if="notificationType === 'info'" :size="32" class="confirm-icon" />
+            <AlertTriangle v-else :size="32" class="confirm-icon" />
+          </div>
+          <h3>{{ notificationTitle }}</h3>
+          <p>{{ notificationMessage }}</p>
+
+          <div class="confirm-actions">
+            <button class="btn-primary" @click="showNotification = false">我知道了</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- Custom Delete Confirmation Modal -->
     <Transition name="modal-fade">
@@ -345,7 +435,7 @@ watch(() => authState.currentUser, (newUser) => {
   border: 1px solid var(--border-color);
   overflow: hidden;
   background: rgba(255, 255, 255, 0.02);
-  min-height: 110px; /* 移除固定高度，改为最小高度 */
+  min-height: 130px; /* 移除固定高度，改为最小高度 */
 }
 
 .history-item:hover {
@@ -496,25 +586,43 @@ watch(() => authState.currentUser, (newUser) => {
 
 .duration-badge {
   position: absolute;
-  bottom: 6px;
-  right: 6px;
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 1px 4px;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  font-weight: 500;
-  backdrop-filter: blur(4px);
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 3;
 }
 
-.long-video-badge {
-  background: rgba(245, 158, 11, 0.15);
+.duration-badge.is-long-duration {
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(0, 0, 0, 0.9);
   color: #f59e0b;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.65rem;
-  font-weight: 700;
+}
+
+.long-video-badge-overlay {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #f59e0b;
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
   letter-spacing: 0.5px;
+  backdrop-filter: blur(4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: uppercase;
 }
 
 
@@ -547,6 +655,20 @@ watch(() => authState.currentUser, (newUser) => {
   background: #f59e0b;
   color: white;
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+.btn-repair-inline.is-loading {
+  opacity: 0.8;
+  cursor: wait;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .history-meta {
@@ -600,7 +722,8 @@ watch(() => authState.currentUser, (newUser) => {
   text-align: center;
   background: rgba(20, 20, 23, 0.95);
   border: 1px solid var(--border-color);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  border-radius: var(--radius-lg);
 }
 
 .confirm-icon-wrap {
@@ -612,6 +735,30 @@ watch(() => authState.currentUser, (newUser) => {
   align-items: center;
   justify-content: center;
   margin: 0 auto 20px;
+}
+
+.confirm-icon-wrap.success {
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.confirm-icon-wrap.success .confirm-icon {
+  color: #22c55e;
+}
+
+.confirm-icon-wrap.error {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.confirm-icon-wrap.error .confirm-icon {
+  color: #ef4444;
+}
+
+.confirm-icon-wrap.info {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.confirm-icon-wrap.info .confirm-icon {
+  color: var(--accent-color);
 }
 
 .confirm-icon {
@@ -670,6 +817,53 @@ watch(() => authState.currentUser, (newUser) => {
 .modal-fade-leave-to {
   opacity: 0;
   transform: scale(0.9);
+}
+
+/* Pagination Button */
+.load-more-container {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  padding: 20px 0 40px;
+}
+
+.btn-load-more {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 10px 24px;
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.btn-load-more:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border-color: var(--accent-light);
+}
+
+.btn-load-more:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
 }
 
 @media (max-width: 800px) {

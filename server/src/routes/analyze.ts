@@ -81,8 +81,10 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
             });
           }
 
-          // 如果已经有摘要，视为完整缓存命中
-          const isComplete = cached.takeaways.length > 0;
+          // 检查索引状态 (Prisma 不直接支持 Unsupported 字段的 NOT NULL 查询，需用 Raw SQL)
+          const videoIndexedResult: any[] = await prisma.$queryRaw`SELECT 1 FROM videos WHERE video_id = ${videoId} AND "embedding" IS NOT NULL`;
+          const subtitlesIndexedResult: any[] = await prisma.$queryRaw`SELECT 1 FROM subtitles WHERE video_id = ${videoId} AND "embedding" IS NOT NULL LIMIT 1`;
+          const isIndexed = videoIndexedResult.length > 0 || subtitlesIndexedResult.length > 0;
 
           return reply.send({
             success: true,
@@ -90,7 +92,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
             data: {
               videoTitle: cached.title,
               mindmap: cached.mindmap,
-              isIndexed: !!(cached as any).embedding,
+              isIndexed,
               takeaways: cached.takeaways,
               transcript: cached.subtitles.map(s => ({
                 text: s.text,
@@ -229,55 +231,81 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
             }
           };
 
-          // STAGE 3: 翻译流程 (文本翻译 + 翻译向量化)
+          // STAGE 3: 翻译流程 (文本翻译 + 向量化) - 采用增量批处理
           const translationFlowTask = async () => {
              try {
                const needsTranslation = transcript.slice(0, 10).filter(s => !/[\u4e00-\u9fa5]/.test(s.text)).length > 5;
                if (!needsTranslation) return;
 
-               console.log(`[Background] Stage 3: Translation starting for ${videoId}...`);
-               const translatedTexts = await translateTranscriptSegments(transcript.map(s => s.text));
+               console.log(`[Background] Stage 3: Incremental translation starting for ${videoId}...`);
 
-               // 更新文本
-               for (let i = 0; i < translatedTexts.length; i++) {
-                 if (translatedTexts[i]) {
-                   await prisma.subtitle.updateMany({
-                     where: { videoId, sortOrder: i },
-                     data: { translatedText: translatedTexts[i] }
-                   });
+               const BATCH_SIZE = 50;
+               const totalSegments = transcript.length;
+
+               for (let i = 0; i < totalSegments; i += BATCH_SIZE) {
+                 try {
+                   const batch = transcript.slice(i, i + BATCH_SIZE);
+                   const batchTexts = batch.map(s => s.text);
+
+                   console.log(`[Background] Translating batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(totalSegments / BATCH_SIZE)} for ${videoId}...`);
+                   const translatedBatch = await translateTranscriptSegments(batchTexts);
+
+                   // 1. 立即回填翻译文本
+                   for (let j = 0; j < translatedBatch.length; j++) {
+                     const sortOrder = i + j;
+                     if (translatedBatch[j]) {
+                        await prisma.subtitle.updateMany({
+                          where: { videoId, sortOrder },
+                          data: { translatedText: translatedBatch[j] }
+                        });
+                     }
+                   }
+
+                   // 2. 立即生成并回填翻译版本的向量索引 (对搜索即时生效)
+                   const validBatchTexts = translatedBatch.filter(t => !!t);
+                   if (validBatchTexts.length > 0) {
+                      const transEmbeds = await getEmbeddings(validBatchTexts);
+                      let transIdx = 0;
+                      for (let j = 0; j < translatedBatch.length; j++) {
+                        const sortOrder = i + j;
+                        if (translatedBatch[j]) {
+                          const vec = transEmbeds[transIdx++];
+                          await prisma.$executeRawUnsafe(
+                            `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+                            `[${vec.join(',')}]`,
+                            videoId,
+                            sortOrder
+                          );
+                        }
+                      }
+                   }
+                   console.log(`[Background] Batch ${Math.floor(i / BATCH_SIZE) + 1} updated to DB.`);
+                 } catch (batchErr) {
+                   console.error(`[Background Task] Translation batch failed at index ${i}:`, batchErr);
                  }
                }
 
-               // 重要：翻译完成后，由于用户可能用中文搜索英文视频，所以必须对翻译后的中文再次进行向量化
-               // 这样搜索质量会更高。计时器停止也依赖于此。
-               console.log(`[Background] Stage 3: Refining embeddings with translated text...`);
-               const transEmbeds = await getEmbeddings(translatedTexts.filter(t => !!t));
-               let transIdx = 0;
-               for (let i = 0; i < translatedTexts.length; i++) {
-                 if (translatedTexts[i]) {
-                   const vec = transEmbeds[transIdx++];
-                   await prisma.$executeRawUnsafe(
-                     `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
-                     `[${vec.join(',')}]`,
-                     videoId,
-                     i
-                   );
+               // 3. 最后更新视频标题的翻译
+               try {
+                 const translatedTitle = await translateTranscriptSegments([metadata.title || videoId]);
+                 if (translatedTitle[0]) {
+                    await prisma.video.update({
+                      where: { videoId },
+                      data: { title: translatedTitle[0] }
+                    });
+                    const titleTransEmbed = await getEmbedding(translatedTitle[0]);
+                    await prisma.$executeRawUnsafe(
+                      `UPDATE videos SET "translated_embedding" = $1::vector WHERE video_id = $2`,
+                      `[${titleTransEmbed.join(',')}]`,
+                      videoId
+                    );
                  }
+               } catch (titleErr) {
+                 console.error(`[Background Task] Title translation failed:`, titleErr);
                }
-
-               // 同时也更新视频标题的翻译向量（如果有的话）
-               const translatedTitle = await translateTranscriptSegments([metadata.title || videoId]);
-               if (translatedTitle[0]) {
-                  const titleTransEmbed = await getEmbedding(translatedTitle[0]);
-                  await prisma.$executeRawUnsafe(
-                    `UPDATE videos SET "translated_embedding" = $1::vector WHERE video_id = $2`,
-                    `[${titleTransEmbed.join(',')}]`,
-                    videoId
-                  );
-               }
-               console.log(`[Background] Stage 3: Translation and secondary indexing completed.`);
+               console.log(`[Background] Stage 3: Translation and secondary indexing fully completed.`);
              } catch (err) {
-               console.error(`[Background Task] Stage 3 (Translation Flow) failed:`, err);
+               console.error(`[Background Task] Stage 3 (Translation Flow) encountered fatal error:`, err);
              }
           };
 

@@ -11,8 +11,8 @@
 
 ### 方案 A：本地化语义 (Local Precision) - [默认/推荐]
 - **实现**: 使用 `@xenova/transformers` (Transformers.js) 在本地运行嵌入模型。
-- **推荐模型**: `Xenova/bge-small-zh-v1.5` (针对中文优化的轻量级模型)。
-- **维度**: 512 维 (极速且精准)。
+- **推荐模型**: `Xenova/bge-m3` (语义更强、支持多语言的 1024 维模型)。
+- **维度**: 1024 维 (极速且精准)。
 - **优势**: **100% 免费**，数据不离机，无需 API Key。
 
 ### 方案 B：云端加速 (Cloud Scalability)

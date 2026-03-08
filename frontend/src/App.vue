@@ -197,10 +197,23 @@ onMounted(() => {
 
   checkAuth();
   window.addEventListener('keydown', handleGlobalKeyDown);
+
+  // 监听全局通知事件 / Listen for global notification events
+  window.addEventListener('notify', handleNotify);
 });
+
+const handleNotify = ((e: CustomEvent) => {
+    const { message, title, type } = e.detail;
+    addNotification({
+      type: type || 'success',
+      title: title || (type === 'error' ? '操作失败' : '提示'),
+      message: message
+    });
+}) as EventListener;
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeyDown);
+  window.removeEventListener('notify', handleNotify);
 });
 
 </script>

@@ -354,8 +354,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
       const isPlainNumber = /^\d+$/.test(q);
 
       // 使用原生 SQL 进行跨表向量搜索并去重
-      const [results, totalResult]: [any[], any[]] = await Promise.all([
-        prisma.$queryRaw`
+      const [results, totalResult] = await Promise.all([
+        prisma.$queryRaw<any[]>`
           WITH all_raw_matches AS (
             SELECT
               v.video_id,
@@ -435,7 +435,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           OFFSET ${offset}
           LIMIT ${limit}
         `,
-        prisma.$queryRaw`
+        prisma.$queryRaw<any[]>`
           WITH all_raw_matches AS (
             SELECT video_id, GREATEST(COALESCE(1 - (embedding <=> ${vectorStr}::vector), 0), COALESCE(1 - (translated_embedding <=> ${vectorStr}::vector), 0)) as score, title as text FROM videos
             UNION ALL

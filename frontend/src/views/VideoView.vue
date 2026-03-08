@@ -582,14 +582,23 @@ const sendChatMessage = async () => {
 
 // 处理时间戳点击跳转
 const handleTimestampClick = (ts: string) => {
-  const match = ts.match(/\[(\d+):(\d+)\]/);
-  if (match) {
-    const minutes = parseInt(match[1]);
-    const seconds = parseInt(match[2]);
-    const target = minutes * 60 + seconds;
-    if (playerRef.value) {
-      playerRef.value.seekTo(target);
-    }
+  // 清理可能存在的方括号
+  const cleanTs = ts.replace(/[\[\]]/g, '');
+  const parts = cleanTs.split(':').map(p => parseInt(p));
+
+  let targetSeconds = 0;
+  if (parts.length === 3) {
+    // HH:MM:SS
+    targetSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+  } else if (parts.length === 2) {
+    // MM:SS
+    targetSeconds = parts[0] * 60 + parts[1];
+  }
+
+  if (playerRef.value && !isNaN(targetSeconds)) {
+    playerRef.value.seekTo(targetSeconds);
+    // 可选：如果是在移动端或较小屏幕，点击时间戳后可以自动滚动到视频位置
+    // window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 };
 
@@ -597,7 +606,10 @@ const handleTimestampClick = (ts: string) => {
 const parseMessageContent = (content: string) => {
   if (!content) return [];
   const parts: { type: 'text' | 'timestamp'; value: string }[] = [];
-  const regex = /\[(\d{1,2}:\d{2})\]/g;
+
+  // 匹配 [mm:ss], [hh:mm:ss], mm:ss, hh:mm:ss
+  // 使用正则提取被括号包裹或独立存在的时间点
+  const regex = /(?:\[)?((\d{1,2}:)?\d{1,2}:\d{2})(?:\])?/g;
   let lastIndex = 0;
   let match;
 
@@ -605,6 +617,7 @@ const parseMessageContent = (content: string) => {
     if (match.index > lastIndex) {
       parts.push({ type: 'text', value: content.substring(lastIndex, match.index) });
     }
+    // 保持原始显示的完整性（包含括号）
     parts.push({ type: 'timestamp', value: match[0] });
     lastIndex = regex.lastIndex;
   }

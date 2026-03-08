@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted, computed } from 'vue';
-import { Search, Loader2, Clock, FileText, SearchSlash, Video, MessageSquare, MapPin } from 'lucide-vue-next';
 import { useAuth } from '../services/auth';
 
 const props = defineProps<{

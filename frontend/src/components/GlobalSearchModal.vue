@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { X, Globe } from 'lucide-vue-next';
 import SemanticSearchPanel from './SemanticSearchPanel.vue';
 
 const props = defineProps<{

@@ -869,26 +869,32 @@ const takeawayMap = computed(() => {
                    <p v-if="videoTitle" class="video-title-hint">{{ videoTitle }}</p>
                  </div>
                    <div class="sidebar-actions">
-                    <button
-                      class="btn-mindmap"
-                      :disabled="!mindmapRaw"
-                      @click="showMindMap = true"
-                    >
-                      <Loader2 v-if="!mindmapRaw && isAnalyzingSummary" :size="14" class="spin" />
-                      <Map v-else :size="14" />
-                      <span>脑图</span>
-                    </button>
+                    <div class="tooltip-wrapper">
+                      <button
+                        class="btn-mindmap"
+                        :disabled="!mindmapRaw"
+                        @click="showMindMap = true"
+                      >
+                        <Loader2 v-if="!mindmapRaw && isAnalyzingSummary" :size="14" class="spin" />
+                        <Map v-else :size="14" />
+                        <span>脑图</span>
+                      </button>
+                      <div class="custom-tooltip">查看视频内容的 AI 脑图可视化</div>
+                    </div>
 
-                    <button
-                      v-if="showResult"
-                      class="btn-search-in-video"
-                      :disabled="isIndexing"
-                      @click="showSearchModal = true"
-                    >
-                      <Loader2 v-if="isIndexing" :size="14" class="spin" />
-                      <Search v-else :size="14" />
-                      <span>检索</span>
-                    </button>
+                    <div class="tooltip-wrapper">
+                      <button
+                        v-if="showResult"
+                        class="btn-search-in-video"
+                        :disabled="isIndexing"
+                        @click="showSearchModal = true"
+                      >
+                        <Loader2 v-if="isIndexing" :size="14" class="spin" />
+                        <Search v-else :size="14" />
+                        <span>检索</span>
+                      </button>
+                      <div class="custom-tooltip">基于语义在视频内搜索具体内容</div>
+                    </div>
 
                     <KnowledgeExportActions
                       :video-title="videoTitle"
@@ -1425,6 +1431,8 @@ input::placeholder {
   padding: 24px;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 11;
 }
 
 .takeaways-list {
@@ -1840,41 +1848,58 @@ input::placeholder {
   margin: 0 4px;
 }
 
-.btn-action-outline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.05);
+
+/* Unified Custom Tooltip Styles */
+.tooltip-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.custom-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--text-secondary);
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  z-index: 100;
 }
 
-.btn-action-outline:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: var(--text-primary);
+.custom-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #1e293b transparent transparent transparent;
 }
 
-.btn-action-outline.primary {
-  color: var(--accent-color);
-  border-color: rgba(99, 102, 241, 0.2);
+.tooltip-wrapper:hover .custom-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-12px);
 }
 
-.btn-action-outline.primary:hover {
-  background: rgba(99, 102, 241, 0.1);
-  border-color: var(--accent-color);
+/* Adjust timeline tooltip background to match */
+.timeline-tooltip {
+  background: #1e293b !important;
 }
-
-.btn-action-outline:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  filter: grayscale(0.6);
+.timeline-tooltip::before {
+  background: #1e293b !important;
 }
 
 /* Bilingual Toggle Button */

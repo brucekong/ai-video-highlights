@@ -165,24 +165,29 @@ const generateEditingScript = () => {
 
 <template>
   <div class="export-actions">
-    <button
-      class="btn-action-outline primary"
-      title="导出 Markdown 笔记"
-      @click="exportAsMarkdown"
-      :disabled="!takeaways.length"
-    >
-      <Share2 :size="14" />
-      <span>导出</span>
-    </button>
-    <button
-      class="btn-action-outline"
-      title="生成剪辑脚本"
-      @click="generateEditingScript"
-      :disabled="!takeaways.length"
-    >
-      <Scissors :size="14" />
-      <span>剪辑</span>
-    </button>
+    <div class="tooltip-wrapper">
+      <button
+        class="btn-action-outline primary"
+        @click="exportAsMarkdown"
+        :disabled="!takeaways.length"
+      >
+        <Share2 :size="14" />
+        <span>导出</span>
+      </button>
+      <div class="custom-tooltip">复制 Markdown 笔记到剪贴板，支持 Notion/Obsidian 直接粘贴</div>
+    </div>
+
+    <div class="tooltip-wrapper">
+      <button
+        class="btn-action-outline"
+        @click="generateEditingScript"
+        :disabled="!takeaways.length"
+      >
+        <Scissors :size="14" />
+        <span>剪辑</span>
+      </button>
+      <div class="custom-tooltip">复制剪辑脚本与 FFMPEG 指令到剪贴板</div>
+    </div>
   </div>
 </template>
 
@@ -196,14 +201,14 @@ const generateEditingScript = () => {
 .btn-action-outline {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   color: var(--text-secondary);
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 6px 12px;
   transition: all 0.2s ease;
   cursor: pointer;
   white-space: nowrap;
@@ -235,5 +240,54 @@ const generateEditingScript = () => {
 
 .btn-action-outline span {
   font-size: 0.85rem;
+}
+
+/* Custom Tooltip Styles */
+.tooltip-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.custom-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 9999;
+}
+
+.custom-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #1e293b transparent transparent transparent;
+}
+
+.tooltip-wrapper:hover .custom-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-12px);
+}
+
+.btn-action-outline:disabled + .custom-tooltip {
+  display: none;
 }
 </style>

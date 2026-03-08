@@ -25,6 +25,7 @@ interface Notification {
   type: 'success' | 'process' | 'error';
   title: string;
   message: string;
+  duration?: number;
   action?: {
     label: string;
     onClick: () => void;
@@ -36,13 +37,14 @@ const addNotification = (notif: Omit<Notification, 'id'>) => {
   const id = Date.now().toString();
   notifications.value.push({ ...notif, id });
 
-  // 正在处理的通知 3 秒后自动关闭
-  if (notif.type === 'process') {
+  // Use specified duration or default for process type
+  const duration = notif.duration || (notif.type === 'process' ? 3000 : 0);
+
+  if (duration > 0) {
     setTimeout(() => {
       removeNotification(id);
-    }, 3000);
+    }, duration);
   }
-  // 其他类型（成功、错误）不自动关闭，需由用户手动关闭或业务逻辑触发
   return id;
 };
 
@@ -203,12 +205,13 @@ onMounted(() => {
 });
 
 const handleNotify = ((e: CustomEvent) => {
-    const { message, title, type } = e.detail;
-    addNotification({
-      type: type || 'success',
-      title: title || (type === 'error' ? '操作失败' : '提示'),
-      message: message
-    });
+  const { message, title, type, duration } = e.detail;
+  addNotification({
+    type: type || 'success',
+    title: title || (type === 'error' ? '操作失败' : '提示'),
+    message: message,
+    duration: duration
+  });
 }) as EventListener;
 
 onUnmounted(() => {

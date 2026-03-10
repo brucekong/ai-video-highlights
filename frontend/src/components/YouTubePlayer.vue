@@ -123,6 +123,35 @@ defineExpose({
       // 在 seek 后立即重启轮询，防止状态处于非播放时指针停滞
       startTimePolling(player);
     }
+  },
+  setLoop: (start: number, end: number) => {
+    if (player && player.seekTo) {
+      player.seekTo(start, true);
+      player.playVideo();
+      startTimePolling(player);
+
+      const checkEnd = () => {
+        if (player && player.getCurrentTime) {
+          const currentTime = player.getCurrentTime();
+          // 增加 0.08s 的提前量，防止由于轮询延迟导致听到下一句的开头
+          if (currentTime >= end - 0.08) {
+            player.seekTo(start, true);
+          }
+          if (player.loopRequestId) {
+            player.loopRequestId = requestAnimationFrame(checkEnd);
+          }
+        }
+      };
+
+      if (player.loopRequestId) cancelAnimationFrame(player.loopRequestId);
+      player.loopRequestId = requestAnimationFrame(checkEnd);
+    }
+  },
+  stopLoop: () => {
+    if (player && player.loopRequestId) {
+      cancelAnimationFrame(player.loopRequestId);
+      player.loopRequestId = null;
+    }
   }
 });
 </script>

@@ -1,0 +1,2558 @@
+[
+  {
+    "text": "[music]",
+    "duration": 2.02,
+    "offset": 13.755,
+    "lang": "en"
+  },
+  {
+    "text": "All right, good morning and thank you",
+    "duration": 4.32,
+    "offset": 21.039,
+    "lang": "en"
+  },
+  {
+    "text": "for having us again. Last time we were",
+    "duration": 4.08,
+    "offset": 22.88,
+    "lang": "en"
+  },
+  {
+    "text": "here, we&#39;re still figuring out what an",
+    "duration": 4.08,
+    "offset": 25.359,
+    "lang": "en"
+  },
+  {
+    "text": "agent even is. Today, many of us are",
+    "duration": 5.04,
+    "offset": 26.96,
+    "lang": "en"
+  },
+  {
+    "text": "using agents on a daily basis. But we",
+    "duration": 4.721,
+    "offset": 29.439,
+    "lang": "en"
+  },
+  {
+    "text": "still notice gaps. We still have slots,",
+    "duration": 4.32,
+    "offset": 32,
+    "lang": "en"
+  },
+  {
+    "text": "right? Agents have intelligence and",
+    "duration": 4.16,
+    "offset": 34.16,
+    "lang": "en"
+  },
+  {
+    "text": "capabilities, but not always expertise",
+    "duration": 4.8,
+    "offset": 36.32,
+    "lang": "en"
+  },
+  {
+    "text": "that we need for real work. I&#39;m Barry.",
+    "duration": 6.399,
+    "offset": 38.32,
+    "lang": "en"
+  },
+  {
+    "text": "This is Mahes. We created agent skills.",
+    "duration": 5.36,
+    "offset": 41.12,
+    "lang": "en"
+  },
+  {
+    "text": "In this talk, we&#39;ll show you why we",
+    "duration": 3.441,
+    "offset": 44.719,
+    "lang": "en"
+  },
+  {
+    "text": "stopped building agents and started",
+    "duration": 5.2,
+    "offset": 46.48,
+    "lang": "en"
+  },
+  {
+    "text": "building skills instead.",
+    "duration": 4.879,
+    "offset": 48.16,
+    "lang": "en"
+  },
+  {
+    "text": "A lot of things have changed since our",
+    "duration": 3.6,
+    "offset": 51.68,
+    "lang": "en"
+  },
+  {
+    "text": "last talk. MCP became the standard for",
+    "duration": 4.641,
+    "offset": 53.039,
+    "lang": "en"
+  },
+  {
+    "text": "agent connectivity. Cloud Code, our",
+    "duration": 4.079,
+    "offset": 55.28,
+    "lang": "en"
+  },
+  {
+    "text": "first coding agent, launched to the",
+    "duration": 4.32,
+    "offset": 57.68,
+    "lang": "en"
+  },
+  {
+    "text": "world and our cloud agent SDK now",
+    "duration": 4.241,
+    "offset": 59.359,
+    "lang": "en"
+  },
+  {
+    "text": "provides a production ready agent out of",
+    "duration": 4.799,
+    "offset": 62,
+    "lang": "en"
+  },
+  {
+    "text": "the box. We have a more mature ecosystem",
+    "duration": 5.04,
+    "offset": 63.6,
+    "lang": "en"
+  },
+  {
+    "text": "and we&#39;re moving towards a new paradigm",
+    "duration": 4.32,
+    "offset": 66.799,
+    "lang": "en"
+  },
+  {
+    "text": "for agents. That paradigm is a tighter",
+    "duration": 4.88,
+    "offset": 68.64,
+    "lang": "en"
+  },
+  {
+    "text": "coupling between the model and a runtime",
+    "duration": 4.481,
+    "offset": 71.119,
+    "lang": "en"
+  },
+  {
+    "text": "environment.",
+    "duration": 4.48,
+    "offset": 73.52,
+    "lang": "en"
+  },
+  {
+    "text": "Put simply, we think code is all we",
+    "duration": 5.12,
+    "offset": 75.6,
+    "lang": "en"
+  },
+  {
+    "text": "need.",
+    "duration": 4.159,
+    "offset": 78,
+    "lang": "en"
+  },
+  {
+    "text": "We used to think agents in different",
+    "duration": 3.2,
+    "offset": 80.72,
+    "lang": "en"
+  },
+  {
+    "text": "domains will look very different. Each",
+    "duration": 3.6,
+    "offset": 82.159,
+    "lang": "en"
+  },
+  {
+    "text": "one will need its own tools and",
+    "duration": 3.44,
+    "offset": 83.92,
+    "lang": "en"
+  },
+  {
+    "text": "scaffolding and that means we&#39;ll have a",
+    "duration": 3.36,
+    "offset": 85.759,
+    "lang": "en"
+  },
+  {
+    "text": "separate agent for each use case for",
+    "duration": 4.56,
+    "offset": 87.36,
+    "lang": "en"
+  },
+  {
+    "text": "each domain. Well, customization is",
+    "duration": 4.96,
+    "offset": 89.119,
+    "lang": "en"
+  },
+  {
+    "text": "still important for each domain. The",
+    "duration": 3.68,
+    "offset": 91.92,
+    "lang": "en"
+  },
+  {
+    "text": "agent underneath is actually more",
+    "duration": 4.321,
+    "offset": 94.079,
+    "lang": "en"
+  },
+  {
+    "text": "universal than we thought.",
+    "duration": 4.8,
+    "offset": 95.6,
+    "lang": "en"
+  },
+  {
+    "text": "What we realized is that code is not",
+    "duration": 3.759,
+    "offset": 98.4,
+    "lang": "en"
+  },
+  {
+    "text": "just a use case but the universal",
+    "duration": 4.48,
+    "offset": 100.4,
+    "lang": "en"
+  },
+  {
+    "text": "interface to the digital world.",
+    "duration": 4.721,
+    "offset": 102.159,
+    "lang": "en"
+  },
+  {
+    "text": "After we built cloud code, we realized",
+    "duration": 3.76,
+    "offset": 104.88,
+    "lang": "en"
+  },
+  {
+    "text": "that cloud code is actually a general",
+    "duration": 3.919,
+    "offset": 106.88,
+    "lang": "en"
+  },
+  {
+    "text": "purpose agent.",
+    "duration": 3.439,
+    "offset": 108.64,
+    "lang": "en"
+  },
+  {
+    "text": "Think about generating a financial",
+    "duration": 3.841,
+    "offset": 110.799,
+    "lang": "en"
+  },
+  {
+    "text": "report. The model can call the API to",
+    "duration": 4.4,
+    "offset": 112.079,
+    "lang": "en"
+  },
+  {
+    "text": "pull in data and do research. It can",
+    "duration": 3.68,
+    "offset": 114.64,
+    "lang": "en"
+  },
+  {
+    "text": "organize that data in the file system.",
+    "duration": 3.68,
+    "offset": 116.479,
+    "lang": "en"
+  },
+  {
+    "text": "It can analyze it with Python and then",
+    "duration": 3.759,
+    "offset": 118.32,
+    "lang": "en"
+  },
+  {
+    "text": "synthesize the insight in old file",
+    "duration": 4.56,
+    "offset": 120.159,
+    "lang": "en"
+  },
+  {
+    "text": "format all through code. The core",
+    "duration": 4.4,
+    "offset": 122.079,
+    "lang": "en"
+  },
+  {
+    "text": "scaffolding can suddenly become as thin",
+    "duration": 4.32,
+    "offset": 124.719,
+    "lang": "en"
+  },
+  {
+    "text": "as just bash and file system which is",
+    "duration": 4.721,
+    "offset": 126.479,
+    "lang": "en"
+  },
+  {
+    "text": "great and really scalable. But we very",
+    "duration": 5.041,
+    "offset": 129.039,
+    "lang": "en"
+  },
+  {
+    "text": "quickly run into a different problem",
+    "duration": 5.679,
+    "offset": 131.2,
+    "lang": "en"
+  },
+  {
+    "text": "and that problem is domain expertise.",
+    "duration": 4.4,
+    "offset": 134.08,
+    "lang": "en"
+  },
+  {
+    "text": "Who do you want doing your taxes? Is it",
+    "duration": 3.201,
+    "offset": 136.879,
+    "lang": "en"
+  },
+  {
+    "text": "going to be Mahesh, the 300 IQ",
+    "duration": 4,
+    "offset": 138.48,
+    "lang": "en"
+  },
+  {
+    "text": "mathematical genius, or is it Barry, an",
+    "duration": 4.72,
+    "offset": 140.08,
+    "lang": "en"
+  },
+  {
+    "text": "experienced tax professional, right? I",
+    "duration": 4.16,
+    "offset": 142.48,
+    "lang": "en"
+  },
+  {
+    "text": "would pick Barry every time. I don&#39;t",
+    "duration": 4.24,
+    "offset": 144.8,
+    "lang": "en"
+  },
+  {
+    "text": "want Mahesh to figure out the 2025 tax",
+    "duration": 4.319,
+    "offset": 146.64,
+    "lang": "en"
+  },
+  {
+    "text": "code from first principles. I need",
+    "duration": 4.24,
+    "offset": 149.04,
+    "lang": "en"
+  },
+  {
+    "text": "consistent execution from from a domain",
+    "duration": 4.64,
+    "offset": 150.959,
+    "lang": "en"
+  },
+  {
+    "text": "expert. As agents today are a lot like",
+    "duration": 4.319,
+    "offset": 153.28,
+    "lang": "en"
+  },
+  {
+    "text": "Mahes. They&#39;re brilliant, but they lack",
+    "duration": 5,
+    "offset": 155.599,
+    "lang": "en"
+  },
+  {
+    "text": "expertise.",
+    "duration": 3,
+    "offset": 157.599,
+    "lang": "en"
+  },
+  {
+    "text": "They can do no more slow. They can do",
+    "duration": 4.8,
+    "offset": 162,
+    "lang": "en"
+  },
+  {
+    "text": "amazing things when you really put in",
+    "duration": 3.521,
+    "offset": 164.879,
+    "lang": "en"
+  },
+  {
+    "text": "the effort and give proper guidance, but",
+    "duration": 3.439,
+    "offset": 166.8,
+    "lang": "en"
+  },
+  {
+    "text": "they&#39;re often missing the important",
+    "duration": 3.44,
+    "offset": 168.4,
+    "lang": "en"
+  },
+  {
+    "text": "context up front. They can&#39;t really",
+    "duration": 3.681,
+    "offset": 170.239,
+    "lang": "en"
+  },
+  {
+    "text": "absorb your expertise super well, and",
+    "duration": 4.56,
+    "offset": 171.84,
+    "lang": "en"
+  },
+  {
+    "text": "they don&#39;t learn over time.",
+    "duration": 6.72,
+    "offset": 173.92,
+    "lang": "en"
+  },
+  {
+    "text": "That&#39;s why we created agent skills.",
+    "duration": 6.16,
+    "offset": 176.4,
+    "lang": "en"
+  },
+  {
+    "text": "Skills are organized collections of",
+    "duration": 4,
+    "offset": 180.64,
+    "lang": "en"
+  },
+  {
+    "text": "files that package composable procedural",
+    "duration": 4.64,
+    "offset": 182.56,
+    "lang": "en"
+  },
+  {
+    "text": "knowledge for agents.",
+    "duration": 5.519,
+    "offset": 184.64,
+    "lang": "en"
+  },
+  {
+    "text": "In other words, they&#39;re folders. This",
+    "duration": 4.88,
+    "offset": 187.2,
+    "lang": "en"
+  },
+  {
+    "text": "simplicity is deliberate. We want",
+    "duration": 4.321,
+    "offset": 190.159,
+    "lang": "en"
+  },
+  {
+    "text": "something that anyone human or agent can",
+    "duration": 4.56,
+    "offset": 192.08,
+    "lang": "en"
+  },
+  {
+    "text": "create and use as long as they have a",
+    "duration": 4.8,
+    "offset": 194.48,
+    "lang": "en"
+  },
+  {
+    "text": "computer. These also work with what you",
+    "duration": 4.08,
+    "offset": 196.64,
+    "lang": "en"
+  },
+  {
+    "text": "already have. You can version them in",
+    "duration": 3.679,
+    "offset": 199.28,
+    "lang": "en"
+  },
+  {
+    "text": "Git, you can throw them in Google Drive",
+    "duration": 3.84,
+    "offset": 200.72,
+    "lang": "en"
+  },
+  {
+    "text": "and you can zip them up and share with",
+    "duration": 4.56,
+    "offset": 202.959,
+    "lang": "en"
+  },
+  {
+    "text": "your team. We have used files for uh as",
+    "duration": 4.959,
+    "offset": 204.56,
+    "lang": "en"
+  },
+  {
+    "text": "a primitive for decades and we like",
+    "duration": 6,
+    "offset": 207.519,
+    "lang": "en"
+  },
+  {
+    "text": "them. So why change now?",
+    "duration": 5.601,
+    "offset": 209.519,
+    "lang": "en"
+  },
+  {
+    "text": "Because of that skills can also include",
+    "duration": 4.161,
+    "offset": 213.519,
+    "lang": "en"
+  },
+  {
+    "text": "a lot of scripts as tools. Traditional",
+    "duration": 4.399,
+    "offset": 215.12,
+    "lang": "en"
+  },
+  {
+    "text": "tools have pretty obvious problems. Some",
+    "duration": 3.6,
+    "offset": 217.68,
+    "lang": "en"
+  },
+  {
+    "text": "tools have poorly written instructions",
+    "duration": 4.321,
+    "offset": 219.519,
+    "lang": "en"
+  },
+  {
+    "text": "and are pretty ambiguous and when the",
+    "duration": 3.84,
+    "offset": 221.28,
+    "lang": "en"
+  },
+  {
+    "text": "model is struggling, it can&#39;t really",
+    "duration": 2.88,
+    "offset": 223.84,
+    "lang": "en"
+  },
+  {
+    "text": "make a change to the tool. So, it&#39;s just",
+    "duration": 3.92,
+    "offset": 225.12,
+    "lang": "en"
+  },
+  {
+    "text": "kind of stuck with a code start problem",
+    "duration": 3.84,
+    "offset": 226.72,
+    "lang": "en"
+  },
+  {
+    "text": "and they always live in the context",
+    "duration": 3.68,
+    "offset": 229.04,
+    "lang": "en"
+  },
+  {
+    "text": "window. Code solves some of these",
+    "duration": 4.319,
+    "offset": 230.56,
+    "lang": "en"
+  },
+  {
+    "text": "issues. It&#39;s self-documenting. It is",
+    "duration": 4.239,
+    "offset": 232.72,
+    "lang": "en"
+  },
+  {
+    "text": "modifiable and can live in the file",
+    "duration": 4,
+    "offset": 234.879,
+    "lang": "en"
+  },
+  {
+    "text": "system until they&#39;re really needed and",
+    "duration": 5.121,
+    "offset": 236.959,
+    "lang": "en"
+  },
+  {
+    "text": "used. Here&#39;s an example of a script",
+    "duration": 5.92,
+    "offset": 238.879,
+    "lang": "en"
+  },
+  {
+    "text": "inside of a skill. We kept seeing Claude",
+    "duration": 4.32,
+    "offset": 242.08,
+    "lang": "en"
+  },
+  {
+    "text": "write the same Python script over and",
+    "duration": 3.761,
+    "offset": 244.799,
+    "lang": "en"
+  },
+  {
+    "text": "over again to apply styling to slides.",
+    "duration": 4,
+    "offset": 246.4,
+    "lang": "en"
+  },
+  {
+    "text": "So we just ask cloud to save it inside",
+    "duration": 4.239,
+    "offset": 248.56,
+    "lang": "en"
+  },
+  {
+    "text": "of the skill as a tool for his version",
+    "duration": 5.28,
+    "offset": 250.4,
+    "lang": "en"
+  },
+  {
+    "text": "for his future self. Now we can just run",
+    "duration": 4.241,
+    "offset": 252.799,
+    "lang": "en"
+  },
+  {
+    "text": "the script and that makes everything a",
+    "duration": 2.64,
+    "offset": 255.68,
+    "lang": "en"
+  },
+  {
+    "text": "lot more consistent and a lot more",
+    "duration": 4.28,
+    "offset": 257.04,
+    "lang": "en"
+  },
+  {
+    "text": "efficient.",
+    "duration": 3,
+    "offset": 258.32,
+    "lang": "en"
+  },
+  {
+    "text": "At this point skills can contain a lot",
+    "duration": 3.681,
+    "offset": 261.919,
+    "lang": "en"
+  },
+  {
+    "text": "of information and we want to protect",
+    "duration": 3.6,
+    "offset": 263.84,
+    "lang": "en"
+  },
+  {
+    "text": "the context window so that we can fit in",
+    "duration": 3.599,
+    "offset": 265.6,
+    "lang": "en"
+  },
+  {
+    "text": "hundreds of skills and make them truly",
+    "duration": 3.84,
+    "offset": 267.44,
+    "lang": "en"
+  },
+  {
+    "text": "composable. That&#39;s why skills are",
+    "duration": 5.121,
+    "offset": 269.199,
+    "lang": "en"
+  },
+  {
+    "text": "progressively disclosed. At runtime,",
+    "duration": 5.52,
+    "offset": 271.28,
+    "lang": "en"
+  },
+  {
+    "text": "only this metadata is shown to the model",
+    "duration": 5.28,
+    "offset": 274.32,
+    "lang": "en"
+  },
+  {
+    "text": "just to indicate that he has the skill.",
+    "duration": 4.64,
+    "offset": 276.8,
+    "lang": "en"
+  },
+  {
+    "text": "When an agent needs to use a skill, it",
+    "duration": 4,
+    "offset": 279.6,
+    "lang": "en"
+  },
+  {
+    "text": "can read in the rest of the skill.md,",
+    "duration": 4,
+    "offset": 281.44,
+    "lang": "en"
+  },
+  {
+    "text": "which contains the core instruction and",
+    "duration": 5.039,
+    "offset": 283.6,
+    "lang": "en"
+  },
+  {
+    "text": "directory for the rest of the folder.",
+    "duration": 6,
+    "offset": 285.44,
+    "lang": "en"
+  },
+  {
+    "text": "Everything else is just organized for",
+    "duration": 5.441,
+    "offset": 288.639,
+    "lang": "en"
+  },
+  {
+    "text": "ease of access. So that&#39;s all skills",
+    "duration": 4.64,
+    "offset": 291.44,
+    "lang": "en"
+  },
+  {
+    "text": "are. They&#39;re organized folders with",
+    "duration": 5.52,
+    "offset": 294.08,
+    "lang": "en"
+  },
+  {
+    "text": "scripts as tools.",
+    "duration": 5.92,
+    "offset": 296.08,
+    "lang": "en"
+  },
+  {
+    "text": "Since our launch five weeks ago, this",
+    "duration": 5.039,
+    "offset": 299.6,
+    "lang": "en"
+  },
+  {
+    "text": "very simple design has translated into a",
+    "duration": 4.56,
+    "offset": 302,
+    "lang": "en"
+  },
+  {
+    "text": "very quickly growing ecosystem of",
+    "duration": 4.321,
+    "offset": 304.639,
+    "lang": "en"
+  },
+  {
+    "text": "thousands of skills. And we&#39;ve seen this",
+    "duration": 4,
+    "offset": 306.56,
+    "lang": "en"
+  },
+  {
+    "text": "be split across a couple of different",
+    "duration": 3.92,
+    "offset": 308.96,
+    "lang": "en"
+  },
+  {
+    "text": "types of skills. There are foundational",
+    "duration": 4.56,
+    "offset": 310.56,
+    "lang": "en"
+  },
+  {
+    "text": "skills, third party skills created by",
+    "duration": 4.48,
+    "offset": 312.88,
+    "lang": "en"
+  },
+  {
+    "text": "partners in the ecosystem, and skills",
+    "duration": 4.24,
+    "offset": 315.12,
+    "lang": "en"
+  },
+  {
+    "text": "built within an enterprise and within",
+    "duration": 4.48,
+    "offset": 317.36,
+    "lang": "en"
+  },
+  {
+    "text": "teams.",
+    "duration": 4.88,
+    "offset": 319.36,
+    "lang": "en"
+  },
+  {
+    "text": "To start, foundational skills are those",
+    "duration": 4.48,
+    "offset": 321.84,
+    "lang": "en"
+  },
+  {
+    "text": "that give agents new general",
+    "duration": 4.08,
+    "offset": 324.24,
+    "lang": "en"
+  },
+  {
+    "text": "capabilities or domain specific",
+    "duration": 5.04,
+    "offset": 326.32,
+    "lang": "en"
+  },
+  {
+    "text": "capabilities that it didn&#39;t have before.",
+    "duration": 4.879,
+    "offset": 328.32,
+    "lang": "en"
+  },
+  {
+    "text": "We ourselves with our launch built",
+    "duration": 3.679,
+    "offset": 331.36,
+    "lang": "en"
+  },
+  {
+    "text": "document skills that give Claude the",
+    "duration": 4.72,
+    "offset": 333.199,
+    "lang": "en"
+  },
+  {
+    "text": "ability to create and edit professional",
+    "duration": 5.6,
+    "offset": 335.039,
+    "lang": "en"
+  },
+  {
+    "text": "quality office documents. We&#39;re also",
+    "duration": 4.241,
+    "offset": 337.919,
+    "lang": "en"
+  },
+  {
+    "text": "really excited to see people like",
+    "duration": 4.721,
+    "offset": 340.639,
+    "lang": "en"
+  },
+  {
+    "text": "Cadence build scientific research skills",
+    "duration": 5.36,
+    "offset": 342.16,
+    "lang": "en"
+  },
+  {
+    "text": "that give Claude new capabilities like",
+    "duration": 4.8,
+    "offset": 345.36,
+    "lang": "en"
+  },
+  {
+    "text": "EHR data analysis and using common",
+    "duration": 5.119,
+    "offset": 347.52,
+    "lang": "en"
+  },
+  {
+    "text": "Python bioinformatics libraries better",
+    "duration": 5.96,
+    "offset": 350.16,
+    "lang": "en"
+  },
+  {
+    "text": "than it could before.",
+    "duration": 3.481,
+    "offset": 352.639,
+    "lang": "en"
+  },
+  {
+    "text": "We&#39;ve also seen partners in the",
+    "duration": 3.599,
+    "offset": 356.16,
+    "lang": "en"
+  },
+  {
+    "text": "ecosystem build skills that help Claude",
+    "duration": 4.16,
+    "offset": 357.52,
+    "lang": "en"
+  },
+  {
+    "text": "better with their own software and their",
+    "duration": 4.72,
+    "offset": 359.759,
+    "lang": "en"
+  },
+  {
+    "text": "own products. Browserbase is a pretty",
+    "duration": 4.799,
+    "offset": 361.68,
+    "lang": "en"
+  },
+  {
+    "text": "good example of this. They built a skill",
+    "duration": 3.84,
+    "offset": 364.479,
+    "lang": "en"
+  },
+  {
+    "text": "for their open- source browser",
+    "duration": 4.481,
+    "offset": 366.479,
+    "lang": "en"
+  },
+  {
+    "text": "automation tooling, stage hand. And now",
+    "duration": 5.121,
+    "offset": 368.319,
+    "lang": "en"
+  },
+  {
+    "text": "Claude equipped that this skill and with",
+    "duration": 5.28,
+    "offset": 370.96,
+    "lang": "en"
+  },
+  {
+    "text": "stage hand can now go navigate the web",
+    "duration": 4.56,
+    "offset": 373.44,
+    "lang": "en"
+  },
+  {
+    "text": "and use a browser more effectively to",
+    "duration": 3.679,
+    "offset": 376.24,
+    "lang": "en"
+  },
+  {
+    "text": "get work done.",
+    "duration": 3.919,
+    "offset": 378,
+    "lang": "en"
+  },
+  {
+    "text": "And notion launched a bunch of skills",
+    "duration": 3.681,
+    "offset": 379.919,
+    "lang": "en"
+  },
+  {
+    "text": "that help claude better understand your",
+    "duration": 4.161,
+    "offset": 381.919,
+    "lang": "en"
+  },
+  {
+    "text": "notion workspace and do deep research",
+    "duration": 6.28,
+    "offset": 383.6,
+    "lang": "en"
+  },
+  {
+    "text": "over your entire workspace.",
+    "duration": 3.8,
+    "offset": 386.08,
+    "lang": "en"
+  },
+  {
+    "text": "And I think where I&#39;ve seen the most",
+    "duration": 3.759,
+    "offset": 390.16,
+    "lang": "en"
+  },
+  {
+    "text": "excitement and traction with skills is",
+    "duration": 4.639,
+    "offset": 391.84,
+    "lang": "en"
+  },
+  {
+    "text": "within large enterprises. These are",
+    "duration": 5.041,
+    "offset": 393.919,
+    "lang": "en"
+  },
+  {
+    "text": "company and team specific skills built",
+    "duration": 4.641,
+    "offset": 396.479,
+    "lang": "en"
+  },
+  {
+    "text": "for an organization.",
+    "duration": 4.48,
+    "offset": 398.96,
+    "lang": "en"
+  },
+  {
+    "text": "We&#39;ve been talking to Fortune 100s that",
+    "duration": 4.16,
+    "offset": 401.12,
+    "lang": "en"
+  },
+  {
+    "text": "are using skills as a way to teach",
+    "duration": 4,
+    "offset": 403.44,
+    "lang": "en"
+  },
+  {
+    "text": "agents about their organizational best",
+    "duration": 4.4,
+    "offset": 405.28,
+    "lang": "en"
+  },
+  {
+    "text": "practices and the weird and unique ways",
+    "duration": 4.4,
+    "offset": 407.44,
+    "lang": "en"
+  },
+  {
+    "text": "that they use this bespoke internal",
+    "duration": 3.76,
+    "offset": 409.68,
+    "lang": "en"
+  },
+  {
+    "text": "software.",
+    "duration": 3.44,
+    "offset": 411.84,
+    "lang": "en"
+  },
+  {
+    "text": "We&#39;re also talking to really large",
+    "duration": 4.24,
+    "offset": 413.44,
+    "lang": "en"
+  },
+  {
+    "text": "developer productivity teams. These are",
+    "duration": 4.56,
+    "offset": 415.28,
+    "lang": "en"
+  },
+  {
+    "text": "teams serving thousands or even tens of",
+    "duration": 3.44,
+    "offset": 417.68,
+    "lang": "en"
+  },
+  {
+    "text": "thousands of developers in an",
+    "duration": 3.52,
+    "offset": 419.84,
+    "lang": "en"
+  },
+  {
+    "text": "organization that are using skills as a",
+    "duration": 4.88,
+    "offset": 421.12,
+    "lang": "en"
+  },
+  {
+    "text": "way to deploy agents like cloud code and",
+    "duration": 4.08,
+    "offset": 423.36,
+    "lang": "en"
+  },
+  {
+    "text": "teach them about code style best",
+    "duration": 3.599,
+    "offset": 426,
+    "lang": "en"
+  },
+  {
+    "text": "practices and other ways that they want",
+    "duration": 5.039,
+    "offset": 427.44,
+    "lang": "en"
+  },
+  {
+    "text": "their developers to work internally.",
+    "duration": 4.241,
+    "offset": 429.599,
+    "lang": "en"
+  },
+  {
+    "text": "So all of these different types of",
+    "duration": 3.28,
+    "offset": 432.479,
+    "lang": "en"
+  },
+  {
+    "text": "skills are created and consumed by",
+    "duration": 3.28,
+    "offset": 433.84,
+    "lang": "en"
+  },
+  {
+    "text": "different people inside of an",
+    "duration": 3.84,
+    "offset": 435.759,
+    "lang": "en"
+  },
+  {
+    "text": "organization or in the world. But what",
+    "duration": 4.56,
+    "offset": 437.12,
+    "lang": "en"
+  },
+  {
+    "text": "they have in common is anyone can create",
+    "duration": 4.081,
+    "offset": 439.599,
+    "lang": "en"
+  },
+  {
+    "text": "them and they give agents the new",
+    "duration": 3.44,
+    "offset": 441.68,
+    "lang": "en"
+  },
+  {
+    "text": "capabilities that they didn&#39;t have",
+    "duration": 4.239,
+    "offset": 443.68,
+    "lang": "en"
+  },
+  {
+    "text": "before.",
+    "duration": 2.799,
+    "offset": 445.12,
+    "lang": "en"
+  },
+  {
+    "text": "So, as this ecosystem has grown, we&#39;ve",
+    "duration": 3.359,
+    "offset": 448.96,
+    "lang": "en"
+  },
+  {
+    "text": "started to observe a couple of",
+    "duration": 3.92,
+    "offset": 450.96,
+    "lang": "en"
+  },
+  {
+    "text": "interesting trends. First, skills are",
+    "duration": 5.121,
+    "offset": 452.319,
+    "lang": "en"
+  },
+  {
+    "text": "starting to get more complex. The most",
+    "duration": 4.4,
+    "offset": 454.88,
+    "lang": "en"
+  },
+  {
+    "text": "basic skill today can still be a",
+    "duration": 4.8,
+    "offset": 457.44,
+    "lang": "en"
+  },
+  {
+    "text": "skill.md markdown file with some prompts",
+    "duration": 5.12,
+    "offset": 459.28,
+    "lang": "en"
+  },
+  {
+    "text": "and some really basic instructions, but",
+    "duration": 3.519,
+    "offset": 462.24,
+    "lang": "en"
+  },
+  {
+    "text": "we&#39;re starting to see skills that",
+    "duration": 4.799,
+    "offset": 464.4,
+    "lang": "en"
+  },
+  {
+    "text": "package software, executables, binaries,",
+    "duration": 5.921,
+    "offset": 465.759,
+    "lang": "en"
+  },
+  {
+    "text": "files, code, scripts, assets, and a lot",
+    "duration": 4.72,
+    "offset": 469.199,
+    "lang": "en"
+  },
+  {
+    "text": "more. And a lot of the skills that are",
+    "duration": 4.079,
+    "offset": 471.68,
+    "lang": "en"
+  },
+  {
+    "text": "being built today might take minutes or",
+    "duration": 4.4,
+    "offset": 473.919,
+    "lang": "en"
+  },
+  {
+    "text": "hours to build and put into an agent.",
+    "duration": 4.481,
+    "offset": 475.759,
+    "lang": "en"
+  },
+  {
+    "text": "But we think that increasingly much like",
+    "duration": 3.841,
+    "offset": 478.319,
+    "lang": "en"
+  },
+  {
+    "text": "a lot of the software we use today,",
+    "duration": 3.76,
+    "offset": 480.24,
+    "lang": "en"
+  },
+  {
+    "text": "these skills might take weeks or months",
+    "duration": 5.8,
+    "offset": 482.16,
+    "lang": "en"
+  },
+  {
+    "text": "to build and be maintained.",
+    "duration": 3.96,
+    "offset": 484,
+    "lang": "en"
+  },
+  {
+    "text": "We&#39;re also seeing that this ecosystem of",
+    "duration": 3.919,
+    "offset": 488.72,
+    "lang": "en"
+  },
+  {
+    "text": "skills is complementing the existing",
+    "duration": 4.08,
+    "offset": 490.72,
+    "lang": "en"
+  },
+  {
+    "text": "ecosystem of MCP servers that was built",
+    "duration": 4.24,
+    "offset": 492.639,
+    "lang": "en"
+  },
+  {
+    "text": "up over the course of this year.",
+    "duration": 4.239,
+    "offset": 494.8,
+    "lang": "en"
+  },
+  {
+    "text": "Developers are using and building skills",
+    "duration": 4.801,
+    "offset": 496.879,
+    "lang": "en"
+  },
+  {
+    "text": "that orchestrate workflows of multiple",
+    "duration": 5.121,
+    "offset": 499.039,
+    "lang": "en"
+  },
+  {
+    "text": "MCP tools stitched together to do more",
+    "duration": 4.56,
+    "offset": 501.68,
+    "lang": "en"
+  },
+  {
+    "text": "complex things with external data and",
+    "duration": 5.28,
+    "offset": 504.16,
+    "lang": "en"
+  },
+  {
+    "text": "connectivity. And in these cases, MCP",
+    "duration": 5.04,
+    "offset": 506.24,
+    "lang": "en"
+  },
+  {
+    "text": "MCP is providing the connection to the",
+    "duration": 3.92,
+    "offset": 509.44,
+    "lang": "en"
+  },
+  {
+    "text": "outside world while skills are providing",
+    "duration": 5.4,
+    "offset": 511.28,
+    "lang": "en"
+  },
+  {
+    "text": "the expertise.",
+    "duration": 3.32,
+    "offset": 513.36,
+    "lang": "en"
+  },
+  {
+    "text": "And finally, and I think most excitingly",
+    "duration": 3.841,
+    "offset": 517.039,
+    "lang": "en"
+  },
+  {
+    "text": "for me personally, is we&#39;re seeing",
+    "duration": 3.68,
+    "offset": 518.88,
+    "lang": "en"
+  },
+  {
+    "text": "skills that are being built by people",
+    "duration": 3.36,
+    "offset": 520.88,
+    "lang": "en"
+  },
+  {
+    "text": "that aren&#39;t technical. These are people",
+    "duration": 4.32,
+    "offset": 522.56,
+    "lang": "en"
+  },
+  {
+    "text": "in functions like finance, recruiting,",
+    "duration": 5.76,
+    "offset": 524.24,
+    "lang": "en"
+  },
+  {
+    "text": "accounting, legal, and a lot more. Um,",
+    "duration": 4.399,
+    "offset": 526.88,
+    "lang": "en"
+  },
+  {
+    "text": "and I think this is pretty early",
+    "duration": 4.08,
+    "offset": 530,
+    "lang": "en"
+  },
+  {
+    "text": "validation of our initial idea that",
+    "duration": 5.361,
+    "offset": 531.279,
+    "lang": "en"
+  },
+  {
+    "text": "skills help people that aren&#39;t doing",
+    "duration": 5.04,
+    "offset": 534.08,
+    "lang": "en"
+  },
+  {
+    "text": "coding work extend these general agents",
+    "duration": 4.16,
+    "offset": 536.64,
+    "lang": "en"
+  },
+  {
+    "text": "and they make these agents more",
+    "duration": 3.36,
+    "offset": 539.12,
+    "lang": "en"
+  },
+  {
+    "text": "accessible for the day-to-day of what",
+    "duration": 5.479,
+    "offset": 540.8,
+    "lang": "en"
+  },
+  {
+    "text": "these people are working on.",
+    "duration": 3.799,
+    "offset": 542.48,
+    "lang": "en"
+  },
+  {
+    "text": "So tying this all together, let&#39;s talk",
+    "duration": 3.6,
+    "offset": 547.04,
+    "lang": "en"
+  },
+  {
+    "text": "about how these all fit into this",
+    "duration": 4.88,
+    "offset": 548.959,
+    "lang": "en"
+  },
+  {
+    "text": "emerging architecture of general agents.",
+    "duration": 4.96,
+    "offset": 550.64,
+    "lang": "en"
+  },
+  {
+    "text": "First, we think this architecture is",
+    "duration": 3.921,
+    "offset": 553.839,
+    "lang": "en"
+  },
+  {
+    "text": "converging on a couple of things. The",
+    "duration": 4.4,
+    "offset": 555.6,
+    "lang": "en"
+  },
+  {
+    "text": "first is this agent loop that helps",
+    "duration": 4.56,
+    "offset": 557.76,
+    "lang": "en"
+  },
+  {
+    "text": "manage the the model&#39;s internal context",
+    "duration": 4.48,
+    "offset": 560,
+    "lang": "en"
+  },
+  {
+    "text": "and manages what tokens are going in and",
+    "duration": 4.4,
+    "offset": 562.32,
+    "lang": "en"
+  },
+  {
+    "text": "out. And this is coupled with a runtime",
+    "duration": 4.32,
+    "offset": 564.48,
+    "lang": "en"
+  },
+  {
+    "text": "environment that provides the agent with",
+    "duration": 4.96,
+    "offset": 566.72,
+    "lang": "en"
+  },
+  {
+    "text": "a file system and the ability to read",
+    "duration": 5.599,
+    "offset": 568.8,
+    "lang": "en"
+  },
+  {
+    "text": "and write code.",
+    "duration": 4.64,
+    "offset": 571.68,
+    "lang": "en"
+  },
+  {
+    "text": "This agent, as many of us have done",
+    "duration": 3.281,
+    "offset": 574.399,
+    "lang": "en"
+  },
+  {
+    "text": "throughout this year, can be connected",
+    "duration": 3.92,
+    "offset": 576.32,
+    "lang": "en"
+  },
+  {
+    "text": "to MCP servers. And these are tools and",
+    "duration": 4.4,
+    "offset": 577.68,
+    "lang": "en"
+  },
+  {
+    "text": "data from the outside world that make",
+    "duration": 3.92,
+    "offset": 580.24,
+    "lang": "en"
+  },
+  {
+    "text": "the the agent more relevant and more",
+    "duration": 4.24,
+    "offset": 582.08,
+    "lang": "en"
+  },
+  {
+    "text": "effective.",
+    "duration": 4.4,
+    "offset": 584.16,
+    "lang": "en"
+  },
+  {
+    "text": "And now we can give the same agent a",
+    "duration": 4.8,
+    "offset": 586.32,
+    "lang": "en"
+  },
+  {
+    "text": "library of hundreds or thousands of",
+    "duration": 5.04,
+    "offset": 588.56,
+    "lang": "en"
+  },
+  {
+    "text": "skills that it can decide to pull into",
+    "duration": 4.719,
+    "offset": 591.12,
+    "lang": "en"
+  },
+  {
+    "text": "context only at runtime when it&#39;s",
+    "duration": 5.359,
+    "offset": 593.6,
+    "lang": "en"
+  },
+  {
+    "text": "deciding to work on a particular task.",
+    "duration": 5.521,
+    "offset": 595.839,
+    "lang": "en"
+  },
+  {
+    "text": "Today, giving an agent a new capability",
+    "duration": 4.721,
+    "offset": 598.959,
+    "lang": "en"
+  },
+  {
+    "text": "in a new domain might just involve",
+    "duration": 4,
+    "offset": 601.36,
+    "lang": "en"
+  },
+  {
+    "text": "equipping it with the right set of MCP",
+    "duration": 6.159,
+    "offset": 603.68,
+    "lang": "en"
+  },
+  {
+    "text": "servers and the right library of skills.",
+    "duration": 6.96,
+    "offset": 605.36,
+    "lang": "en"
+  },
+  {
+    "text": "And this emerging pattern of an agent",
+    "duration": 4.881,
+    "offset": 609.839,
+    "lang": "en"
+  },
+  {
+    "text": "with an MCP server and a set of skills",
+    "duration": 3.759,
+    "offset": 612.32,
+    "lang": "en"
+  },
+  {
+    "text": "is something that&#39;s already helping us",
+    "duration": 3.2,
+    "offset": 614.72,
+    "lang": "en"
+  },
+  {
+    "text": "at Enthropic deploy Claude to new",
+    "duration": 4.081,
+    "offset": 616.079,
+    "lang": "en"
+  },
+  {
+    "text": "verticals. Just after we launched skills",
+    "duration": 4.479,
+    "offset": 617.92,
+    "lang": "en"
+  },
+  {
+    "text": "5 weeks ago, we immediately launched new",
+    "duration": 5.119,
+    "offset": 620.16,
+    "lang": "en"
+  },
+  {
+    "text": "offerings in financial services and life",
+    "duration": 4.88,
+    "offset": 622.399,
+    "lang": "en"
+  },
+  {
+    "text": "sciences. And each of these came with a",
+    "duration": 4.161,
+    "offset": 625.279,
+    "lang": "en"
+  },
+  {
+    "text": "set of MCP servers and a set of skills",
+    "duration": 3.841,
+    "offset": 627.279,
+    "lang": "en"
+  },
+  {
+    "text": "that immediately make Claude more",
+    "duration": 3.76,
+    "offset": 629.44,
+    "lang": "en"
+  },
+  {
+    "text": "effective for professionals in each of",
+    "duration": 5.32,
+    "offset": 631.12,
+    "lang": "en"
+  },
+  {
+    "text": "these domains.",
+    "duration": 3.24,
+    "offset": 633.2,
+    "lang": "en"
+  },
+  {
+    "text": "We&#39;re also starting to think about some",
+    "duration": 3.12,
+    "offset": 637.12,
+    "lang": "en"
+  },
+  {
+    "text": "of the other open questions and areas",
+    "duration": 3.759,
+    "offset": 638.64,
+    "lang": "en"
+  },
+  {
+    "text": "that we want to focus on for how skills",
+    "duration": 4.96,
+    "offset": 640.24,
+    "lang": "en"
+  },
+  {
+    "text": "evolve in the future as they start to",
+    "duration": 4.721,
+    "offset": 642.399,
+    "lang": "en"
+  },
+  {
+    "text": "become more complex. We really want to",
+    "duration": 4.56,
+    "offset": 645.2,
+    "lang": "en"
+  },
+  {
+    "text": "support developers, enterprises, and",
+    "duration": 4.88,
+    "offset": 647.12,
+    "lang": "en"
+  },
+  {
+    "text": "other skill builders by starting to",
+    "duration": 4.88,
+    "offset": 649.76,
+    "lang": "en"
+  },
+  {
+    "text": "treat skills like we treat software.",
+    "duration": 4.72,
+    "offset": 652,
+    "lang": "en"
+  },
+  {
+    "text": "This means exploring testing and",
+    "duration": 4.8,
+    "offset": 654.64,
+    "lang": "en"
+  },
+  {
+    "text": "evaluation, better tooling to make sure",
+    "duration": 4.72,
+    "offset": 656.72,
+    "lang": "en"
+  },
+  {
+    "text": "that these agents are loading and",
+    "duration": 4.399,
+    "offset": 659.44,
+    "lang": "en"
+  },
+  {
+    "text": "triggering skills at the right time and",
+    "duration": 5.12,
+    "offset": 661.44,
+    "lang": "en"
+  },
+  {
+    "text": "for the right task, and tooling to help",
+    "duration": 5.12,
+    "offset": 663.839,
+    "lang": "en"
+  },
+  {
+    "text": "measure the output quality of an agent",
+    "duration": 3.68,
+    "offset": 666.56,
+    "lang": "en"
+  },
+  {
+    "text": "equipped with the skill to make sure",
+    "duration": 3.361,
+    "offset": 668.959,
+    "lang": "en"
+  },
+  {
+    "text": "that&#39;s on par with what the agent is",
+    "duration": 4.08,
+    "offset": 670.24,
+    "lang": "en"
+  },
+  {
+    "text": "supposed to be doing.",
+    "duration": 4.16,
+    "offset": 672.32,
+    "lang": "en"
+  },
+  {
+    "text": "We&#39;d also like to focus on versioning.",
+    "duration": 4.079,
+    "offset": 674.32,
+    "lang": "en"
+  },
+  {
+    "text": "as a skill evolves and the resulting",
+    "duration": 4.64,
+    "offset": 676.48,
+    "lang": "en"
+  },
+  {
+    "text": "agent behavior uh evolves, we want this",
+    "duration": 5.361,
+    "offset": 678.399,
+    "lang": "en"
+  },
+  {
+    "text": "to be uh clearly tracked and to have a",
+    "duration": 5.44,
+    "offset": 681.12,
+    "lang": "en"
+  },
+  {
+    "text": "clear lineage over time.",
+    "duration": 4.639,
+    "offset": 683.76,
+    "lang": "en"
+  },
+  {
+    "text": "And finally, we&#39;d also like to explore",
+    "duration": 4.16,
+    "offset": 686.56,
+    "lang": "en"
+  },
+  {
+    "text": "skills that can explicitly depend on and",
+    "duration": 5.12,
+    "offset": 688.399,
+    "lang": "en"
+  },
+  {
+    "text": "refer to either other skills, MCP",
+    "duration": 4.88,
+    "offset": 690.72,
+    "lang": "en"
+  },
+  {
+    "text": "servers, and dependencies and packages",
+    "duration": 4.401,
+    "offset": 693.519,
+    "lang": "en"
+  },
+  {
+    "text": "within the agents environment. We think",
+    "duration": 3.919,
+    "offset": 695.6,
+    "lang": "en"
+  },
+  {
+    "text": "that this is going to make agents a lot",
+    "duration": 3.52,
+    "offset": 697.92,
+    "lang": "en"
+  },
+  {
+    "text": "more predictable in different runtime",
+    "duration": 3.921,
+    "offset": 699.519,
+    "lang": "en"
+  },
+  {
+    "text": "environments. and the composability of",
+    "duration": 3.92,
+    "offset": 701.44,
+    "lang": "en"
+  },
+  {
+    "text": "multiple skills together will help",
+    "duration": 3.68,
+    "offset": 703.44,
+    "lang": "en"
+  },
+  {
+    "text": "agents like Claude elicit even more",
+    "duration": 4.479,
+    "offset": 705.36,
+    "lang": "en"
+  },
+  {
+    "text": "complex and relevant behavior from these",
+    "duration": 4.32,
+    "offset": 707.12,
+    "lang": "en"
+  },
+  {
+    "text": "agents.",
+    "duration": 3.361,
+    "offset": 709.839,
+    "lang": "en"
+  },
+  {
+    "text": "Overall, these set of things should",
+    "duration": 3.6,
+    "offset": 711.44,
+    "lang": "en"
+  },
+  {
+    "text": "hopefully make skills easier to build",
+    "duration": 3.68,
+    "offset": 713.2,
+    "lang": "en"
+  },
+  {
+    "text": "and easier to integrate into agent",
+    "duration": 6.52,
+    "offset": 715.04,
+    "lang": "en"
+  },
+  {
+    "text": "products, even those besides claude.",
+    "duration": 4.68,
+    "offset": 716.88,
+    "lang": "en"
+  },
+  {
+    "text": "Finally, a huge part of the value of",
+    "duration": 4.24,
+    "offset": 722.64,
+    "lang": "en"
+  },
+  {
+    "text": "skills we think is going to come from",
+    "duration": 4.641,
+    "offset": 724.959,
+    "lang": "en"
+  },
+  {
+    "text": "sharing and distribution. Barry and I",
+    "duration": 4.32,
+    "offset": 726.88,
+    "lang": "en"
+  },
+  {
+    "text": "think a lot about the future of",
+    "duration": 3.12,
+    "offset": 729.6,
+    "lang": "en"
+  },
+  {
+    "text": "companies that are deploying these",
+    "duration": 3.92,
+    "offset": 731.2,
+    "lang": "en"
+  },
+  {
+    "text": "agents at scale. And the vision that",
+    "duration": 5.679,
+    "offset": 732.72,
+    "lang": "en"
+  },
+  {
+    "text": "excites us most is one of a collecting",
+    "duration": 5.68,
+    "offset": 735.12,
+    "lang": "en"
+  },
+  {
+    "text": "and collective and evolving knowledge",
+    "duration": 4.961,
+    "offset": 738.399,
+    "lang": "en"
+  },
+  {
+    "text": "base of capabilities that&#39;s curated by",
+    "duration": 4.479,
+    "offset": 740.8,
+    "lang": "en"
+  },
+  {
+    "text": "people and agents inside of an",
+    "duration": 4.88,
+    "offset": 743.36,
+    "lang": "en"
+  },
+  {
+    "text": "organization. We think skills are a big",
+    "duration": 5.36,
+    "offset": 745.279,
+    "lang": "en"
+  },
+  {
+    "text": "step towards this vision. They provide",
+    "duration": 4.56,
+    "offset": 748.24,
+    "lang": "en"
+  },
+  {
+    "text": "the procedural knowledge for your agents",
+    "duration": 5.121,
+    "offset": 750.639,
+    "lang": "en"
+  },
+  {
+    "text": "to do useful things. And as you interact",
+    "duration": 5.44,
+    "offset": 752.8,
+    "lang": "en"
+  },
+  {
+    "text": "with an agent and give it feedback and",
+    "duration": 4.8,
+    "offset": 755.76,
+    "lang": "en"
+  },
+  {
+    "text": "more institutional knowledge, it starts",
+    "duration": 4.159,
+    "offset": 758.24,
+    "lang": "en"
+  },
+  {
+    "text": "to get better and all of the agents",
+    "duration": 4.079,
+    "offset": 760.56,
+    "lang": "en"
+  },
+  {
+    "text": "inside your team and your org get better",
+    "duration": 4.801,
+    "offset": 762.399,
+    "lang": "en"
+  },
+  {
+    "text": "as well. And when someone joins your",
+    "duration": 4.241,
+    "offset": 764.639,
+    "lang": "en"
+  },
+  {
+    "text": "team and starts using Claude for the",
+    "duration": 3.6,
+    "offset": 767.2,
+    "lang": "en"
+  },
+  {
+    "text": "first time, it already knows what your",
+    "duration": 3.44,
+    "offset": 768.88,
+    "lang": "en"
+  },
+  {
+    "text": "team cares about. It knows about your",
+    "duration": 3.36,
+    "offset": 770.8,
+    "lang": "en"
+  },
+  {
+    "text": "day-to-day and it knows about how to be",
+    "duration": 3.36,
+    "offset": 772.32,
+    "lang": "en"
+  },
+  {
+    "text": "most effective for the work that you&#39;re",
+    "duration": 2.72,
+    "offset": 774.16,
+    "lang": "en"
+  },
+  {
+    "text": "doing.",
+    "duration": 3.12,
+    "offset": 775.68,
+    "lang": "en"
+  },
+  {
+    "text": "And as this grows and this ecosystem",
+    "duration": 3.84,
+    "offset": 776.88,
+    "lang": "en"
+  },
+  {
+    "text": "starts to develop even more, this was",
+    "duration": 3.36,
+    "offset": 778.8,
+    "lang": "en"
+  },
+  {
+    "text": "going to this compounding value is going",
+    "duration": 3.359,
+    "offset": 780.72,
+    "lang": "en"
+  },
+  {
+    "text": "to extend outside of just your organ",
+    "duration": 4.239,
+    "offset": 782.16,
+    "lang": "en"
+  },
+  {
+    "text": "into the broader community. So just like",
+    "duration": 4,
+    "offset": 784.079,
+    "lang": "en"
+  },
+  {
+    "text": "when someone else across the world",
+    "duration": 3.281,
+    "offset": 786.399,
+    "lang": "en"
+  },
+  {
+    "text": "builds an MCP server that makes your",
+    "duration": 3.681,
+    "offset": 788.079,
+    "lang": "en"
+  },
+  {
+    "text": "agent more useful, a skill built by",
+    "duration": 3.839,
+    "offset": 789.68,
+    "lang": "en"
+  },
+  {
+    "text": "someone else in the community will help",
+    "duration": 4.16,
+    "offset": 791.76,
+    "lang": "en"
+  },
+  {
+    "text": "make your own agents more capable,",
+    "duration": 6.801,
+    "offset": 793.519,
+    "lang": "en"
+  },
+  {
+    "text": "reliable, and useful as well.",
+    "duration": 6.719,
+    "offset": 795.92,
+    "lang": "en"
+  },
+  {
+    "text": "This vision of a evolving knowledge base",
+    "duration": 4.4,
+    "offset": 800.32,
+    "lang": "en"
+  },
+  {
+    "text": "gets even more powerful when claw starts",
+    "duration": 4.561,
+    "offset": 802.639,
+    "lang": "en"
+  },
+  {
+    "text": "to create these skills. We design skills",
+    "duration": 4.88,
+    "offset": 804.72,
+    "lang": "en"
+  },
+  {
+    "text": "specifically as a concrete steps towards",
+    "duration": 4.72,
+    "offset": 807.2,
+    "lang": "en"
+  },
+  {
+    "text": "uh continuous learning.",
+    "duration": 4.239,
+    "offset": 809.6,
+    "lang": "en"
+  },
+  {
+    "text": "When you first start using cloud, this",
+    "duration": 3.359,
+    "offset": 811.92,
+    "lang": "en"
+  },
+  {
+    "text": "standardized format gives a very",
+    "duration": 3.601,
+    "offset": 813.839,
+    "lang": "en"
+  },
+  {
+    "text": "important guarantee. Anything that cloud",
+    "duration": 4.321,
+    "offset": 815.279,
+    "lang": "en"
+  },
+  {
+    "text": "writes down can be used efficiently by a",
+    "duration": 4.639,
+    "offset": 817.44,
+    "lang": "en"
+  },
+  {
+    "text": "future version of itself. This makes the",
+    "duration": 4.64,
+    "offset": 819.6,
+    "lang": "en"
+  },
+  {
+    "text": "learning actually transferable.",
+    "duration": 4.801,
+    "offset": 822.079,
+    "lang": "en"
+  },
+  {
+    "text": "As you build up the context skills makes",
+    "duration": 5.12,
+    "offset": 824.24,
+    "lang": "en"
+  },
+  {
+    "text": "the concept of memory more tangible.",
+    "duration": 4.16,
+    "offset": 826.88,
+    "lang": "en"
+  },
+  {
+    "text": "They don&#39;t capture everything. They",
+    "duration": 3.52,
+    "offset": 829.36,
+    "lang": "en"
+  },
+  {
+    "text": "don&#39;t capture every type of information.",
+    "duration": 3.76,
+    "offset": 831.04,
+    "lang": "en"
+  },
+  {
+    "text": "Just procedural knowledge that cloud can",
+    "duration": 4.88,
+    "offset": 832.88,
+    "lang": "en"
+  },
+  {
+    "text": "use on specific tasks.",
+    "duration": 4.479,
+    "offset": 834.8,
+    "lang": "en"
+  },
+  {
+    "text": "When you have worked with cloud for",
+    "duration": 3.84,
+    "offset": 837.76,
+    "lang": "en"
+  },
+  {
+    "text": "quite a while, the flexibility of skills",
+    "duration": 5.041,
+    "offset": 839.279,
+    "lang": "en"
+  },
+  {
+    "text": "matters even more. Cloud can acquire new",
+    "duration": 4.96,
+    "offset": 841.6,
+    "lang": "en"
+  },
+  {
+    "text": "capabilities instantly, evolve them as",
+    "duration": 3.84,
+    "offset": 844.32,
+    "lang": "en"
+  },
+  {
+    "text": "needed, and then drop the ones that",
+    "duration": 3.92,
+    "offset": 846.56,
+    "lang": "en"
+  },
+  {
+    "text": "become obsolete. This is what we have",
+    "duration": 4.4,
+    "offset": 848.16,
+    "lang": "en"
+  },
+  {
+    "text": "always known. The power of in in context",
+    "duration": 3.84,
+    "offset": 850.48,
+    "lang": "en"
+  },
+  {
+    "text": "learning makes this a lot more cost-",
+    "duration": 3.92,
+    "offset": 852.56,
+    "lang": "en"
+  },
+  {
+    "text": "effective for information that change on",
+    "duration": 4.24,
+    "offset": 854.32,
+    "lang": "en"
+  },
+  {
+    "text": "daily basis.",
+    "duration": 4.4,
+    "offset": 856.48,
+    "lang": "en"
+  },
+  {
+    "text": "Our goal is that claude on day 30 of",
+    "duration": 4,
+    "offset": 858.56,
+    "lang": "en"
+  },
+  {
+    "text": "working with you is going to be a lot",
+    "duration": 4,
+    "offset": 860.88,
+    "lang": "en"
+  },
+  {
+    "text": "better on cloud on day one. CL can",
+    "duration": 3.6,
+    "offset": 862.56,
+    "lang": "en"
+  },
+  {
+    "text": "already create skills for you today",
+    "duration": 3.759,
+    "offset": 864.88,
+    "lang": "en"
+  },
+  {
+    "text": "using our skill creator skill and we&#39;re",
+    "duration": 3.679,
+    "offset": 866.16,
+    "lang": "en"
+  },
+  {
+    "text": "going to continue pushing in that",
+    "duration": 4.2,
+    "offset": 868.639,
+    "lang": "en"
+  },
+  {
+    "text": "direction.",
+    "duration": 3,
+    "offset": 869.839,
+    "lang": "en"
+  },
+  {
+    "text": "We&#39;re going to conclude by comparing the",
+    "duration": 3.92,
+    "offset": 873.44,
+    "lang": "en"
+  },
+  {
+    "text": "agent stack to what we have already seen",
+    "duration": 3.76,
+    "offset": 875.12,
+    "lang": "en"
+  },
+  {
+    "text": "computing.",
+    "duration": 4.479,
+    "offset": 877.36,
+    "lang": "en"
+  },
+  {
+    "text": "In a rough analogy, models are like",
+    "duration": 5.28,
+    "offset": 878.88,
+    "lang": "en"
+  },
+  {
+    "text": "processors. Both require massive",
+    "duration": 4.24,
+    "offset": 881.839,
+    "lang": "en"
+  },
+  {
+    "text": "investment and contain immense",
+    "duration": 4.08,
+    "offset": 884.16,
+    "lang": "en"
+  },
+  {
+    "text": "potential, but only so useful by",
+    "duration": 4.241,
+    "offset": 886.079,
+    "lang": "en"
+  },
+  {
+    "text": "themselves.",
+    "duration": 3.92,
+    "offset": 888.24,
+    "lang": "en"
+  },
+  {
+    "text": "Then we start building operating system.",
+    "duration": 4.079,
+    "offset": 890.32,
+    "lang": "en"
+  },
+  {
+    "text": "The OS made processors far more valuable",
+    "duration": 4.08,
+    "offset": 892.16,
+    "lang": "en"
+  },
+  {
+    "text": "by orchestrating the processes,",
+    "duration": 3.761,
+    "offset": 894.399,
+    "lang": "en"
+  },
+  {
+    "text": "resources, and data around the",
+    "duration": 4.399,
+    "offset": 896.24,
+    "lang": "en"
+  },
+  {
+    "text": "processor. In AI, we believe that agent",
+    "duration": 4.479,
+    "offset": 898.16,
+    "lang": "en"
+  },
+  {
+    "text": "runtime is starting to play this role.",
+    "duration": 4,
+    "offset": 900.639,
+    "lang": "en"
+  },
+  {
+    "text": "We&#39;re all trying to build the cleanest,",
+    "duration": 4.32,
+    "offset": 902.639,
+    "lang": "en"
+  },
+  {
+    "text": "most efficient, and most scalable uh",
+    "duration": 4.64,
+    "offset": 904.639,
+    "lang": "en"
+  },
+  {
+    "text": "abstractions to get the right tokens in",
+    "duration": 4.721,
+    "offset": 906.959,
+    "lang": "en"
+  },
+  {
+    "text": "and out of the model.",
+    "duration": 4.401,
+    "offset": 909.279,
+    "lang": "en"
+  },
+  {
+    "text": "But once we have a platform, the real",
+    "duration": 4.399,
+    "offset": 911.68,
+    "lang": "en"
+  },
+  {
+    "text": "value comes from applications. A few",
+    "duration": 5.04,
+    "offset": 913.68,
+    "lang": "en"
+  },
+  {
+    "text": "companies build uh processors and",
+    "duration": 4.56,
+    "offset": 916.079,
+    "lang": "en"
+  },
+  {
+    "text": "operating systems, but millions of",
+    "duration": 4.4,
+    "offset": 918.72,
+    "lang": "en"
+  },
+  {
+    "text": "developers like us have built software",
+    "duration": 4.56,
+    "offset": 920.639,
+    "lang": "en"
+  },
+  {
+    "text": "that encoded domain expertise and our",
+    "duration": 4.48,
+    "offset": 923.12,
+    "lang": "en"
+  },
+  {
+    "text": "unique points of view. We hope that",
+    "duration": 4.801,
+    "offset": 925.199,
+    "lang": "en"
+  },
+  {
+    "text": "skills can help us open up this layer",
+    "duration": 4.72,
+    "offset": 927.6,
+    "lang": "en"
+  },
+  {
+    "text": "for everyone. This is where we get",
+    "duration": 4.48,
+    "offset": 930,
+    "lang": "en"
+  },
+  {
+    "text": "creative and solve concrete problem for",
+    "duration": 3.6,
+    "offset": 932.32,
+    "lang": "en"
+  },
+  {
+    "text": "ourselves, for each other, and for the",
+    "duration": 3.12,
+    "offset": 934.48,
+    "lang": "en"
+  },
+  {
+    "text": "world just by putting stuff in the",
+    "duration": 4,
+    "offset": 935.92,
+    "lang": "en"
+  },
+  {
+    "text": "folder. So skills are just the starting",
+    "duration": 4.88,
+    "offset": 937.6,
+    "lang": "en"
+  },
+  {
+    "text": "point.",
+    "duration": 4.32,
+    "offset": 939.92,
+    "lang": "en"
+  },
+  {
+    "text": "To close out, we think we&#39;re now",
+    "duration": 3.68,
+    "offset": 942.48,
+    "lang": "en"
+  },
+  {
+    "text": "converging on this general architecture",
+    "duration": 4.719,
+    "offset": 944.24,
+    "lang": "en"
+  },
+  {
+    "text": "for general agents. We&#39;ve created skills",
+    "duration": 5.039,
+    "offset": 946.16,
+    "lang": "en"
+  },
+  {
+    "text": "as a new paradigm for shipping and",
+    "duration": 4.721,
+    "offset": 948.959,
+    "lang": "en"
+  },
+  {
+    "text": "sharing new capabilities. So we think",
+    "duration": 4.64,
+    "offset": 951.199,
+    "lang": "en"
+  },
+  {
+    "text": "it&#39;s time to stop rebuilding agents and",
+    "duration": 4.24,
+    "offset": 953.68,
+    "lang": "en"
+  },
+  {
+    "text": "start building skills instead. And if",
+    "duration": 3.68,
+    "offset": 955.839,
+    "lang": "en"
+  },
+  {
+    "text": "you&#39;re excited about this, come work",
+    "duration": 3.359,
+    "offset": 957.92,
+    "lang": "en"
+  },
+  {
+    "text": "with us and start building some skills",
+    "duration": 5.88,
+    "offset": 959.519,
+    "lang": "en"
+  },
+  {
+    "text": "today. Thank you.",
+    "duration": 4.12,
+    "offset": 961.279,
+    "lang": "en"
+  },
+  {
+    "text": "[music]",
+    "duration": 2.02,
+    "offset": 965.481,
+    "lang": "en"
+  },
+  {
+    "text": "&gt;&gt; [music]",
+    "duration": 2.02,
+    "offset": 977.271,
+    "lang": "en"
+  }
+]

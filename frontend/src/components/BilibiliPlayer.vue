@@ -40,7 +40,17 @@ defineExpose({
       const baseUrl = `//player.bilibili.com/player.html?bvid=${props.bvid}&page=1&high_quality=1&danmaku=0&autoplay=1`;
       iframeRef.value.src = `${baseUrl}&t=${Math.floor(seconds)}`;
     }
-  }
+  },
+  setLoop: (start: number, end: number) => {
+    // B站嵌入播放器受限，难以实现精确循环，此处仅跳转至起点
+    // 我们暂时忽略 end 参数，因为无法在 iframe 中监听播放进度
+    console.log(`Bilibili loop requested for segment: ${start}s to ${end}s (limited support)`);
+    if (iframeRef.value) {
+      const baseUrl = `//player.bilibili.com/player.html?bvid=${props.bvid}&page=1&high_quality=1&danmaku=0&autoplay=1`;
+      iframeRef.value.src = `${baseUrl}&t=${Math.floor(start)}`;
+    }
+  },
+  stopLoop: () => {}
 });
 </script>
 

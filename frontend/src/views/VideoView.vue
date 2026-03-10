@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
@@ -54,6 +54,7 @@ const chatMessages = ref<{ role: 'user' | 'assistant'; content: string }[]>([]);
 const isChatLoading = ref(false);
 const chatListRef = ref<HTMLElement | null>(null);
 const isAutoScrollEnabled = ref(true);
+const selectedLoop = ref<{ start: number, end: number, id: string } | null>(null);
 
 // 字幕滚动自动归中行为控制变量
 const isHoveringTranscript = ref(false);
@@ -582,6 +583,7 @@ const sendChatMessage = async () => {
 
 // 处理时间戳点击跳转
 const handleTimestampClick = (ts: string) => {
+  stopLoop();
   // 清理可能存在的方括号
   const cleanTs = ts.replace(/[\[\]]/g, '');
   const parts = cleanTs.split(':').map(p => parseInt(p));
@@ -639,6 +641,7 @@ watch(showResult, (val) => {
 
 // 点击要点条目跳转到对应时间（timestamp 是秒）
 const jumpToTakeaway = (item: Takeaway, index: number) => {
+  stopLoop();
   activeTakeawayIndex.value = index;
   if (playerRef.value) {
     playerRef.value.seekTo(item.timestamp);
@@ -657,8 +660,31 @@ const jumpToTranscript = (seg: TranscriptSegment, index: number) => {
 
 // 通用跳转逻辑
 const handleSeek = (offsetMs: number) => {
+  stopLoop();
   if (playerRef.value) {
     playerRef.value.seekTo(offsetMs / 1000);
+  }
+};
+
+const startLoop = (start: number, end: number, id: string) => {
+  if (selectedLoop.value?.id === id) {
+    stopLoop();
+    return;
+  }
+
+  // 先停止之前的循环，确保状态清理干净
+  stopLoop();
+
+  selectedLoop.value = { start, end, id };
+  if (playerRef.value?.setLoop) {
+    playerRef.value.setLoop(start, end);
+  }
+};
+
+const stopLoop = () => {
+  selectedLoop.value = null;
+  if (playerRef.value?.stopLoop) {
+    playerRef.value.stopLoop();
   }
 };
 
@@ -679,6 +705,7 @@ const handleTimelineClick = (event: MouseEvent) => {
   const percent = Math.max(0, Math.min(1, clickX / rect.width));
   const targetTime = percent * totalVideoDuration.value;
 
+  stopLoop();
   if (playerRef.value) {
     playerRef.value.seekTo(targetTime);
   }
@@ -802,7 +829,8 @@ const takeawayMap = computed(() => {
       index,
       color,
       leftPercent,
-      widthPercent
+      widthPercent,
+      actualDuration
     };
   });
 });
@@ -965,8 +993,18 @@ const takeawayMap = computed(() => {
                     <div class="takeaway-title">{{ item.title }}</div>
                     <div class="takeaway-summary">{{ item.summary }}</div>
                   </div>
-                  <div class="seg-play-icon">
-                    <Play :size="14" />
+                  <div class="seg-actions">
+                    <button
+                      class="btn-loop-action"
+                      :class="{ 'active': selectedLoop?.id === (item.id || 'ta-' + item.index) }"
+                      @click.stop="startLoop(item.timestamp, item.timestamp + item.actualDuration, item.id || 'ta-' + item.index)"
+                      title="影子练习：循环播放此片段"
+                    >
+                      <RefreshCw :size="14" :class="{ 'spin': selectedLoop?.id === (item.id || 'ta-' + item.index) }" />
+                    </button>
+                    <div class="seg-play-icon">
+                      <Play :size="14" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1044,8 +1082,18 @@ const takeawayMap = computed(() => {
                     <div v-if="isBilingual && seg.translatedText" class="translated-text">{{ seg.translatedText }}</div>
                     <div class="original-text" :class="{ 'has-translation': isBilingual && seg.translatedText }">{{ seg.text }}</div>
                   </div>
-                  <div class="seg-play-icon">
-                    <Play :size="14" />
+                  <div class="seg-actions">
+                    <button
+                      class="btn-loop-action"
+                      :class="{ 'active': selectedLoop?.id === 'seg-' + index }"
+                      @click.stop="startLoop(seg.offset / 1000, (seg.offset + seg.duration) / 1000, 'seg-' + index)"
+                      title="循环播放此句"
+                    >
+                      <RefreshCw :size="14" :class="{ 'spin': selectedLoop?.id === 'seg-' + index }" />
+                    </button>
+                    <div class="seg-play-icon">
+                      <Play :size="14" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2067,6 +2115,47 @@ input::placeholder {
   opacity: 1;
   transform: scale(1);
   color: var(--accent-color);
+}
+
+/* Loop Action Button */
+.seg-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-loop-action {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0;
+}
+
+.transcript-item:hover .btn-loop-action,
+.transcript-item.active .btn-loop-action {
+  opacity: 1;
+}
+
+.btn-loop-action:hover {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.btn-loop-action.active {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 10px var(--accent-shadow);
+  opacity: 1;
 }
 
 /* Animations */

@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import prisma, { Prisma } from '../lib/prisma.js';
 import { Schemas } from '../docs/openapi.js';
 import { getUserId } from '../utils/auth.js';
+import { exportToNotion } from '../services/notion.js';
 
 export async function videoRoutes(fastify: FastifyInstance) {
   /**
@@ -532,6 +533,162 @@ export async function videoRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({
         error: '删除失败',
         message: error.message,
+      });
+    }
+  });
+
+  /**
+   * POST /api/videos/:videoId/export/notion
+   * 导出视频笔记到 Notion
+   */
+  fastify.post('/api/videos/:videoId/export/notion', {
+    schema: {
+      tags: ['Videos'],
+      summary: '导出到 Notion',
+      description: '将当前视频的分析结果（标题、URL、要点、脑图）导出到配置好的 Notion 数据库中。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            url: { type: 'string', nullable: true },
+          },
+        },
+        400: Schemas.ErrorResponse,
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+
+    try {
+      const video = await prisma.video.findUnique({
+        where: { videoId },
+        include: {
+          takeaways: { orderBy: { sortOrder: 'asc' } },
+        },
+      });
+
+      if (!video) {
+        return reply.status(404).send({ error: '视频不存在' });
+      }
+
+      const result = await exportToNotion({
+        title: video.title || '无标题视频',
+        url: video.url,
+        takeaways: video.takeaways.map(t => ({
+          title: t.title,
+          summary: t.summary || '',
+          timestamp: t.timestamp,
+        })),
+        mindmap: video.mindmap,
+      });
+
+      return reply.send({
+        success: true,
+        message: '已成功导出到 Notion',
+        url: (result as any).url,
+      });
+    } catch (error: any) {
+      request.log.error(`Notion export failed: ${error.message}`);
+      return reply.status(500).send({
+        error: '导出失败',
+        message: error.message || '请检查 Notion API 配置 (NOTION_API_KEY & NOTION_DATABASE_ID)',
+      });
+    }
+  });
+
+  /**
+   * POST /api/videos/:videoId/clip
+   * 创建并导出视频切片
+   */
+  fastify.post('/api/videos/:videoId/clip', {
+    schema: {
+      tags: ['Videos'],
+      summary: '生成视频切片',
+      description: '根据起始时间和时长，生成视频片段并返回。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string' }
+        }
+      },
+      body: {
+        type: 'object',
+        required: ['start', 'duration'],
+        properties: {
+          start: { type: 'number', description: '起始秒数' },
+          duration: { type: 'number', description: '持续秒数' }
+        }
+      },
+      response: {
+        200: { type: 'string', format: 'binary' },
+        400: Schemas.ErrorResponse,
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      }
+    }
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { start: number; duration: number } }>,
+    reply: FastifyReply
+  ) => {
+    const { videoId } = request.params;
+    const { start, duration } = request.body;
+
+    const video = await prisma.video.findUnique({ where: { videoId } });
+    if (!video) return reply.status(404).send({ error: '视频不存在' });
+
+    // 获取该时间段内的所有字幕片段
+    const startMs = start * 1000;
+    const endMs = (start + duration) * 1000;
+    const subtitles = await prisma.subtitle.findMany({
+      where: {
+        videoId,
+        offset: { gte: startMs - 2000, lte: endMs + 2000 } // 稍微扩大范围确保覆盖
+      },
+      orderBy: { sortOrder: 'asc' }
+    });
+
+    try {
+      const { createVideoClip } = await import('../services/clipping.js');
+      const filePath = await createVideoClip({
+        videoId,
+        url: video.url,
+        start,
+        duration,
+        platform: video.platform,
+        subtitles: subtitles.map(s => ({
+          text: s.text,
+          translatedText: s.translatedText || undefined,
+          offset: s.offset,
+          duration: s.duration
+        }))
+      });
+
+      const fileName = `${videoId}_${Math.floor(start)}s.mp4`;
+      const stream = (await import('fs')).createReadStream(filePath);
+
+      reply.header('Content-Type', 'video/mp4');
+      reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+      return reply.send(stream);
+    } catch (error: any) {
+      fastify.log.error(`[Clipping Error] ${error.message}`);
+      return reply.status(500).send({
+        error: '视频切片生成失败',
+        message: error.message
       });
     }
   });

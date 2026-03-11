@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
@@ -55,6 +55,7 @@ const isChatLoading = ref(false);
 const chatListRef = ref<HTMLElement | null>(null);
 const isAutoScrollEnabled = ref(true);
 const selectedLoop = ref<{ start: number, end: number, id: string } | null>(null);
+const isClippingId = ref<string | null>(null); // 正在剪辑的 ID
 
 // 字幕滚动自动归中行为控制变量
 const isHoveringTranscript = ref(false);
@@ -688,6 +689,59 @@ const stopLoop = () => {
   }
 };
 
+// --- 视频切片下载逻辑 ---
+const handleClip = async (item: Takeaway, index: number) => {
+  if (isClippingId.value) return;
+
+  const id = item.id || `ta-${index}`;
+  isClippingId.value = id;
+
+  try {
+    // 估算切片时长
+    let durationSec = 30;
+    if (item.duration) {
+      const parts = item.duration.split(':').map(p => parseInt(p) || 0);
+      if (parts.length === 2) {
+        durationSec = parts[0] * 60 + parts[1];
+      } else if (parts.length === 3) {
+        durationSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      }
+    }
+
+    const response = await fetch(`${API_BASE}/api/videos/${videoId.value}/clip`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({
+        start: item.timestamp,
+        duration: Math.max(5, durationSec) // 最小 5 秒
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.message || '生成失败');
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `${videoTitle.value.slice(0, 20)}_${item.title.replace(/\s+/g, '_')}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch (e: any) {
+    console.error('Clipping failed:', e);
+    errorMsg.value = '剪辑失败: ' + e.message;
+  } finally {
+    isClippingId.value = null;
+  }
+};
+
 
 // 视频时间更新时，自动高亮当前要点和字幕
 const handleDuration = (duration: number) => {
@@ -938,6 +992,7 @@ const takeawayMap = computed(() => {
                     </div>
 
                     <KnowledgeExportActions
+                      :video-id="videoId"
                       :video-title="videoTitle"
                       :video-url="videoUrl"
                       :takeaways="takeaways"
@@ -1001,6 +1056,16 @@ const takeawayMap = computed(() => {
                       title="影子练习：循环播放此片段"
                     >
                       <RefreshCw :size="14" :class="{ 'spin': selectedLoop?.id === (item.id || 'ta-' + item.index) }" />
+                    </button>
+                    <button
+                      class="btn-loop-action"
+                      style="margin-left: 4px;"
+                      :disabled="!!isClippingId"
+                      @click.stop="handleClip(item, item.index)"
+                      title="导出视频切片 (mp4)"
+                    >
+                      <Loader2 v-if="isClippingId === (item.id || 'ta-' + item.index)" :size="14" class="spin" />
+                      <Scissors v-else :size="14" />
                     </button>
                     <div class="seg-play-icon">
                       <Play :size="14" />

@@ -188,49 +188,78 @@ export async function translateTranscriptSegments(
       batchObj[index] = text;
     });
 
-    try {
-      console.log(`[Batch ${batchIdx + 1}] Processing...`);
+    let lastError: Error | null = null;
+    let translatedCount = 0;
 
-      const completion = await client.chat.completions.create({
-        model: 'deepseek-chat',
-        messages: [
-          {
-            role: 'system',
-            content: `你是一个专业的语义翻译专家。你的任务是将用户提供的字幕片段（JSON 对象，键为索引，值为英文片段文本）**全部**翻译成自然流畅的中文。
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`[Batch ${batchIdx + 1}] Translation attempt ${attempt}/${MAX_RETRIES}...`);
+
+        const completion = await client.chat.completions.create({
+          model: 'deepseek-chat',
+          messages: [
+            {
+              role: 'system',
+              content: `你是一个专业的语义翻译专家。你的任务是将用户提供的字幕片段（JSON 对象，键为索引，值为英文片段文本）**全部**翻译成自然流畅的中文。
 要求：
-1. **全量翻译**：每一个输入的片段都必须提供对应的中文翻译。除纯代码段外，**禁止**保留原英文。
-2. **语义连贯**：请结合前后文（由索引顺序体现）进行翻译，确保中文表达符合中文语言习惯，不要生硬直译。
-3. **术语处理**：对于技术术语（如 ADK, API, JSON mode, Gemini 等），在保留英文专业词汇的同时，确保整句语义被完整翻译成中文。
-4. **严禁合并或拆分**：返回一个相同结构的 JSON 对象。每个输入的键必须出现在输出中，且顺序一致。
-5. **纯净输出**：只返回 JSON 对象，不要有任何 Markdown 代码块标签、注释或说明文字。`,
-          },
-          {
-            role: 'user',
-            content: JSON.stringify(batchObj),
-          },
-        ],
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      });
+1. **全量翻译**：每一个输入的片段都必须提供对应的中文翻译。除纯代码段、数字或专有名词外，**严禁**保留原英文。
+2. **对话识别**：视频中常包含 “>>” 等对话标记，请在翻译中保留这些符号（放在句首），并翻译其后的文本。
+3. **语义连贯**：请结合前后文（由索引顺序体现）进行翻译，确保中文表达符合中文语言习惯，不要生硬直译。
+4. **术语处理**：对于技术术语（如 ADK, API, JSON, Gemini 等），在保留英文专业词汇的同时，确保整句语义被完整翻译成中文。
+5. **严禁合并或拆分**：返回一个相同结构的 JSON 对象。每个输入的键必须出现在输出中，且顺序一致。
+6. **纯净输出**：只返回 JSON 对象，不要有任何 Markdown 代码块标签、注释或说明文字。`,
+            },
+            {
+              role: 'user',
+              content: JSON.stringify(batchObj),
+            },
+          ],
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+        });
 
-      const content = completion.choices[0]?.message?.content;
-      if (content) {
+        const content = completion.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error('LLM returned empty response for translation batch');
+        }
+
         const parsed = JSON.parse(content);
         batch.forEach((_, index) => {
           const translated = parsed[index] || parsed[String(index)];
-          results[startIndex + index] = translated ? String(translated) : batch[index];
+          if (translated) {
+            results[startIndex + index] = String(translated);
+            translatedCount++;
+          } else {
+            // 如果某一行没返回，可能是 LLM 漏了，赋予原文
+            results[startIndex + index] = batch[index];
+          }
         });
-      } else {
-        batch.forEach((text, index) => { results[startIndex + index] = text; });
+
+        console.log(`[Batch ${batchIdx + 1}] Successfully translated ${translatedCount}/${batch.length} segments.`);
+        return; // 成功后退出重试循环
+      } catch (error: any) {
+        lastError = error;
+        const statusCode = error.status || error.statusCode;
+        const isRateLimit = statusCode === 429 || error.message?.includes('429') || error.message?.includes('Too Many Requests');
+
+        if (isRateLimit && attempt < MAX_RETRIES) {
+          const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          console.log(`⏳ [Batch ${batchIdx + 1}] Rate limited. Waiting ${Math.round(delayMs / 1000)}s before retry ${attempt + 1}...`);
+          await sleep(delayMs);
+          continue;
+        }
+        
+        // 其他错误或重试耗尽
+        console.error(`[Batch ${batchIdx + 1}] Attempt ${attempt} failed:`, error.message);
+        if (attempt === MAX_RETRIES) {
+          // 最后一次重试也失败，落回原文
+          batch.forEach((text, index) => { results[startIndex + index] = text; });
+        }
       }
-    } catch (error) {
-      console.error(`[Batch ${batchIdx + 1}] Translation failed:`, error);
-      batch.forEach((text, index) => { results[startIndex + index] = text; });
     }
   }));
 
   return results;
-
 }
 
 /**

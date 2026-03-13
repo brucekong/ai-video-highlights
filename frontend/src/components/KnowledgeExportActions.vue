@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { Share2, Scissors, ExternalLink, Loader2 } from 'lucide-vue-next';
+import { Share2, Scissors, ExternalLink, Loader2, Download } from 'lucide-vue-next';
 import { useAuth } from '../services/auth';
 
 const { getAuthHeaders } = useAuth();
@@ -215,6 +215,55 @@ const generateEditingScript = () => {
 
   copyToClipboard(script, '剪辑脚本与 FFMPEG 指令已生成！', '剪辑脚本生成成功');
 };
+const isDownloading = ref(false);
+
+const downloadFullVideo = async () => {
+  if (isDownloading.value) return;
+
+  isDownloading.value = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/videos/${props.videoId}/download`, {
+      method: 'GET',
+      headers: getAuthHeaders()
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.message || '下载失败');
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `${props.videoTitle.slice(0, 30)}_full.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
+
+    window.dispatchEvent(new CustomEvent('notify', {
+      detail: {
+        message: '视频下载已开始',
+        title: '下载成功',
+        type: 'success',
+        duration: 3000
+      }
+    }));
+  } catch (error: any) {
+    console.error('Download error:', error);
+    window.dispatchEvent(new CustomEvent('notify', {
+      detail: {
+        message: error.message || '视频下载失败，请稍后重试',
+        title: '下载失败',
+        type: 'error',
+        duration: 5000
+      }
+    }));
+  } finally {
+    isDownloading.value = false;
+  }
+};
 </script>
 
 <template>
@@ -242,6 +291,19 @@ const generateEditingScript = () => {
         <span>复制</span>
       </button>
       <div class="custom-tooltip">复制 Markdown 笔记到剪贴板，支持 手动粘贴</div>
+    </div>
+
+    <div class="tooltip-wrapper">
+      <button
+        class="btn-action-outline"
+        @click="downloadFullVideo"
+        :disabled="isDownloading"
+      >
+        <Loader2 v-if="isDownloading" :size="14" class="spin" />
+        <Download v-else :size="14" />
+        <span>下载</span>
+      </button>
+      <div class="custom-tooltip">直接下载该视频的完整 MP4 文件</div>
     </div>
 
     <div class="tooltip-wrapper">

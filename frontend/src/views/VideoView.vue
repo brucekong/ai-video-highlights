@@ -6,6 +6,7 @@ import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
 import VideoSearchModal from '../components/VideoSearchModal.vue';
+import VideoClippingDrawer from '../components/VideoClippingDrawer.vue';
 import KnowledgeExportActions from '../components/KnowledgeExportActions.vue';
 import { useAuth } from '../services/auth';
 
@@ -46,6 +47,13 @@ const isBilingual = ref(true); // 是否开启双语模式
 const mindmapRaw = ref(''); // 脑图 Markdown
 const showMindMap = ref(false); // 是否显示脑图
 const showSearchModal = ref(false); // 是否显示搜索弹窗
+const showClippingDrawer = ref(false); // 是否显示剪辑抽屉
+const clippingRange = ref<{ start?: number, end?: number }>({});
+
+const openClippingDrawer = (start?: number, end?: number) => {
+  clippingRange.value = { start, end };
+  showClippingDrawer.value = true;
+};
 
 // AI 助手相关状态
 const activeSidebarTab = ref<'transcript' | 'chat'>('transcript');
@@ -991,6 +999,18 @@ const takeawayMap = computed(() => {
                       <div class="custom-tooltip">基于语义在视频内搜索具体内容</div>
                     </div>
 
+                    <div class="tooltip-wrapper">
+                      <button
+                        v-if="showResult"
+                        class="btn-search-in-video"
+                        @click="openClippingDrawer()"
+                      >
+                        <Scissors :size="14" />
+                        <span>快速切片</span>
+                      </button>
+                      <div class="custom-tooltip">手动选取视频范围进行精准剪辑</div>
+                    </div>
+
                     <KnowledgeExportActions
                       :video-id="videoId"
                       :video-title="videoTitle"
@@ -1061,11 +1081,10 @@ const takeawayMap = computed(() => {
                       class="btn-loop-action"
                       style="margin-left: 4px;"
                       :disabled="!!isClippingId"
-                      @click.stop="handleClip(item, item.index)"
-                      title="导出视频切片 (mp4)"
+                      @click.stop="openClippingDrawer(item.timestamp, item.timestamp + item.actualDuration)"
+                      title="基于此片段手动微调剪辑"
                     >
-                      <Loader2 v-if="isClippingId === (item.id || 'ta-' + item.index)" :size="14" class="spin" />
-                      <Scissors v-else :size="14" />
+                      <Scissors :size="14" />
                     </button>
                     <div class="seg-play-icon">
                       <Play :size="14" />
@@ -1155,6 +1174,14 @@ const takeawayMap = computed(() => {
                       title="循环播放此句"
                     >
                       <RefreshCw :size="14" :class="{ 'spin': selectedLoop?.id === 'seg-' + index }" />
+                    </button>
+                    <button
+                      class="btn-loop-action"
+                      style="margin-left: 4px;"
+                      @click.stop="openClippingDrawer(seg.offset / 1000, (seg.offset + seg.duration) / 1000)"
+                      title="基于此句剪辑"
+                    >
+                      <Scissors :size="14" />
                     </button>
                     <div class="seg-play-icon">
                       <Play :size="14" />
@@ -1246,6 +1273,18 @@ const takeawayMap = computed(() => {
           :video-id="videoId"
           :video-title="videoTitle"
           @close="showSearchModal = false"
+          @seek="handleSeek"
+        />
+
+        <VideoClippingDrawer
+          :show="showClippingDrawer"
+          :video-id="videoId"
+          :video-title="videoTitle"
+          :current-time="currentVideoTime"
+          :video-duration="totalVideoDuration"
+          :initial-start="clippingRange.start"
+          :initial-end="clippingRange.end"
+          @close="showClippingDrawer = false"
           @seek="handleSeek"
         />
       </Teleport>

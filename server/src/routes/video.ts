@@ -663,6 +663,9 @@ export async function videoRoutes(fastify: FastifyInstance) {
     });
 
     try {
+      // 简单探测视频是否为中文（基于标题或字幕内容）
+      const isChinese = /[\u4e00-\u9fa5]/.test(video.title || '') || subtitles.some(s => /[\u4e00-\u9fa5]/.test(s.text));
+      
       const { createVideoClip } = await import('../services/clipping.js');
       const filePath = await createVideoClip({
         videoId,
@@ -670,6 +673,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         start,
         duration,
         platform: video.platform,
+        language: isChinese ? 'zh' : undefined,
         subtitles: subtitles.map(s => ({
           text: s.text,
           translatedText: s.translatedText || undefined,
@@ -688,6 +692,60 @@ export async function videoRoutes(fastify: FastifyInstance) {
       fastify.log.error(`[Clipping Error] ${error.message}`);
       return reply.status(500).send({
         error: '视频切片生成失败',
+        message: error.message
+      });
+    }
+  });
+
+  /**
+   * GET /api/videos/:videoId/download
+   * 下载完整视频
+   */
+  fastify.get('/api/videos/:videoId/download', {
+    schema: {
+      tags: ['Videos'],
+      summary: '下载完整视频',
+      description: '下载该视频的完整 MP4 文件。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string' }
+        }
+      },
+      response: {
+        200: { type: 'string', format: 'binary' },
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      }
+    }
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply
+  ) => {
+    const { videoId } = request.params;
+
+    const video = await prisma.video.findUnique({ where: { videoId } });
+    if (!video) return reply.status(404).send({ error: '视频不存在' });
+
+    try {
+      const { downloadFullVideo } = await import('../services/clipping.js');
+      const filePath = await downloadFullVideo({
+        videoId,
+        url: video.url,
+        platform: video.platform
+      });
+
+      const fileName = `${videoId}_full.mp4`;
+      const stream = (await import('fs')).createReadStream(filePath);
+
+      reply.header('Content-Type', 'video/mp4');
+      reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+      return reply.send(stream);
+    } catch (error: any) {
+      fastify.log.error(`[Download Error] ${error.message}`);
+      return reply.status(500).send({
+        error: '视频下载失败',
         message: error.message
       });
     }

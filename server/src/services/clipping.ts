@@ -25,6 +25,8 @@ interface ClipOptions {
   platform: string;
   subtitles?: SubtitleItem[];
   language?: string;
+  format?: string;
+  burnSubtitles?: boolean;
 }
 
 /**
@@ -77,54 +79,111 @@ function formatTime(seconds: number): string {
 /**
  * 核心剪辑函数
  */
-export async function createVideoClip({ videoId, url, start, duration, platform, subtitles, language }: ClipOptions): Promise<string> {
+export async function createVideoClip({ videoId, url, start, duration, platform, subtitles, language, format = 'mp4', burnSubtitles = false }: ClipOptions): Promise<string> {
   await fs.ensureDir(CLIPS_DIR);
   
   const end = start + duration;
-  // 增加 subtitles 特征到文件名，以便在字幕变化时重新生成
   const hasSubs = subtitles && subtitles.length > 0;
-  // 如果是中文视频，跳过字幕 muxing
-  const shouldMuxSubs = hasSubs && language !== 'zh';
-  const clipId = `${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldMuxSubs ? '_subs_v2' : ''}`;
-  const outputPath = path.join(CLIPS_DIR, `${clipId}.mp4`);
+  // 是否需要制作软字幕(只在你选择mp4且不硬字幕且非中文时产生软字幕)
+  const shouldMuxSubs = hasSubs && language !== 'zh' && format === 'mp4' && !burnSubtitles;
+  const isMp3 = format === 'mp3';
+  
+  // 生成缓存文件名
+  const clipId = `${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldMuxSubs ? '_subs_v2' : ''}${burnSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}`;
+  const ext = isMp3 ? 'mp3' : 'mp4';
+  const outputPath = path.join(CLIPS_DIR, `${clipId}.${ext}`);
 
   if (await fs.pathExists(outputPath)) {
     return outputPath;
   }
 
+  // ==== 优化 1：尝试寻找本地是否存在完整版视频文件 ====
+  const fullVideoPath = path.join(CLIPS_DIR, `${videoId}_full.mp4`);
+  const hasLocalFullVideo = await fs.pathExists(fullVideoPath);
+  
   const tempRawPath = path.join(os.tmpdir(), `raw_${clipId}.mp4`);
   const srtPath = path.join(os.tmpdir(), `${clipId}.srt`);
 
   try {
-    const dlFlags: any = {
-      output: tempRawPath,
-      format: 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[acodec^=mp4a]/best[ext=mp4]/best',
-      downloadSections: `*${formatTime(start)}-${formatTime(end)}`,
-      mergeOutputFormat: 'mp4',
-      noOverwrites: true,
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    };
-
-    if (platform === 'youtube' && process.env.YOUTUBE_COOKIES) {
-      const cookiePath = path.join(CLIPS_DIR, 'cookies_temp.txt');
-      await fs.writeFile(cookiePath, process.env.YOUTUBE_COOKIES.replace(/\\n/g, '\n'));
-      dlFlags.cookies = cookiePath;
-    }
-
-    await youtubedl(url, dlFlags);
- 
-     if (shouldMuxSubs) {
-      // 1. 生成 SRT 文件
-      const srtContent = generateSrt(subtitles!, start);
-      await fs.writeFile(srtPath, srtContent);
-
-      // 2. 利用 FFmpeg 将字幕作为软字幕流 Mux 进 MP4 (不重新编码，极速)
-      // 注意：使用 mov_text 是 MP4 标准字幕格式，兼容性好
-      // -disposition:s:0 default 标记该轨道为默认开启
-      console.log(`[Clipping] Muxing subtitles into ${outputPath}...`);
-      await execAsync(`ffmpeg -y -i "${tempRawPath}" -i "${srtPath}" -c copy -c:s mov_text -metadata:s:s:0 language=chi -disposition:s:0 default "${outputPath}"`);
+    if (hasLocalFullVideo) {
+      console.log(`[Clipping] Found local full video, fast seeking...`);
+      if (isMp3) {
+        await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vn -c:a libmp3lame -q:a 2 "${outputPath}"`);
+        return outputPath;
+      }
+      
+      if (burnSubtitles && hasSubs) {
+         // 硬字幕需要重新编码
+         const srtContent = generateSrt(subtitles!, start);
+         await fs.writeFile(srtPath, srtContent);
+         // 替换反斜杠和冒号防止 Windows/FFmpeg 路径解析错误
+         const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+         await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "subtitles=${safeSrtPath}:force_style='Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=10'" -c:v libx264 -preset ultrafast -c:a copy "${outputPath}"`);
+         return outputPath;
+      }
+      
+      await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -c copy "${tempRawPath}"`);
     } else {
-      // 如果没有字幕，加一个 faststart 直接移动
+      console.log(`[Clipping] Local video not found, downloading segment online using extreme fast mode...`);
+      
+      // ==== 优化 2/方案 3：使用极限线上截取策略 ====
+      const dlFlags: Record<string, any> = {
+        output: tempRawPath,
+        // 提升画质至 1080p（大多数 1080p 只有分离流，因此分离流合并也是刚需，在保证不过度重压且有 copy 加持下，速度依然很快）
+        format: isMp3 ? 'bestaudio/best' : 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
+        downloadSections: `*${formatTime(start)}-${formatTime(end)}`,
+        downloader: 'ffmpeg',
+        downloaderArgs: 'ffmpeg:-c copy -copyts',
+        noPlaylist: true,
+        noCheckCertificates: true,
+        noOverwrites: true,
+      };
+
+      if (!isMp3) {
+        dlFlags.mergeOutputFormat = 'mp4';
+      } else {
+        dlFlags.extractAudio = true;
+        dlFlags.audioFormat = 'mp3';
+      }
+
+      if (platform === 'youtube' && process.env.YOUTUBE_COOKIES) {
+        const cookiePath = path.join(CLIPS_DIR, 'cookies_temp.txt');
+        await fs.writeFile(cookiePath, process.env.YOUTUBE_COOKIES.replace(/\\n/g, '\n'));
+        dlFlags.cookies = cookiePath;
+      }
+
+      await youtubedl(url, dlFlags);
+      
+      // 如果是在线下的 mp3，yt-dlp 就可以直接输出最后的成品了
+      if (isMp3) {
+        // 如果 extractAudio 成功，文件可能直接在 tempRawPath (.mp3). 如果是mp4需转一遍
+        if (await fs.pathExists(tempRawPath.replace('.mp4', '.mp3'))) {
+            await fs.move(tempRawPath.replace('.mp4', '.mp3'), outputPath);
+            return outputPath;
+        } else {
+            await execAsync(`ffmpeg -y -i "${tempRawPath}" -vn -c:a libmp3lame -q:a 2 "${outputPath}"`);
+            return outputPath;
+        }
+      }
+      
+      // 在线提取下处理硬字幕
+      if (burnSubtitles && hasSubs && !isMp3) {
+         console.log(`[Clipping] Burning subtitles...`);
+         const srtContent = generateSrt(subtitles!, 0); // 在线切出来的本身就是从 0 开始的
+         await fs.writeFile(srtPath, srtContent);
+         const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+         await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "subtitles=${safeSrtPath}:force_style='Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=10'" -c:v libx264 -preset ultrafast -c:a copy "${outputPath}"`);
+         return outputPath;
+      }
+    }
+ 
+    if (shouldMuxSubs && !isMp3 && !burnSubtitles) {
+      // 在线拉取的 raw 往往时间戳已经是从 0 开始，所以不用减去 start
+      const srtContent = generateSrt(subtitles!, hasLocalFullVideo ? start : 0);
+      await fs.writeFile(srtPath, srtContent);
+      console.log(`[Clipping] Muxing soft subtitles into ${outputPath}...`);
+      await execAsync(`ffmpeg -y -i "${tempRawPath}" -i "${srtPath}" -c copy -c:s mov_text -metadata:s:s:0 language=chi -disposition:s:0 default "${outputPath}"`);
+    } else if (!isMp3 && !burnSubtitles) {
       await execAsync(`ffmpeg -y -i "${tempRawPath}" -c copy -movflags faststart "${outputPath}"`);
     }
 
@@ -133,8 +192,8 @@ export async function createVideoClip({ videoId, url, start, duration, platform,
     console.error(`❌ [Clipping] Failed:`, error.message);
     throw error;
   } finally {
-    // 清理临时文件
     await fs.remove(tempRawPath).catch(() => {});
+    await fs.remove(tempRawPath.replace('.mp4', '.mp3')).catch(() => {});
     await fs.remove(srtPath).catch(() => {});
   }
 }
@@ -142,7 +201,7 @@ export async function createVideoClip({ videoId, url, start, duration, platform,
 /**
  * 下载完整视频
  */
-export async function downloadFullVideo({ videoId, url, platform }: { videoId: string, url: string, platform: string }): Promise<string> {
+export async function downloadFullVideo({ videoId, url, platform, quality = '1080' }: { videoId: string, url: string, platform: string, quality?: string }): Promise<string> {
   await fs.ensureDir(CLIPS_DIR);
   
   const outputPath = path.join(CLIPS_DIR, `${videoId}_full.mp4`);
@@ -152,9 +211,14 @@ export async function downloadFullVideo({ videoId, url, platform }: { videoId: s
   }
 
   try {
+    let formatOption = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'; // default to best
+    if (quality && quality !== 'best') {
+      formatOption = `bestvideo[height<=${quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${quality}][ext=mp4]/best`;
+    }
+
     const dlFlags: any = {
       output: outputPath,
-      format: 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[acodec^=mp4a]/best[ext=mp4]/best',
+      format: formatOption,
       mergeOutputFormat: 'mp4',
       noOverwrites: true,
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',

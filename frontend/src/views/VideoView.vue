@@ -69,6 +69,15 @@ const isClippingId = ref<string | null>(null); // 正在剪辑的 ID
 const isHoveringTranscript = ref(false);
 const autoScrollPaused = ref(false);
 const isTranslating = ref(false);
+
+// 标题溢出检测
+const titleRef = ref<HTMLElement | null>(null);
+const isTitleTruncated = ref(false);
+const checkTitleTruncation = () => {
+  if (titleRef.value) {
+    isTitleTruncated.value = titleRef.value.scrollWidth > titleRef.value.clientWidth;
+  }
+};
 let pollingInterval: any = null;
 let resumeScrollTimeout: any = null;
 let programmaticScrollTimeout: any = null;
@@ -698,57 +707,7 @@ const stopLoop = () => {
 };
 
 // --- 视频切片下载逻辑 ---
-const handleClip = async (item: Takeaway, index: number) => {
-  if (isClippingId.value) return;
-
-  const id = item.id || `ta-${index}`;
-  isClippingId.value = id;
-
-  try {
-    // 估算切片时长
-    let durationSec = 30;
-    if (item.duration) {
-      const parts = item.duration.split(':').map(p => parseInt(p) || 0);
-      if (parts.length === 2) {
-        durationSec = parts[0] * 60 + parts[1];
-      } else if (parts.length === 3) {
-        durationSec = parts[0] * 3600 + parts[1] * 60 + parts[2];
-      }
-    }
-
-    const response = await fetch(`${API_BASE}/api/videos/${videoId.value}/clip`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders()
-      },
-      body: JSON.stringify({
-        start: item.timestamp,
-        duration: Math.max(5, durationSec) // 最小 5 秒
-      })
-    });
-
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.message || '生成失败');
-    }
-
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = `${videoTitle.value.slice(0, 20)}_${item.title.replace(/\s+/g, '_')}.mp4`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
-  } catch (e: any) {
-    console.error('Clipping failed:', e);
-    errorMsg.value = '剪辑失败: ' + e.message;
-  } finally {
-    isClippingId.value = null;
-  }
-};
+// 已移除遗留的 handleClip 函数
 
 
 // 视频时间更新时，自动高亮当前要点和字幕
@@ -969,7 +928,10 @@ const takeawayMap = computed(() => {
                      <span>核心摘要</span>
                      <span v-if="takeaways.length > 0" class="title-badge">{{ takeaways.length }}</span>
                    </h3>
-                   <p v-if="videoTitle" class="video-title-hint">{{ videoTitle }}</p>
+                   <div class="tooltip-wrapper" @mouseenter="checkTitleTruncation">
+                     <p ref="titleRef" v-if="videoTitle" class="video-title-hint">{{ videoTitle }}</p>
+                     <div v-if="videoTitle && isTitleTruncated" class="custom-tooltip title-tooltip">{{ videoTitle }}</div>
+                   </div>
                  </div>
                    <div class="sidebar-actions">
                     <div class="tooltip-wrapper">
@@ -1092,6 +1054,21 @@ const takeawayMap = computed(() => {
                   </div>
                 </div>
               </div>
+
+              <!-- 新增：嵌入式剪辑面板 / Embedded Clipping Panel -->
+              <VideoClippingDrawer
+                :show="showClippingDrawer"
+                :video-id="videoId"
+                :video-title="videoTitle"
+                :current-time="currentVideoTime"
+                :video-duration="totalVideoDuration"
+                :initial-start="clippingRange.start"
+                :initial-end="clippingRange.end"
+                @close="showClippingDrawer = false"
+                @seek="handleSeek"
+                @start-loop="startLoop"
+                @stop-loop="stopLoop"
+              />
             </div>
           </div>
 
@@ -1276,15 +1253,11 @@ const takeawayMap = computed(() => {
           @seek="handleSeek"
         />
 
-        <VideoClippingDrawer
-          :show="showClippingDrawer"
+        <VideoSearchModal
+          :show="showSearchModal"
           :video-id="videoId"
           :video-title="videoTitle"
-          :current-time="currentVideoTime"
-          :video-duration="totalVideoDuration"
-          :initial-start="clippingRange.start"
-          :initial-end="clippingRange.end"
-          @close="showClippingDrawer = false"
+          @close="showSearchModal = false"
           @seek="handleSeek"
         />
       </Teleport>
@@ -1571,7 +1544,7 @@ input::placeholder {
 }
 
 .content-grid.has-sidebar {
-  grid-template-columns: 1fr 580px;
+  grid-template-columns: 1fr 640px;
 }
 
 /* Left Column: Video + Takeaways */
@@ -1598,6 +1571,7 @@ input::placeholder {
   flex-direction: column;
   position: relative;
   z-index: 11;
+  overflow: hidden; /* 确保下拉面板在容器内滑动 / Ensure slidedown stays within container */
 }
 
 .takeaways-list {
@@ -1919,6 +1893,8 @@ input::placeholder {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative;
+  z-index: 100; /* 确保 header 始终在列表内容上方，防止下拉框被遮挡 */
 }
 
 .sidebar-title-area {
@@ -1952,7 +1928,9 @@ input::placeholder {
 .sidebar-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .translating-hint {
@@ -1986,24 +1964,39 @@ input::placeholder {
   color: var(--text-primary);
 }
 
-.btn-search-in-video {
+.btn-search-in-video, .btn-mindmap {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  color: var(--accent-color);
-  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  padding: 0 12px;
   border-radius: 8px;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  height: 32px;
 }
 
-.btn-search-in-video:hover:not(:disabled) {
-  background: var(--accent-color);
-  color: white;
+.btn-search-in-video:hover:not(:disabled), .btn-mindmap:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.btn-mindmap {
+  /* 移除特殊的紫色背景，保持统一 */
+}
+
+.sidebar-header-divider {
+  flex: 1;
+  min-width: 8px;
 }
 
 .sidebar-divider {
@@ -2032,14 +2025,33 @@ input::placeholder {
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.4;
-  white-space: nowrap;
+  /* 核心修复：强制宽度由内容决定，防止被父容器挤压 */
+  width: max-content; 
+  min-width: 60px;
+  max-width: 280px;
+  white-space: normal;
+  word-break: break-word;
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 100;
+  z-index: 9999; /* 提升至最高层级 */
+}
+
+/* 专门针对靠左标题的 Tooltip 样式：改为靠左对齐，防止边缘遮挡 */
+.custom-tooltip.title-tooltip {
+  left: 0;
+  transform: translateY(-8px);
+  width: max-content;
+  max-width: 320px;
+  text-align: left;
+}
+
+.custom-tooltip.title-tooltip::after {
+  left: 20px;
+  transform: translateX(0);
 }
 
 .custom-tooltip::after {
@@ -2057,6 +2069,11 @@ input::placeholder {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(-12px);
+}
+
+/* 覆盖标题 Tooltip 的悬浮位移逻辑 */
+.tooltip-wrapper:hover .custom-tooltip.title-tooltip {
+  transform: translateY(-12px);
 }
 
 /* Adjust timeline tooltip background to match */
@@ -2386,7 +2403,7 @@ input::placeholder {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 440px;
+  max-width: 120px; /* 缩短标题预览宽度，优先保证右侧按钮 */
 }
 
 .takeaway-content {

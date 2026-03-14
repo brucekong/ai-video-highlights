@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { Share2, Scissors, ExternalLink, Loader2, Download } from 'lucide-vue-next';
+import { ref, onMounted } from 'vue';
+import { Share2, Scissors, ExternalLink, Loader2, Download, ChevronDown, Check } from 'lucide-vue-next';
 import { useAuth } from '../services/auth';
 
 const { getAuthHeaders } = useAuth();
@@ -216,13 +216,14 @@ const generateEditingScript = () => {
   copyToClipboard(script, '剪辑脚本与 FFMPEG 指令已生成！', '剪辑脚本生成成功');
 };
 const isDownloading = ref(false);
+const downloadQuality = ref('1080');
 
 const downloadFullVideo = async () => {
   if (isDownloading.value) return;
 
   isDownloading.value = true;
   try {
-    const response = await fetch(`${API_BASE}/api/videos/${props.videoId}/download`, {
+    const response = await fetch(`${API_BASE}/api/videos/${props.videoId}/download?quality=${downloadQuality.value}`, {
       method: 'GET',
       headers: getAuthHeaders()
     });
@@ -264,58 +265,99 @@ const downloadFullVideo = async () => {
     isDownloading.value = false;
   }
 };
+const showQualityMenu = ref(false);
+const qualityOptions = [
+  { label: '1080P', value: '1080' },
+  { label: '2K', value: '1440' },
+  { label: '4K', value: '2160' },
+  { label: '原画', value: 'best' }
+];
+
+const selectQuality = (val: string) => {
+  downloadQuality.value = val;
+  showQualityMenu.value = false;
+};
+
+const getQualityLabel = (val: string) => {
+  return qualityOptions.find(opt => opt.value === val)?.label || val;
+};
+
+// 点击外部关闭
+onMounted(() => {
+  document.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest('.quality-selector')) {
+      showQualityMenu.value = false;
+    }
+  });
+});
 </script>
 
 <template>
   <div class="export-actions">
-    <div class="tooltip-wrapper">
-      <button
-        class="btn-action-outline primary"
-        @click="exportToNotion"
-        :disabled="!takeaways.length || isExportingToNotion"
-      >
-        <Loader2 v-if="isExportingToNotion" :size="14" class="spin" />
-        <ExternalLink v-else :size="14" />
-        <span>Notion</span>
-      </button>
-      <div class="custom-tooltip">直接导出到 Notion 数据库 (需配置 API Key)</div>
-    </div>
-
-    <div class="tooltip-wrapper">
-      <button
-        class="btn-action-outline"
-        @click="exportAsMarkdown"
-        :disabled="!takeaways.length"
-      >
+    <!-- 1. 核心导出菜单 (Notion & Markdown & Script) -->
+    <div class="dropdown-wrapper">
+      <button class="btn-action-primary">
         <Share2 :size="14" />
-        <span>复制</span>
+        <span>同步/分享</span>
       </button>
-      <div class="custom-tooltip">复制 Markdown 笔记到剪贴板，支持 手动粘贴</div>
+      <div class="dropdown-menu">
+        <div class="dropdown-item" @click="exportToNotion" :class="{ disabled: !takeaways.length || isExportingToNotion }">
+          <Loader2 v-if="isExportingToNotion" :size="14" class="spin" />
+          <ExternalLink v-else :size="14" />
+          <div class="item-text">
+            <span>导出到 Notion</span>
+            <small>同步到您的知识库</small>
+          </div>
+        </div>
+        <div class="dropdown-divider"></div>
+        <div class="dropdown-item" @click="exportAsMarkdown" :class="{ disabled: !takeaways.length }">
+          <Share2 :size="14" />
+          <div class="item-text">
+            <span>复制 Markdown</span>
+            <small>兼容 Obsidian/Logseq</small>
+          </div>
+        </div>
+        <div class="dropdown-item" @click="generateEditingScript" :class="{ disabled: !takeaways.length }">
+          <Scissors :size="14" />
+          <div class="item-text">
+            <span>生成剪辑脚本</span>
+            <small>复制指令与分段建议</small>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="tooltip-wrapper">
-      <button
-        class="btn-action-outline"
-        @click="downloadFullVideo"
+    <!-- 2. 精简版下载组件 -->
+    <div class="download-cluster">
+      <div class="quality-selector" @click="showQualityMenu = !showQualityMenu">
+        <span class="current-quality">{{ getQualityLabel(downloadQuality) }}</span>
+        <ChevronDown :size="12" class="chevron-icon" :class="{ 'rotate': showQualityMenu }" />
+        
+        <!-- 自定义模拟下拉菜单 -->
+        <div v-if="showQualityMenu" class="quality-dropdown-menu">
+          <div 
+            v-for="opt in qualityOptions" 
+            :key="opt.value"
+            class="quality-option"
+            :class="{ 'active': downloadQuality === opt.value }"
+            @click.stop="selectQuality(opt.value)"
+          >
+            <span>{{ opt.label }}</span>
+            <Check v-if="downloadQuality === opt.value" :size="12" class="check-icon" />
+          </div>
+        </div>
+      </div>
+      <button 
+        class="btn-download-trigger" 
+        @click="downloadFullVideo" 
         :disabled="isDownloading"
+        title="下载完整视频"
       >
         <Loader2 v-if="isDownloading" :size="14" class="spin" />
         <Download v-else :size="14" />
         <span>下载</span>
       </button>
-      <div class="custom-tooltip">直接下载该视频的完整 MP4 文件</div>
-    </div>
-
-    <div class="tooltip-wrapper">
-      <button
-        class="btn-action-outline"
-        @click="generateEditingScript"
-        :disabled="!takeaways.length"
-      >
-        <Scissors :size="14" />
-        <span>剪辑</span>
-      </button>
-      <div class="custom-tooltip">复制剪辑脚本与 FFMPEG 指令到剪贴板</div>
     </div>
   </div>
 </template>
@@ -324,99 +366,220 @@ const downloadFullVideo = async () => {
 .export-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-.btn-action-outline {
+/* 导出下拉按钮 (Dropdown) */
+.dropdown-wrapper {
+  position: relative;
+}
+
+.btn-action-primary {
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
   color: var(--text-secondary);
-  font-size: 0.85rem;
+  border-radius: 8px;
+  padding: 0 12px;
+  height: 32px;
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 6px 12px;
-  transition: all 0.2s ease;
   cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.btn-action-outline:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+.btn-action-primary:hover {
+  background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
-  color: var(--text-primary);
+  color: #fff;
   transform: translateY(-1px);
 }
 
-.btn-action-outline.primary {
-  background: rgba(99, 102, 241, 0.05);
-  border-color: rgba(99, 102, 241, 0.15);
-  color: var(--text-accent);
-}
-
-.btn-action-outline.primary:hover:not(:disabled) {
-  background: rgba(99, 102, 241, 0.1);
-  border-color: var(--accent-color);
-}
-
-.btn-action-outline:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  filter: grayscale(0.6);
-}
-
-.btn-action-outline span {
-  font-size: 0.85rem;
-}
-
-/* Custom Tooltip Styles */
-.tooltip-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.custom-tooltip {
+.dropdown-menu {
   position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(-8px);
+  top: calc(100% + 8px);
+  right: 0;
+  width: 180px;
   background: #1e293b;
-  color: #f8fafc;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  line-height: 1.4;
-  white-space: nowrap;
-  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.12); /* 增强边框 */
+  border-radius: 12px;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6); /* 增强阴影 */
+  padding: 6px;
   opacity: 0;
   visibility: hidden;
+  transform: translateY(-8px);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 9999;
+  z-index: 2000; /* 全局最高层级之一 */
 }
 
-.custom-tooltip::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 5px;
-  border-style: solid;
-  border-color: #1e293b transparent transparent transparent;
-}
-
-.tooltip-wrapper:hover .custom-tooltip {
+.dropdown-wrapper:hover .dropdown-menu {
   opacity: 1;
   visibility: visible;
-  transform: translateX(-50%) translateY(-12px);
+  transform: translateY(0);
 }
 
-.btn-action-outline:disabled + .custom-tooltip {
-  display: none;
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dropdown-item:hover:not(.disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.dropdown-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.item-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.item-text span {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.item-text small {
+  font-size: 0.6rem;
+  opacity: 0.6;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.05);
+  margin: 4px 6px;
+}
+
+/* 下载合拢组件 (Download Cluster) */
+.download-cluster {
+  display: flex;
+  align-items: stretch;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  /* 移除 overflow: hidden，允许自定义下拉菜单弹出 */
+  height: 32px;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.download-cluster:hover:not(:has(.btn-download-trigger:disabled)) {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.quality-selector {
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  cursor: pointer;
+  position: relative; /* 核心：确保下拉框相对于此定位 */
+  user-select: none;
+  min-width: 65px;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.current-quality {
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.chevron-icon {
+  opacity: 0.5;
+  transition: transform 0.2s ease;
+}
+
+.chevron-icon.rotate {
+  transform: rotate(180deg);
+}
+
+.quality-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 110px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.12); /* 增强边框 */
+  border-radius: 10px;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6); /* 增强阴影 */
+  padding: 5px;
+  z-index: 2000; /* 全局最高层级之一 */
+  animation: dropdownIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.quality-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.quality-option:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.quality-option.active {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent-color);
+}
+
+.check-icon {
+  color: var(--accent-color);
+}
+
+.btn-download-trigger {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-download-trigger:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-download-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

@@ -631,7 +631,9 @@ export async function videoRoutes(fastify: FastifyInstance) {
         required: ['start', 'duration'],
         properties: {
           start: { type: 'number', description: '起始秒数' },
-          duration: { type: 'number', description: '持续秒数' }
+          duration: { type: 'number', description: '持续秒数' },
+          format: { type: 'string', default: 'mp4' },
+          burnSubtitles: { type: 'boolean', default: false }
         }
       },
       response: {
@@ -642,12 +644,11 @@ export async function videoRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (
-    request: FastifyRequest<{ Params: { videoId: string }; Body: { start: number; duration: number } }>,
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { start: number; duration: number; format?: string; burnSubtitles?: boolean } }>,
     reply: FastifyReply
   ) => {
     const { videoId } = request.params;
-    const { start, duration } = request.body;
-
+    const { start, duration, format = 'mp4', burnSubtitles = false } = request.body;
     const video = await prisma.video.findUnique({ where: { videoId } });
     if (!video) return reply.status(404).send({ error: '视频不存在' });
 
@@ -674,6 +675,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
         duration,
         platform: video.platform,
         language: isChinese ? 'zh' : undefined,
+        format,
+        burnSubtitles,
         subtitles: subtitles.map(s => ({
           text: s.text,
           translatedText: s.translatedText || undefined,
@@ -682,10 +685,10 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }))
       });
 
-      const fileName = `${videoId}_${Math.floor(start)}s.mp4`;
+      const fileName = `${videoId}_${Math.floor(start)}s.${format === 'mp3' ? 'mp3' : 'mp4'}`;
       const stream = (await import('fs')).createReadStream(filePath);
 
-      reply.header('Content-Type', 'video/mp4');
+      reply.header('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'video/mp4');
       reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
       return reply.send(stream);
     } catch (error: any) {
@@ -720,10 +723,11 @@ export async function videoRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (
-    request: FastifyRequest<{ Params: { videoId: string } }>,
+    request: FastifyRequest<{ Params: { videoId: string }, Querystring: { quality?: string } }>,
     reply: FastifyReply
   ) => {
     const { videoId } = request.params;
+    const { quality = '1080' } = request.query;
 
     const video = await prisma.video.findUnique({ where: { videoId } });
     if (!video) return reply.status(404).send({ error: '视频不存在' });
@@ -733,7 +737,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
       const filePath = await downloadFullVideo({
         videoId,
         url: video.url,
-        platform: video.platform
+        platform: video.platform,
+        quality
       });
 
       const fileName = `${videoId}_full.mp4`;

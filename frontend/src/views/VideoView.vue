@@ -1894,7 +1894,8 @@ input::placeholder {
   align-items: center;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   position: relative;
-  z-index: 100; /* 确保 header 始终在列表内容上方，防止下拉框被遮挡 */
+  z-index: 500; /* 高层级，确保下拉菜单不被下方内容遮挡 */
+  overflow: visible !important; /* 允许内部下拉菜单溢出边界 */
 }
 
 .sidebar-title-area {
@@ -1931,6 +1932,8 @@ input::placeholder {
   gap: 8px;
   flex-shrink: 0;
   white-space: nowrap;
+  position: relative;
+  overflow: visible !important; /* 核心：允许子组件菜单溢出 */
 }
 
 .translating-hint {

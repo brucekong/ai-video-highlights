@@ -260,7 +260,7 @@ const handleGenerate = async () => {
              <label>字幕处理</label>
              <div class="toggle-group">
                 <label class="checkbox-label">
-                  <input type="checkbox" v-model="burnSubtitles" /> 
+                  <input type="checkbox" v-model="burnSubtitles" />
                   <span class="fake-checkbox"></span>
                   内嵌 AI 双语字幕 (实验性)
                 </label>
@@ -309,7 +309,7 @@ const handleGenerate = async () => {
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
   display: flex;
   flex-direction: column;
-  z-index: 100;
+  z-index: 999;
 }
 
 .drawer-header {
@@ -614,11 +614,11 @@ const handleGenerate = async () => {
 
 /* Transitions */
 .slidedown-enter-active, .slidedown-leave-active {
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.4s;
 }
 
 .slidedown-enter-from, .slidedown-leave-to {
   transform: translateY(-100%);
-  opacity: 0;
+  /* opacity: 0; */
 }
 </style>

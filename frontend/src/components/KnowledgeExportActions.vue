@@ -266,6 +266,7 @@ const downloadFullVideo = async () => {
   }
 };
 const showQualityMenu = ref(false);
+const showShareMenu = ref(false);
 const qualityOptions = [
   { label: '1080P', value: '1080' },
   { label: '2K', value: '1440' },
@@ -282,13 +283,28 @@ const getQualityLabel = (val: string) => {
   return qualityOptions.find(opt => opt.value === val)?.label || val;
 };
 
+const toggleShareMenu = (e: MouseEvent) => {
+  e.stopPropagation();
+  showShareMenu.value = !showShareMenu.value;
+  showQualityMenu.value = false;
+};
+
+const toggleQualityMenu = (e: MouseEvent) => {
+  e.stopPropagation();
+  showQualityMenu.value = !showQualityMenu.value;
+  showShareMenu.value = false;
+};
+
 // 点击外部关闭
 onMounted(() => {
-  document.addEventListener('click', (e) => {
-    const target = e.target as HTMLElement;
-    if (!target.closest('.quality-selector')) {
-      showQualityMenu.value = false;
-    }
+  window.addEventListener('click', () => {
+    showShareMenu.value = false;
+    showQualityMenu.value = false;
+  });
+  
+  window.addEventListener('resize', () => {
+    showShareMenu.value = false;
+    showQualityMenu.value = false;
   });
 });
 </script>
@@ -296,12 +312,12 @@ onMounted(() => {
 <template>
   <div class="export-actions">
     <!-- 1. 核心导出菜单 (Notion & Markdown & Script) -->
-    <div class="dropdown-wrapper">
-      <button class="btn-action-primary">
+    <div class="dropdown-wrapper" :class="{ 'is-open': showShareMenu }">
+      <button class="btn-action-primary" @click.stop="toggleShareMenu">
         <Share2 :size="14" />
         <span>同步/分享</span>
       </button>
-      <div class="dropdown-menu">
+      <div v-if="showShareMenu" class="dropdown-menu">
         <div class="dropdown-item" @click="exportToNotion" :class="{ disabled: !takeaways.length || isExportingToNotion }">
           <Loader2 v-if="isExportingToNotion" :size="14" class="spin" />
           <ExternalLink v-else :size="14" />
@@ -330,7 +346,7 @@ onMounted(() => {
 
     <!-- 2. 精简版下载组件 -->
     <div class="download-cluster">
-      <div class="quality-selector" @click="showQualityMenu = !showQualityMenu">
+      <div class="quality-selector" @click.stop="toggleQualityMenu">
         <span class="current-quality">{{ getQualityLabel(downloadQuality) }}</span>
         <ChevronDown :size="12" class="chevron-icon" :class="{ 'rotate': showQualityMenu }" />
         
@@ -401,26 +417,26 @@ onMounted(() => {
 
 .dropdown-menu {
   position: absolute;
-  top: calc(100% + 8px);
+  top: calc(100% + 12px); /* 稍微拉开间距更显精致 */
   right: 0;
   width: 180px;
   background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.12); /* 增强边框 */
+  border: 1px solid rgba(255, 255, 255, 0.15); /* 再次增强边框对比 */
   border-radius: 12px;
-  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6); /* 增强阴影 */
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7); /* 更深邃的长投影 */
   padding: 6px;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-8px);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 2000; /* 全局最高层级之一 */
+  z-index: 9999; /* 保证绝对领先的层级 */
+  animation: dropdownIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.dropdown-wrapper:hover .dropdown-menu {
+/* 移除了 drop-up 相关样式，锁定向下弹出 */
+
+/* 移除原有的 Hover 触发逻辑，改为点击由 v-if 控制 */
+/* .dropdown-wrapper:hover .dropdown-menu {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
-}
+} */
 
 .dropdown-item {
   display: flex;
@@ -514,20 +530,20 @@ onMounted(() => {
 
 .quality-dropdown-menu {
   position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
+  top: calc(100% + 12px);
+  right: 0; /* 改为右对齐 */
   width: 110px;
   background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.12); /* 增强边框 */
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 10px;
-  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6); /* 增强阴影 */
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
   padding: 5px;
-  z-index: 2000; /* 全局最高层级之一 */
+  z-index: 9999;
   animation: dropdownIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes dropdownIn {
-  from { opacity: 0; transform: translateY(-8px); }
+  from { opacity: 0; transform: translateY(-12px); }
   to { opacity: 1; transform: translateY(0); }
 }
 

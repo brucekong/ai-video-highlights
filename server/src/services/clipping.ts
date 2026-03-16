@@ -130,10 +130,11 @@ export async function createVideoClip({ videoId, url, start, duration, platform,
       const dlFlags: Record<string, any> = {
         output: tempRawPath,
         // 提升画质至 1080p（大多数 1080p 只有分离流，因此分离流合并也是刚需，在保证不过度重压且有 copy 加持下，速度依然很快）
-        format: isMp3 ? 'bestaudio/best' : 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
+        // 修正：强制要求 vcodec 为 avc1 (H.264)，音频为 m4a (AAC)，这是兼容性的黄金组合
+        format: isMp3 ? 'bestaudio/best' : 'bestvideo[height<=1080][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best',
         downloadSections: `*${formatTime(start)}-${formatTime(end)}`,
         downloader: 'ffmpeg',
-        downloaderArgs: 'ffmpeg:-c copy -copyts',
+        downloaderArgs: 'ffmpeg:-c:v libx264 -c:a aac', // 下载时即尝试标准化
         noPlaylist: true,
         noCheckCertificates: true,
         noOverwrites: true,
@@ -184,7 +185,9 @@ export async function createVideoClip({ videoId, url, start, duration, platform,
       console.log(`[Clipping] Muxing soft subtitles into ${outputPath}...`);
       await execAsync(`ffmpeg -y -i "${tempRawPath}" -i "${srtPath}" -c copy -c:s mov_text -metadata:s:s:0 language=chi -disposition:s:0 default "${outputPath}"`);
     } else if (!isMp3 && !burnSubtitles) {
-      await execAsync(`ffmpeg -y -i "${tempRawPath}" -c copy -movflags faststart "${outputPath}"`);
+      // 最终封装阶段：强制重编码为兼容性最高的 H.264 + YUV420P
+      console.log(`[Clipping] Finalizing video with high-compatibility settings...`);
+      await execAsync(`ffmpeg -y -i "${tempRawPath}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
     }
 
     return outputPath;
@@ -211,9 +214,9 @@ export async function downloadFullVideo({ videoId, url, platform, quality = '108
   }
 
   try {
-    let formatOption = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'; // default to best
+    let formatOption = 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best'; // 优先 H.264
     if (quality && quality !== 'best') {
-      formatOption = `bestvideo[height<=${quality}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${quality}][ext=mp4]/best`;
+      formatOption = `bestvideo[height<=${quality}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best`;
     }
 
     const dlFlags: any = {

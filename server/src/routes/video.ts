@@ -670,6 +670,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
       const { createVideoClip } = await import('../services/clipping.js');
       const filePath = await createVideoClip({
         videoId,
+        title: video.title || 'clip',
         url: video.url,
         start,
         duration,
@@ -685,11 +686,14 @@ export async function videoRoutes(fastify: FastifyInstance) {
         }))
       });
 
-      const fileName = `${videoId}_${Math.floor(start)}s.${format === 'mp3' ? 'mp3' : 'mp4'}`;
+      // 提取文件名并进行 RFC 5987 编码以支持中文
+      const safeTitle = (video.title || 'clip').replace(/[\\/:*?"<>|]/g, '_').trim();
+      const fileName = `${safeTitle}_${Math.floor(start)}s.${format === 'mp3' ? 'mp3' : 'mp4'}`;
+      const encodedFileName = encodeURIComponent(fileName).replace(/['()]/g, escape).replace(/\*/g, '%2A');
       const stream = (await import('fs')).createReadStream(filePath);
 
       reply.header('Content-Type', format === 'mp3' ? 'audio/mpeg' : 'video/mp4');
-      reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+      reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodedFileName}`);
       return reply.send(stream);
     } catch (error: any) {
       fastify.log.error(`[Clipping Error] ${error.message}`);
@@ -736,16 +740,19 @@ export async function videoRoutes(fastify: FastifyInstance) {
       const { downloadFullVideo } = await import('../services/clipping.js');
       const filePath = await downloadFullVideo({
         videoId,
+        title: video.title || 'video',
         url: video.url,
         platform: video.platform,
         quality
       });
 
-      const fileName = `${videoId}_full.mp4`;
+      const safeTitle = (video.title || 'video').replace(/[\\/:*?"<>|]/g, '_').trim();
+      const fileName = `${safeTitle}_full.mp4`;
+      const encodedFileName = encodeURIComponent(fileName).replace(/['()]/g, escape).replace(/\*/g, '%2A');
       const stream = (await import('fs')).createReadStream(filePath);
 
       reply.header('Content-Type', 'video/mp4');
-      reply.header('Content-Disposition', `attachment; filename="${fileName}"`);
+      reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodedFileName}`);
       return reply.send(stream);
     } catch (error: any) {
       fastify.log.error(`[Download Error] ${error.message}`);

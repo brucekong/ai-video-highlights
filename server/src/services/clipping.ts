@@ -17,8 +17,16 @@ interface SubtitleItem {
   duration: number; // 毫秒
 }
 
+/**
+ * 过滤文件名非法字符
+ */
+function sanitizeFilename(name: string): string {
+  return name.replace(/[\\/:*?"<>|]/g, '_').trim();
+}
+
 interface ClipOptions {
   videoId: string;
+  title?: string;
   url: string;
   start: number;      // 秒
   duration: number;   // 秒
@@ -79,7 +87,7 @@ function formatTime(seconds: number): string {
 /**
  * 核心剪辑函数
  */
-export async function createVideoClip({ videoId, url, start, duration, platform, subtitles, language, format = 'mp4', burnSubtitles = false }: ClipOptions): Promise<string> {
+export async function createVideoClip({ videoId, title = 'clip', url, start, duration, platform, subtitles, language, format = 'mp4', burnSubtitles = false }: ClipOptions): Promise<string> {
   await fs.ensureDir(CLIPS_DIR);
   
   const end = start + duration;
@@ -88,8 +96,9 @@ export async function createVideoClip({ videoId, url, start, duration, platform,
   const shouldMuxSubs = hasSubs && language !== 'zh' && format === 'mp4' && !burnSubtitles;
   const isMp3 = format === 'mp3';
   
-  // 生成缓存文件名
-  const clipId = `${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldMuxSubs ? '_subs_v2' : ''}${burnSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}`;
+  // 生成更友好的缓存文件名
+  const safeTitle = sanitizeFilename(title);
+  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldMuxSubs ? '_subs_v2' : ''}${burnSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}`;
   const ext = isMp3 ? 'mp3' : 'mp4';
   const outputPath = path.join(CLIPS_DIR, `${clipId}.${ext}`);
 
@@ -204,10 +213,11 @@ export async function createVideoClip({ videoId, url, start, duration, platform,
 /**
  * 下载完整视频
  */
-export async function downloadFullVideo({ videoId, url, platform, quality = '1080' }: { videoId: string, url: string, platform: string, quality?: string }): Promise<string> {
+export async function downloadFullVideo({ videoId, title = 'video', url, platform, quality = '1080' }: { videoId: string, title?: string, url: string, platform: string, quality?: string }): Promise<string> {
   await fs.ensureDir(CLIPS_DIR);
   
-  const outputPath = path.join(CLIPS_DIR, `${videoId}_full.mp4`);
+  const safeTitle = sanitizeFilename(title);
+  const outputPath = path.join(CLIPS_DIR, `${safeTitle}_${videoId}_full.mp4`);
 
   if (await fs.pathExists(outputPath)) {
     return outputPath;

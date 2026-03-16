@@ -118,7 +118,7 @@ export async function createVideoClip({ videoId, url, start, duration, platform,
          await fs.writeFile(srtPath, srtContent);
          // 替换反斜杠和冒号防止 Windows/FFmpeg 路径解析错误
          const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-         await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "subtitles=${safeSrtPath}:force_style='Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=10'" -c:v libx264 -preset ultrafast -c:a copy "${outputPath}"`);
+         await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "subtitles=${safeSrtPath}:force_style='Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=10'" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
          return outputPath;
       }
       
@@ -172,7 +172,7 @@ export async function createVideoClip({ videoId, url, start, duration, platform,
          const srtContent = generateSrt(subtitles!, 0); // 在线切出来的本身就是从 0 开始的
          await fs.writeFile(srtPath, srtContent);
          const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-         await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "subtitles=${safeSrtPath}:force_style='Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=10'" -c:v libx264 -preset ultrafast -c:a copy "${outputPath}"`);
+         await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "subtitles=${safeSrtPath}:force_style='Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=10'" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
          return outputPath;
       }
     }
@@ -237,7 +237,14 @@ export async function downloadFullVideo({ videoId, url, platform, quality = '108
     const tempPath = path.join(CLIPS_DIR, `${videoId}_full_temp.mp4`);
     if (await fs.pathExists(outputPath)) {
       await fs.move(outputPath, tempPath);
-      await execAsync(`ffmpeg -y -i "${tempPath}" -c copy -movflags faststart "${outputPath}"`);
+      const isHighRes = quality === '1440' || quality === '2160' || quality === 'best';
+      if (isHighRes) {
+        console.log(`[Full Download] High-res detected, transcoding to H.264 for compatibility...`);
+        // 2K/4K 强制转码，确保 H.264 + YUV420P，否则微信无法播放
+        await execAsync(`ffmpeg -y -i "${tempPath}" -c:v libx264 -preset superfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
+      } else {
+        await execAsync(`ffmpeg -y -i "${tempPath}" -c copy -movflags faststart "${outputPath}"`);
+      }
       await fs.remove(tempPath);
     }
 

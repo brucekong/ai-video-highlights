@@ -145,6 +145,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
                   items: Schemas.TakeawayItem,
                 },
                 mindmap: { type: 'string', nullable: true, description: '视频结构脑图 Markdown' },
+                videoDescription: { type: 'string', nullable: true },
+                videoHashtags: { type: 'string', nullable: true },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 transcript: {
                   type: 'array',
@@ -190,6 +192,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
       data: {
         videoTitle: video.title,
         mindmap: video.mindmap,
+        videoDescription: video.videoDescription,
+        videoHashtags: video.videoHashtags,
         isIndexed,
         takeaways: video.takeaways.map((t) => ({
           id: t.id,

@@ -15,6 +15,8 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
   "title": "视频的简短标题",
   "category": "视频分类（如：技术、职场、财商、生活、其它）",
   "tags": ["标签1", "标签2", "标签3"],
+  "video_description": "一段吸引人的视频简介，适合发布在视频号、小红书等社交平台，需包含视频核心价值，字数约 100 字左右",
+  "video_hashtags": "#话题1 #话题2 #话题3",
   "takeaways": [
     {
       "title": "要点标题（简洁有力，10-20个字）",
@@ -36,8 +38,10 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
 7. 如果转录文本是英文，请将标题和摘要翻译成中文
 8. 根据内容判定一个最准确的分类（建议：技术、职场、教育、自媒体、财商、人文、生活、运动、其它）
 9. 提取 3-5 个核心关键词作为标签
-10. 生成一份完整的视频结构脑图Markdown文本，使用层级标题（# 为根，## 为二级，### 为三级），确保能够被 Markmap 渲染
-11. 只返回 JSON，不要有任何其他文字或 markdown 标记`
+10. 给出一个适合视频号（微信视频号）发布的视频描述，语气要有吸引力，概括视频价值
+11. 提取 3-5 个最相关的 #话题（hashtags），以空格分隔
+12. 生成一份完整的视频结构脑图Markdown文本，使用层级标题（# 为根，## 为二级，### 为三级），确保能够被 Markmap 渲染
+13. 只返回 JSON，不要有任何其他文字或 markdown 标记`
 ;
 
 // 重试配置
@@ -59,7 +63,7 @@ function sleep(ms: number): Promise<void> {
 export async function analyzeTranscript(
   formattedTranscript: string,
   maxDurationSeconds?: number,
-): Promise<{ title: string; takeaways: AITakeaway[]; mindmap: string; category?: string; tags?: string[] }> {
+): Promise<{ title: string; takeaways: AITakeaway[]; mindmap: string; category?: string; tags?: string[]; videoDescription?: string; videoHashtags?: string }> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error('DEEPSEEK_API_KEY is not configured. Please set DEEPSEEK_API_KEY in server/.env');
@@ -124,6 +128,8 @@ export async function analyzeTranscript(
           mindmap: parsed.mindmap || '',
           category: parsed.category || '其它',
           tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+          videoDescription: parsed.video_description || '',
+          videoHashtags: parsed.video_hashtags || '',
         };
       } catch {
         console.error('Failed to parse AI response:', text);

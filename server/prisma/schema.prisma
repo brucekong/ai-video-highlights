@@ -24,6 +24,8 @@ model Video {
   mindmap             String?                @map("mindmap")
   category            String?                @map("category")
   tags                String?                @map("tags")
+  videoDescription    String?                @map("video_description")
+  videoHashtags       String?                @map("video_hashtags")
   embedding           Unsupported("vector(1024)")?
   translatedEmbedding Unsupported("vector(1024)")? @map("translated_embedding")
   chatMessages        ChatMessage[]

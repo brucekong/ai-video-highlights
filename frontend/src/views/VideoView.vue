@@ -39,6 +39,8 @@ const takeaways = ref<Takeaway[]>([]);
 const transcript = ref<TranscriptSegment[]>([]);
 
 const videoTitle = ref('');
+const videoDescription = ref('');
+const videoHashtags = ref('');
 const activeTakeawayIndex = ref<number | null>(null);
 const activeTranscriptIndex = ref<number | null>(null);
 const currentVideoTime = ref(0);
@@ -318,6 +320,12 @@ const pollAnalysisStatus = async () => {
       if (result.data.videoTitle) {
         videoTitle.value = decodeHtml(result.data.videoTitle);
       }
+      if (result.data.videoDescription) {
+        videoDescription.value = decodeHtml(result.data.videoDescription);
+      }
+      if (result.data.videoHashtags) {
+        videoHashtags.value = decodeHtml(result.data.videoHashtags);
+      }
 
       // 2. 更新摘要
       if (result.data.takeaways && result.data.takeaways.length > 0) {
@@ -400,6 +408,8 @@ const handleAnalyze = async () => {
   // 重置视频状态防止上一个视频的进度导致当前页面错乱闪烁
   activeTakeawayIndex.value = null;
   activeTranscriptIndex.value = null;
+  videoDescription.value = '';
+  videoHashtags.value = '';
   currentVideoTime.value = 0;
 
   try {
@@ -426,6 +436,8 @@ const handleAnalyze = async () => {
     if (result.success && result.data) {
       // 核心原则：即便 AI 摘要还没好，也要先把视频和字幕展示出来
       videoTitle.value = decodeHtml(result.data.videoTitle || '');
+      videoDescription.value = decodeHtml(result.data.videoDescription || '');
+      videoHashtags.value = decodeHtml(result.data.videoHashtags || '');
       mindmapRaw.value = result.data.mindmap || '';
 
       const rawTranscript = result.data.transcript || [];
@@ -652,10 +664,20 @@ const parseMessageContent = (content: string) => {
 // 预热聊天记录
 watch(showResult, (val) => {
   if (val) {
-    isAutoScrollEnabled.value = true;
     fetchChatHistory();
   }
 });
+
+// 复制文本到剪贴板
+const copyToClipboard = async (text: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    // 这里如果有个 toast 组件会更好，暂时用 console 或简单反馈
+    alert('已复制到剪贴板');
+  } catch (err) {
+    console.error('Failed to copy: ', err);
+  }
+};
 
 // 点击要点条目跳转到对应时间（timestamp 是秒）
 const jumpToTakeaway = (item: Takeaway, index: number) => {
@@ -1052,6 +1074,37 @@ const takeawayMap = computed(() => {
                       <Play :size="14" />
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <!-- 新增：视频号发布提示区域 -->
+              <div v-if="videoDescription || videoHashtags" class="channels-publish-section animate-fade-in">
+                <div class="divider"></div>
+                <div class="publish-header">
+                  <div class="publish-badge">
+                    <Sparkles :size="12" />
+                    <span>视频号发布辅助</span>
+                  </div>
+                </div>
+                
+                <div v-if="videoDescription" class="publish-item">
+                  <div class="publish-label">
+                    <span>视频描述 / Description</span>
+                    <button class="btn-copy-mini" @click="copyToClipboard(videoDescription)">
+                      <span>点击复制</span>
+                    </button>
+                  </div>
+                  <div class="publish-content">{{ videoDescription }}</div>
+                </div>
+
+                <div v-if="videoHashtags" class="publish-item">
+                  <div class="publish-label">
+                    <span>话题标签 / Hashtags</span>
+                    <button class="btn-copy-mini" @click="copyToClipboard(videoHashtags)">
+                      <span>点击复制</span>
+                    </button>
+                  </div>
+                  <div class="publish-content hashtags">{{ videoHashtags }}</div>
                 </div>
               </div>
 
@@ -2536,6 +2589,86 @@ input::placeholder {
   0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
   70% { box-shadow: 0 0 0 15px rgba(99, 102, 241, 0); }
   100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+}
+
+/* Channels Publish Section */
+.channels-publish-section {
+  padding: 16px 24px 24px;
+  background: rgba(255, 255, 255, 0.02);
+  margin-top: 12px;
+}
+
+.publish-header {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.publish-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.publish-item {
+  margin-bottom: 16px;
+}
+
+.publish-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.publish-content {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.publish-content.hashtags {
+  color: var(--accent-color);
+  font-weight: 500;
+}
+
+.btn-copy-mini {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-copy-mini:hover {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
+
+.divider {
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--border-color), transparent);
+  margin-bottom: 24px;
 }
 </style>
 

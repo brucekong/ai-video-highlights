@@ -47,6 +47,8 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               properties: {
                 videoTitle: { type: 'string', nullable: true },
                 mindmap: { type: 'string', nullable: true },
+                videoDescription: { type: 'string', nullable: true },
+                videoHashtags: { type: 'string', nullable: true },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 takeaways: { type: 'array', items: Schemas.TakeawayItem },
                 transcript: { type: 'array', items: Schemas.TranscriptSegment },
@@ -92,6 +94,8 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
             data: {
               videoTitle: cached.title,
               mindmap: cached.mindmap,
+              videoDescription: cached.videoDescription,
+              videoHashtags: cached.videoHashtags,
               isIndexed,
               takeaways: cached.takeaways,
               transcript: cached.subtitles.map(s => ({
@@ -211,6 +215,8 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                   mindmap: aiResult.mindmap,
                   category: aiResult.category,
                   tags: Array.isArray(aiResult.tags) ? aiResult.tags.join(',') : '',
+                  videoDescription: aiResult.videoDescription,
+                  videoHashtags: aiResult.videoHashtags,
                   duration: maxDurationSeconds
                 }
               });
@@ -343,6 +349,8 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
         data: {
           videoTitle: metadata.title || '',
           mindmap: null,
+          videoDescription: null,
+          videoHashtags: null,
           isIndexed: false, // 明确告知前端处于未索引状态，启动轮询
           takeaways: [],
           transcript: transcript.map((s) => ({

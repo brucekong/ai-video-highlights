@@ -127,7 +127,13 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
          await fs.writeFile(srtPath, srtContent);
          // 替换反斜杠和冒号防止 Windows/FFmpeg 路径解析错误
          const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-         await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "subtitles=${safeSrtPath}:force_style='Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=10'" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
+         
+         // 给视频底部增加 100px 的黑边，将字幕压入黑边中防止遮挡原视频的硬字幕
+         const padFilter = `pad=iw:ih+100:0:0:color=black`;
+         const subStyle = `Fontsize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=20,Alignment=2`;
+         const vfFilter = `${padFilter},subtitles=${safeSrtPath}:force_style='${subStyle}'`;
+
+         await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
          return outputPath;
       }
       
@@ -182,7 +188,12 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
          const srtContent = generateSrt(subtitles!, 0); // 在线切出来的本身就是从 0 开始的
          await fs.writeFile(srtPath, srtContent);
          const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-         await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "subtitles=${safeSrtPath}:force_style='Fontsize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=10'" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
+
+         const padFilter = `pad=iw:ih+100:0:0:color=black`;
+         const subStyle = `Fontsize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=20,Alignment=2`;
+         const vfFilter = `${padFilter},subtitles=${safeSrtPath}:force_style='${subStyle}'`;
+
+         await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
          return outputPath;
       }
     }

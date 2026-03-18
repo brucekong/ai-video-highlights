@@ -188,10 +188,10 @@ export async function translateTranscriptSegments(
   await Promise.all(batches.map(async (batch, batchIdx) => {
     const startIndex = batchIdx * BATCH_SIZE;
 
-    // 将 batch 转化为带索引的对象，防止 LLM 合并或遗漏
-    const batchObj: Record<string, string> = {};
+    // 将 batch 转化为带索引的结构，强制 AI 按结构化返回，避免合并
+    const batchObj: Record<string, { original: string }> = {};
     batch.forEach((text, index) => {
-      batchObj[index] = text;
+      batchObj[index] = { original: text };
     });
 
     let lastError: Error | null = null;
@@ -206,19 +206,18 @@ export async function translateTranscriptSegments(
           messages: [
             {
               role: 'system',
-              content: `你是一个专业的语义翻译专家。你的任务是将用户提供的字幕片段（JSON 对象，键为索引，值为英文片段文本）**逐条**翻译成中文。
+              content: `你是一个影视字幕翻译机器人。你的唯一任务是将用户给出的 JSON 中的 'original' 英文字幕片段，逐条翻译为中文并填入 'translated'。
 
-**⚠️ 核心红线（必须严格遵守）**：
-1. **绝对 1:1 映射**：输入 JSON 中有多少个键，输出 JSON 必须包含完全相同的键。严禁遗漏任何一个键。
-2. **严禁语义合并**：字幕片段可能是断句（例如一句话被切分在两个包里）。你必须**各扫门前雪**，仅翻译当前包内的文本。严禁将下一个包的内容合并到当前包，严禁因为语义连贯性而重组片段。
-3. **原样保留格式**：视频中的 “>>” 符号表示说话人切换，请务必保留在对应包的句首。
-4. **术语与专有名词**：保留专业词汇（如 API, JSON, Gemini），但确保整句意思表达准确。
-5. **纯净 JSON**：只返回一个 JSON 对象，不要包含 Markdown 格式（如 \`\`\`json），不要包含任何解释性文字。
+**💥 致命规则（只要违反一条，系统即刻崩溃，必须 100% 遵守）**：
+1. **严格 1:1 照切**：输入中给定的键（如 "0", "1"），输出必须完全对应。绝对不能少掉任何一个键。
+2. **绝对禁止行间合并**：不管两行上下文多么连贯，不管原句是不是断开了，**严禁**把第 1 行的意思合并翻译到第 0 行！如果第 0 行原文只有 "Because it is"，译文只能是 "因为它是"，绝不能包含第 1 行的词汇！
+3. **消除幻觉**：如果原文字段里没有某个词的意思，你的翻译里就绝不能凭空多出这个意思。
 
-**示例说明**：
-输入：{"0": "I want to go to", "1": "the park today."}
-错误输出（合并）：{"0": "我今天想去公园。", "1": ""}
-正确输出（断句）：{"0": "我想去", "1": "今天的公园。"} (即使不合惯例也要保持结构一致)`,
+**期望的输出格式**（纯 JSON）：
+{
+  "0": { "translated": "翻译内容" },
+  "1": { "translated": "翻译内容" }
+}`,
             },
             {
               role: 'user',
@@ -236,7 +235,8 @@ export async function translateTranscriptSegments(
 
         const parsed = JSON.parse(content);
         batch.forEach((_, index) => {
-          const translated = parsed[index] || parsed[String(index)];
+          const item = parsed[index] || parsed[String(index)];
+          const translated = item?.translated;
           if (translated) {
             results[startIndex + index] = String(translated);
             translatedCount++;

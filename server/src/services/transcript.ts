@@ -31,6 +31,21 @@ function parseNetscapeCookies(content: string): string {
 }
 
 /**
+ * 清除无效和干扰的字幕符号（例如 >>，&gt;，[music] 等听障提示符）
+ */
+export function cleanSubtitleText(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/&gt;/g, '>')
+    .replace(/^>>\s*/, '')
+    .replace(/>>/g, '')
+    .replace(/\[\s*(music|音乐|applause|掌声|laughter|笑声|cheering|欢呼)\s*\]/gi, '')
+    .replace(/\(\s*(music|音乐|applause|掌声|laughter|笑声|cheering|欢呼)\s*\)/gi, '')
+    // 如果清理后剩下的只有标点或者全空，也无所谓，trim() 兜底
+    .trim();
+}
+
+/**
  * 获取 YouTube 视频的字幕/转录文本
  * 策略: 优先级列表尝试 -> 动态探测 fallback
  * @param videoId YouTube video ID
@@ -77,7 +92,7 @@ export async function fetchTranscript(videoId: string): Promise<TranscriptSegmen
         if (transcriptItems && transcriptItems.length > 0) {
           console.log(`✅ [Transcript] Got ${transcriptItems.length} segments (lang=${label}, cookies=${useCookies})`);
           return transcriptItems.map((item) => ({
-            text: item.text,
+            text: cleanSubtitleText(item.text),
             offset: Math.round(item.offset * 1000),
             duration: Math.round(item.duration * 1000),
           }));

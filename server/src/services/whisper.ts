@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import youtubedl from 'youtube-dl-exec';
 import OpenAI from 'openai';
-import { TranscriptSegment } from './transcript.js';
+import { TranscriptSegment, cleanSubtitleText } from './transcript.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -39,14 +39,14 @@ async function transcribeSegment(filePath: string, offsetMs: number): Promise<Tr
 
   if (segments.length === 0 && (response as any).text) {
      return [{
-       text: (response as any).text.trim(),
+       text: cleanSubtitleText((response as any).text),
        offset: offsetMs,
        duration: 0
      }];
   }
 
   return segments.map((seg: any) => ({
-    text: seg.text.trim(),
+    text: cleanSubtitleText(seg.text),
     offset: Math.round(seg.start * 1000) + offsetMs,
     duration: Math.round((seg.end - seg.start) * 1000)
   }));

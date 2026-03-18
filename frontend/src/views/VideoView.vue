@@ -224,11 +224,11 @@ const mergedTranscript = computed(() => {
     const combinedDuration = (seg.offset + seg.duration) - current.offset;
 
     // 判断逻辑：
-    // 1. 如果当前没有标点结尾，强烈建议合并（放宽时长限制到 20 秒，避免切断半句话）。
-    // 2. 如果已经有标点结尾，但当前包还是太短（< 3.5s），允许合入下一条，但严格限制合并后不超过 10 秒。
+    // 1. 如果当前没有标点结尾，则尽量合并以防断句。但为了避免无限堆叠出非常大段的字幕，设定一个 28 秒的硬性时间限制。
+    // 2. 如果已经有标点结尾，且当前包短于 3.5 秒，允许再吃一条（限制在 10 秒以内），保证阅读舒适度。
     let shouldMerge = false;
     if (!hasEndingPunctuation) {
-      shouldMerge = combinedDuration < 20000;
+      shouldMerge = combinedDuration < 28000;
     } else {
       shouldMerge = currentDuration < 3500 && combinedDuration < 10000;
     }

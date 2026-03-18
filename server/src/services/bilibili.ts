@@ -1,4 +1,4 @@
-import { TranscriptSegment } from './transcript.js';
+import { TranscriptSegment, cleanSubtitleText } from './transcript.js';
 
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -131,7 +131,7 @@ export async function fetchBilibiliTranscript(bvid: string): Promise<TranscriptS
 
   // 5. 转换为统一的 TranscriptSegment 格式
   return items.map((item) => ({
-    text: item.content,
+    text: cleanSubtitleText(item.content),
     offset: Math.round(item.from * 1000),           // 秒 → 毫秒
     duration: Math.round((item.to - item.from) * 1000), // 秒 → 毫秒
   }));

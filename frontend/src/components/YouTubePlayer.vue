@@ -152,6 +152,16 @@ defineExpose({
       cancelAnimationFrame(player.loopRequestId);
       player.loopRequestId = null;
     }
+  },
+  pause: () => {
+    if (player && player.pauseVideo) {
+      player.pauseVideo();
+    }
+  },
+  play: () => {
+    if (player && player.playVideo) {
+      player.playVideo();
+    }
   }
 });
 </script>

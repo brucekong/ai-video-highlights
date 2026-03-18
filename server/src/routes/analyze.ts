@@ -366,5 +366,46 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({ error: error.message });
     }
   });
+
+  /**
+   * POST /api/translate
+   * 单独翻译一段或几段字幕
+   */
+  fastify.post('/api/translate', {
+    schema: {
+      tags: ['Analyze'],
+      summary: '翻译字幕片段',
+      description: '将输入的文本片段翻译成中文。',
+      body: {
+        type: 'object',
+        required: ['text'],
+        properties: {
+          text: { type: 'string', description: '待翻译的文本' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            translatedText: { type: 'string' },
+          },
+        },
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (request: FastifyRequest<{ Body: { text: string } }>, reply: FastifyReply) => {
+    const { text } = request.body;
+    try {
+      const results = await translateTranscriptSegments([text]);
+      return reply.send({
+        success: true,
+        translatedText: results[0] || '',
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: error.message });
+    }
+  });
 }
 

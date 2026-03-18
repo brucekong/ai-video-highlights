@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2 } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
 import VideoSearchModal from '../components/VideoSearchModal.vue';
 import VideoClippingDrawer from '../components/VideoClippingDrawer.vue';
 import KnowledgeExportActions from '../components/KnowledgeExportActions.vue';
+import SubtitleEditModal from '../components/SubtitleEditModal.vue';
 import { useAuth } from '../services/auth';
 
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -28,6 +29,8 @@ interface TranscriptSegment {
   translatedText?: string;
   offset: number;   // 毫秒
   duration: number;  // 毫秒
+  sortOrder?: number;
+  sourceIndices?: number[]; // 用于追踪合并前的原始索引 / Used to track original indices before merging
 }
 
 
@@ -50,6 +53,8 @@ const mindmapRaw = ref(''); // 脑图 Markdown
 const showMindMap = ref(false); // 是否显示脑图
 const showSearchModal = ref(false); // 是否显示搜索弹窗
 const showClippingDrawer = ref(false); // 是否显示剪辑抽屉
+const showEditModal = ref(false); // 是否显示字幕编辑弹窗
+const editingSegment = ref<TranscriptSegment | null>(null); // 当前正在编辑的片段
 const clippingRange = ref<{ start?: number, end?: number }>({});
 
 const openClippingDrawer = (start?: number, end?: number) => {
@@ -71,6 +76,83 @@ const isClippingId = ref<string | null>(null); // 正在剪辑的 ID
 const isHoveringTranscript = ref(false);
 const autoScrollPaused = ref(false);
 const isTranslating = ref(false);
+
+// 手动修复相关状态 / Manual fix states
+const editingSegIndex = ref<number | null>(null);
+const editForm = ref({ text: '', translatedText: '' });
+const isSavingEdit = ref(false);
+
+const startEdit = (seg: TranscriptSegment, index: number) => {
+  editingSegIndex.value = index;
+  editingSegment.value = seg;
+  editForm.value = {
+    text: seg.text,
+    translatedText: seg.translatedText || ''
+  };
+  showEditModal.value = true;
+  
+  // 编辑过程中暂停视频 / Pause video during editing
+  if (playerRef.value?.pause) {
+    playerRef.value.pause();
+  }
+};
+
+const cancelEdit = () => {
+  editingSegIndex.value = null;
+  editingSegment.value = null;
+  showEditModal.value = false;
+  
+  // 取消后恢复播放（可选，或者保持暂停由用户决定，此处选择恢复）
+  // if (playerRef.value?.play) playerRef.value.play();
+};
+
+const saveEdit = async (seg: TranscriptSegment) => {
+  if (!videoId.value || !seg.sourceIndices || seg.sourceIndices.length === 0) return;
+  isSavingEdit.value = true;
+
+  try {
+    const firstIdx = seg.sourceIndices[0];
+    const otherIndices = seg.sourceIndices.slice(1);
+
+    // 1. 更新第一段为全量内容 / Update first segment with full content
+    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/subtitles/${transcript.value[firstIdx].sortOrder}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+      body: JSON.stringify({
+        text: editForm.value.text,
+        translatedText: editForm.value.translatedText
+      })
+    });
+
+    if (!res.ok) throw new Error('Failed to update first segment');
+
+    // 2. 将后续段落清空 / Clear subsequent segments
+    for (const idx of otherIndices) {
+       await fetch(`${API_BASE}/api/videos/${videoId.value}/subtitles/${transcript.value[idx].sortOrder}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({ text: '', translatedText: '' })
+      });
+    }
+
+    // 3. 更新本地状态并退出编辑 / Update local state and exit edit
+    transcript.value[firstIdx].text = editForm.value.text;
+    transcript.value[firstIdx].translatedText = editForm.value.translatedText;
+    for (const idx of otherIndices) {
+      transcript.value[idx].text = '';
+      transcript.value[idx].translatedText = '';
+    }
+
+    editingSegIndex.value = null;
+    editingSegment.value = null;
+    showEditModal.value = false;
+  } catch (err) {
+    console.error('Save edit failed:', err);
+    alert('保存失败，请重试');
+  } finally {
+    isSavingEdit.value = false;
+  }
+};
 
 // 标题溢出检测
 const titleRef = ref<HTMLElement | null>(null);
@@ -124,9 +206,11 @@ const mergedTranscript = computed(() => {
 
   for (let i = 0; i < transcript.value.length; i++) {
     const seg = transcript.value[i];
+    // 给原始数据补上 sortOrder (如果后端没传，用 i 兜底)
+    if (seg.sortOrder === undefined) seg.sortOrder = i;
 
     if (!current) {
-      current = { ...seg };
+      current = { ...seg, sourceIndices: [i] };
       continue;
     }
 
@@ -139,8 +223,15 @@ const mergedTranscript = computed(() => {
     const currentDuration = (current.duration || 0);
     const combinedDuration = (seg.offset + seg.duration) - current.offset;
 
-    // 如果满足合并条件 (没结束 或是 还是太短)，则继续合入下一条
-    const shouldMerge = (!hasEndingPunctuation || currentDuration < 3500) && combinedDuration < 10000;
+    // 判断逻辑：
+    // 1. 如果当前没有标点结尾，强烈建议合并（放宽时长限制到 20 秒，避免切断半句话）。
+    // 2. 如果已经有标点结尾，但当前包还是太短（< 3.5s），允许合入下一条，但严格限制合并后不超过 10 秒。
+    let shouldMerge = false;
+    if (!hasEndingPunctuation) {
+      shouldMerge = combinedDuration < 20000;
+    } else {
+      shouldMerge = currentDuration < 3500 && combinedDuration < 10000;
+    }
 
     if (shouldMerge) {
       // 合并原文
@@ -164,16 +255,14 @@ const mergedTranscript = computed(() => {
           transSep = '，';
         }
         current.translatedText = (current.translatedText || '').trim() + transSep + seg.translatedText.trim();
-      } else if (current.translatedText) {
-         // 如果当前已有译文但下一条没有，保持译文状态（哪怕是部分翻译）
-         current.translatedText = current.translatedText;
       }
 
+      current.sourceIndices?.push(i);
       current.duration = combinedDuration;
     } else {
       // 达到断句条件，推入结果并开启新包
       merged.push(current);
-      current = { ...seg };
+      current = { ...seg, sourceIndices: [i] };
     }
   }
 
@@ -359,19 +448,27 @@ const pollAnalysisStatus = async () => {
       if (result.data.transcript && result.data.transcript.length > 0) {
         let hasMissingTrans = false;
         let transCount = 0;
+
+        // 只有当存在需要翻译且尚未翻译的片段时，才保持翻译状态
         transcript.value = transcript.value.map((seg, i) => {
           const updated = result.data.transcript[i];
           if (updated && updated.translatedText) {
             transCount++;
             return { ...seg, translatedText: decodeHtml(updated.translatedText) };
           }
-          if (updated && !updated.translatedText && !/[\u4e00-\u9fa5]/.test(seg.text)) {
-            hasMissingTrans = true;
+          
+          // 判定逻辑：只有当不是中文，且不是噪音（过短或无字母数字），且完全没译文时，才标记为缺失
+          if (updated && !updated.translatedText) {
+            const isChinese = /[\u4e00-\u9fa5]/.test(seg.text);
+            const isNoise = !/[a-zA-Z0-9]/.test(seg.text) || seg.text.trim().length < 2;
+            if (!isChinese && !isNoise) {
+              hasMissingTrans = true;
+            }
           }
           return seg;
         });
 
-        // 严格判定：只有当所有需要翻译的片段都完成后，才停止翻译状态
+        // 判定结果：如果没有明确的缺失片段，标记为翻译完成
         if (!hasMissingTrans) {
           isTranslating.value = false;
         }
@@ -470,7 +567,12 @@ const handleAnalyze = async (force: boolean = false) => {
       // 检查是否需要开启异步翻译状态
       // 判定逻辑：如果不是纯中文视频，且当前译文尚未全量覆盖，则进入翻译状态
       const isChineseVideo = transcript.value.slice(0, 10).every(s => /[\u4e00-\u9fa5]/.test(s.text));
-      const hasMissingTranslation = transcript.value.some(s => !s.translatedText);
+      const hasMissingTranslation = transcript.value.some(s => {
+        if (s.translatedText) return false;
+        const isChinese = /[\u4e00-\u9fa5]/.test(s.text);
+        const isNoise = !/[a-zA-Z0-9]/.test(s.text) || s.text.trim().length < 2;
+        return !isChinese && !isNoise;
+      });
 
       if (!isChineseVideo && hasMissingTranslation) {
         isTranslating.value = true;
@@ -1087,7 +1189,7 @@ const takeawayMap = computed(() => {
                     <span>视频号发布辅助</span>
                   </div>
                 </div>
-                
+
                 <div v-if="videoDescription" class="publish-item">
                   <div class="publish-label">
                     <span>视频描述 / Description</span>
@@ -1210,6 +1312,9 @@ const takeawayMap = computed(() => {
                     <div class="original-text" :class="{ 'has-translation': isBilingual && seg.translatedText }">{{ seg.text }}</div>
                   </div>
                   <div class="seg-actions">
+                    <button class="btn-loop-action" @click.stop="startEdit(seg, index)" title="修正字幕或翻译">
+                      <Edit2 :size="14" />
+                    </button>
                     <button
                       class="btn-loop-action"
                       :class="{ 'active': selectedLoop?.id === 'seg-' + index }"
@@ -1325,6 +1430,15 @@ const takeawayMap = computed(() => {
           :video-title="videoTitle"
           @close="showSearchModal = false"
           @seek="handleSeek"
+        />
+
+        <SubtitleEditModal
+          :show="showEditModal"
+          :segment="editingSegment"
+          :is-bilingual="isBilingual"
+          :is-saving="isSavingEdit"
+          @close="cancelEdit"
+          @save="(data) => { editForm = data; saveEdit(editingSegment!) }"
         />
       </Teleport>
     </div>
@@ -2095,7 +2209,7 @@ input::placeholder {
   font-weight: 500;
   line-height: 1.4;
   /* 核心修复：强制宽度由内容决定，防止被父容器挤压 */
-  width: max-content; 
+  width: max-content;
   min-width: 60px;
   max-width: 280px;
   white-space: normal;

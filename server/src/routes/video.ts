@@ -709,61 +709,93 @@ export async function videoRoutes(fastify: FastifyInstance) {
   });
 
   /**
-   * GET /api/videos/:videoId/download
-   * 下载完整视频
+   * PUT /api/videos/:videoId/subtitles/:sortOrder
+   * 手动更新/修复某一条字幕及翻译
    */
-  fastify.get('/api/videos/:videoId/download', {
+  fastify.put('/api/videos/:videoId/subtitles/:sortOrder', {
     schema: {
       tags: ['Videos'],
-      summary: '下载完整视频',
-      description: '下载该视频的完整 MP4 文件。',
+      summary: '手动修复字幕和翻译',
+      description: '手动更新特定顺序的字幕原文或翻译内容，并自动重新生成该片段的向量索引。',
       params: {
         type: 'object',
-        required: ['videoId'],
+        required: ['videoId', 'sortOrder'],
         properties: {
-          videoId: { type: 'string' }
+          videoId: { type: 'string' },
+          sortOrder: { type: 'integer' }
+        }
+      },
+      body: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          translatedText: { type: 'string' }
         }
       },
       response: {
-        200: { type: 'string', format: 'binary' },
+        200: Schemas.SuccessMessage,
         404: Schemas.ErrorResponse,
         500: Schemas.ErrorResponse,
       }
     }
   }, async (
-    request: FastifyRequest<{ Params: { videoId: string }, Querystring: { quality?: string } }>,
+    request: FastifyRequest<{ Params: { videoId: string, sortOrder: number }; Body: { text?: string; translatedText?: string } }>,
     reply: FastifyReply
   ) => {
-    const { videoId } = request.params;
-    const { quality = '1080' } = request.query;
-
-    const video = await prisma.video.findUnique({ where: { videoId } });
-    if (!video) return reply.status(404).send({ error: '视频不存在' });
+    const { videoId, sortOrder } = request.params;
+    const { text, translatedText } = request.body;
 
     try {
-      const { downloadFullVideo } = await import('../services/clipping.js');
-      const filePath = await downloadFullVideo({
-        videoId,
-        title: video.title || 'video',
-        url: video.url,
-        platform: video.platform,
-        quality
+      // 1. 获取旧数据确认存在
+      const subtitle = await prisma.subtitle.findFirst({
+        where: { videoId, sortOrder: Number(sortOrder) }
       });
 
-      const safeTitle = (video.title || 'video').replace(/[\\/:*?"<>|]/g, '_').trim();
-      const fileName = `${safeTitle}_full.mp4`;
-      const encodedFileName = encodeURIComponent(fileName).replace(/['()]/g, escape).replace(/\*/g, '%2A');
-      const stream = (await import('fs')).createReadStream(filePath);
+      if (!subtitle) return reply.status(404).send({ error: '字幕片段不存在' });
 
-      reply.header('Content-Type', 'video/mp4');
-      reply.header('Content-Disposition', `attachment; filename*=UTF-8''${encodedFileName}`);
-      return reply.send(stream);
+      // 2. 更新数据库
+      const updateData: any = {};
+      if (text !== undefined) updateData.text = text;
+      if (translatedText !== undefined) updateData.translatedText = translatedText;
+
+      await prisma.subtitle.updateMany({
+        where: { videoId, sortOrder: Number(sortOrder) },
+        data: updateData
+      });
+
+      // 3. 异步重构向量（由于是单条，速度极快，不使用 backgroundTask 也可以，但为了接口性能还是异步）
+      const reindexSingle = async () => {
+        try {
+          const { getEmbedding } = await import('../services/ai.js');
+          if (text) {
+             const vec = await getEmbedding(text);
+             await prisma.$executeRawUnsafe(
+               `UPDATE subtitles SET "embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+               `[${vec.join(',')}]`,
+               videoId,
+               Number(sortOrder)
+             );
+          }
+          if (translatedText) {
+             const transVec = await getEmbedding(translatedText);
+             await prisma.$executeRawUnsafe(
+               `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+               `[${transVec.join(',')}]`,
+               videoId,
+               Number(sortOrder)
+             );
+          }
+        } catch (err) {
+          console.error(`[Manual Re-index Failed] ${videoId}-${sortOrder}:`, err);
+        }
+      };
+      
+      reindexSingle();
+
+      return reply.send({ success: true, message: '字幕已更新并重新索引' });
     } catch (error: any) {
-      fastify.log.error(`[Download Error] ${error.message}`);
-      return reply.status(500).send({
-        error: '视频下载失败',
-        message: error.message
-      });
+      fastify.log.error(error);
+      return reply.status(500).send({ error: '更新失败', message: error.message });
     }
   });
 }

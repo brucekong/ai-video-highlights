@@ -393,7 +393,7 @@ const pollAnalysisStatus = async () => {
 
 
 // 调用后端 AI 分析接口
-const handleAnalyze = async () => {
+const handleAnalyze = async (force: boolean = false) => {
   await waitForAuth(); // 等待认证初始化完成
   if (!checkLogin()) return; // 检查登录状态
   if (!videoId.value || !platform.value) return;
@@ -423,6 +423,7 @@ const handleAnalyze = async () => {
         videoId: videoId.value,
         url: videoUrl.value,
         platform: platform.value,
+        forceRefresh: force,
       }),
     });
 
@@ -911,7 +912,7 @@ const takeawayMap = computed(() => {
            </div>
            <h2>分析失败</h2>
            <p>{{ errorMsg }}</p>
-           <button class="btn-primary" style="margin-top: 20px;" @click="handleAnalyze">
+           <button class="btn-primary" style="margin-top: 20px;" @click="handleAnalyze()">
              <Sparkles :size="18" class="icon" />
              <span>重试</span>
            </button>
@@ -1160,6 +1161,18 @@ const takeawayMap = computed(() => {
                       <Loader2 :size="12" class="spin" />
                       <span>正在翻译中文...</span>
                     </div>
+                    <div class="tooltip-wrapper">
+                      <button
+                        class="btn-search-in-video"
+                        style="width: 32px; padding: 0;"
+                        @click="handleAnalyze(true)"
+                        title="重新分析：如果翻译或字幕错位，请尝试此操作"
+                      >
+                        <RefreshCw :size="14" :class="{ 'spin': isLoading }" />
+                      </button>
+                      <div class="custom-tooltip">强制重新分析并翻译该视频</div>
+                    </div>
+                    <div class="sidebar-divider"></div>
                     <button
                       v-if="hasBilingualData"
                       class="toggle-bilingual-btn"

@@ -229,8 +229,20 @@ const downloadFullVideo = async () => {
     });
 
     if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.message || '下载失败');
+      let message = '下载失败';
+      const contentType = response.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        const err = await response.json();
+        message = err.message || err.error || message;
+      } else {
+        const text = await response.text();
+        if (text) {
+          message = text;
+        }
+      }
+
+      throw new Error(message);
     }
 
     const blob = await response.blob();

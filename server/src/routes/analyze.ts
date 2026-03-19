@@ -6,6 +6,7 @@ import { analyzeTranscript, translateTranscriptSegments, getEmbedding, getEmbedd
 import { fallbackToWhisper } from '../services/whisper.js';
 import { fetchVideoMetadata } from '../services/metadata.js';
 import { containsSensitiveContent } from '../services/safety.js';
+import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
 import { Schemas } from '../docs/openapi.js';
 import { getUserId } from '../utils/auth.js';
 
@@ -50,6 +51,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
+                transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
                 takeaways: { type: 'array', items: Schemas.TakeawayItem },
                 transcript: { type: 'array', items: Schemas.TranscriptSegment },
               },
@@ -70,10 +72,12 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           include: {
             takeaways: { orderBy: { sortOrder: 'asc' } },
             subtitles: { orderBy: { sortOrder: 'asc' } },
+            subtitleCues: { orderBy: { sortOrder: 'asc' } },
           },
         });
 
         if (cached && cached.subtitles.length > 0) {
+          const transcript = await getPreferredTranscriptForVideo(prisma, videoId);
           const userId = getUserId(request);
           if (userId) {
             await prisma.userHistory.upsert({
@@ -97,13 +101,9 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               videoDescription: cached.videoDescription,
               videoHashtags: cached.videoHashtags,
               isIndexed,
+              transcriptSource: cached.subtitleCues.length > 0 ? 'cue' : 'raw',
               takeaways: cached.takeaways,
-              transcript: cached.subtitles.map(s => ({
-                text: s.text,
-                translatedText: s.translatedText,
-                offset: s.offset,
-                duration: s.duration,
-              })),
+              transcript,
             },
           });
         }
@@ -159,6 +159,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           await tx.subtitle.createMany({
             data: transcript.map((seg, i) => ({ videoId, text: seg.text, offset: seg.offset, duration: seg.duration, sortOrder: i })),
           });
+          await rebuildSubtitleCuesForVideo(tx, videoId);
         }
       });
 
@@ -312,6 +313,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                  console.error(`[Background Task] Title translation failed:`, titleErr);
                }
                console.log(`[Background] Stage 3: Translation and secondary indexing fully completed.`);
+               await rebuildSubtitleCuesForVideo(prisma, videoId);
              } catch (err) {
                console.error(`[Background Task] Stage 3 (Translation Flow) encountered fatal error:`, err);
              }
@@ -331,6 +333,8 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
 
       // 触发后台任务，不等待
       backgroundTask();
+      const initialTranscript = await getPreferredTranscriptForVideo(prisma, videoId);
+      const hasInitialCues = await prisma.subtitleCue.count({ where: { videoId } });
 
       const userId = getUserId(request);
       if (userId) {
@@ -352,13 +356,9 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           videoDescription: null,
           videoHashtags: null,
           isIndexed: false, // 明确告知前端处于未索引状态，启动轮询
+          transcriptSource: hasInitialCues > 0 ? 'cue' : 'raw',
           takeaways: [],
-          transcript: transcript.map((s) => ({
-            text: s.text,
-            translatedText: null,
-            offset: s.offset,
-            duration: s.duration,
-          })),
+          transcript: initialTranscript,
         },
       });
     } catch (error: any) {
@@ -408,4 +408,3 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
     }
   });
 }
-

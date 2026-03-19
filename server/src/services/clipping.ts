@@ -17,6 +17,75 @@ interface SubtitleItem {
   duration: number; // 毫秒
 }
 
+interface SrtOptions {
+  translatedOnly?: boolean;
+}
+
+function mergeSubtitlesForExport(subtitles: SubtitleItem[]): SubtitleItem[] {
+  const normalized = subtitles.filter((s) => (s.text || '').trim() || (s.translatedText || '').trim());
+  if (normalized.length === 0) return [];
+
+  const merged: SubtitleItem[] = [];
+  let current: SubtitleItem | null = null;
+
+  for (const seg of normalized) {
+    if (!current) {
+      current = { ...seg };
+      continue;
+    }
+
+    const lastChar = (current.text || '').trim().slice(-1);
+    const hasEndingPunctuation = /[.?!。？！]/.test(lastChar);
+    const currentDuration = current.duration || 0;
+    const combinedDuration = (seg.offset + seg.duration) - current.offset;
+
+    let shouldMerge = false;
+    if (!hasEndingPunctuation) {
+      shouldMerge = combinedDuration < 28000;
+    } else {
+      shouldMerge = currentDuration < 3500 && combinedDuration < 10000;
+    }
+
+    if (!shouldMerge) {
+      merged.push(current);
+      current = { ...seg };
+      continue;
+    }
+
+    const isChinese = /[\u4e00-\u9fa5]/.test(seg.text);
+    const lastTextChar = (current.text || '').trim().slice(-1);
+    const hasAnyPunc = /[.,?!，。？！、;；]/.test(lastTextChar);
+    const textSep = hasAnyPunc ? ' ' : (isChinese ? '，' : ' ');
+    current.text = `${(current.text || '').trim()}${textSep}${(seg.text || '').trim()}`.trim();
+
+    if (seg.translatedText) {
+      const lastTransChar = (current.translatedText || '').trim().slice(-1);
+      const hasTransPunc = /[.,?!，。？！、;；]/.test(lastTransChar);
+      const transSep = current.translatedText && !hasTransPunc ? '，' : '';
+      current.translatedText = `${(current.translatedText || '').trim()}${transSep}${seg.translatedText.trim()}`.trim();
+    }
+
+    current.duration = combinedDuration;
+  }
+
+  if (current) {
+    merged.push(current);
+  }
+
+  return merged;
+}
+
+interface FullDownloadOptions {
+  videoId: string;
+  title?: string;
+  url: string;
+  platform: string;
+  quality?: string;
+  subtitles?: SubtitleItem[];
+  subtitlesAreCues?: boolean;
+  language?: string;
+}
+
 /**
  * 过滤文件名非法字符
  */
@@ -32,6 +101,7 @@ interface ClipOptions {
   duration: number;   // 秒
   platform: string;
   subtitles?: SubtitleItem[];
+  subtitlesAreCues?: boolean;
   language?: string;
   format?: string;
   burnSubtitles?: boolean;
@@ -53,23 +123,49 @@ function formatSrtTime(totalSeconds: number): string {
 /**
  * 将字幕数组转换为 SRT 文本
  */
-function generateSrt(subtitles: SubtitleItem[], startTimeSec: number): string {
+function generateSrt(subtitles: SubtitleItem[], startTimeSec: number, options: SrtOptions = {}): string {
   return subtitles
     .map((s, i) => {
       const start = (s.offset / 1000) - startTimeSec;
-      const end = ((s.offset + s.duration) / 1000) - startTimeSec;
+      const rawEnd = ((s.offset + s.duration) / 1000) - startTimeSec;
+      const nextStart = i < subtitles.length - 1
+        ? (subtitles[i + 1].offset / 1000) - startTimeSec
+        : rawEnd;
+      // 避免相邻字幕时间重叠，导致画面上同时出现两条中文字幕
+      const end = Math.max(start + 0.1, Math.min(rawEnd, nextStart - 0.05));
       
       // 过滤掉不在片段范围内的字幕
-      if (end <= 0) return null;
-      
-      const text = s.translatedText 
-        ? `${s.translatedText}\n${s.text}` // 双语
-        : s.text;
+      if (end <= 0 || end <= start) return null;
+
+      const text = options.translatedOnly
+        ? (s.translatedText || s.text)
+        : (s.translatedText ? `${s.translatedText}\n${s.text}` : s.text);
         
       return `${i + 1}\n${formatSrtTime(start)} --> ${formatSrtTime(end)}\n${text}\n`;
     })
     .filter(Boolean)
     .join('\n');
+}
+
+function buildHardSubtitleFilter(srtPath: string): string {
+  const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
+  const padFilter = 'pad=iw:ih+140:0:0:color=black';
+  const subStyle = 'Fontsize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=8,Alignment=2';
+  return `${padFilter},subtitles=${safeSrtPath}:force_style='${subStyle}'`;
+}
+
+async function findCachedFullVideoPath(videoId: string): Promise<string | null> {
+  const preferredLegacyPath = path.join(CLIPS_DIR, `${videoId}_full.mp4`);
+  if (await fs.pathExists(preferredLegacyPath)) {
+    return preferredLegacyPath;
+  }
+
+  const files = await fs.readdir(CLIPS_DIR).catch(() => []);
+  const match = files.find((file) =>
+    file.includes(`_${videoId}_full_`) && file.endsWith('.mp4')
+  );
+
+  return match ? path.join(CLIPS_DIR, match) : null;
 }
 
 /**
@@ -87,18 +183,22 @@ function formatTime(seconds: number): string {
 /**
  * 核心剪辑函数
  */
-export async function createVideoClip({ videoId, title = 'clip', url, start, duration, platform, subtitles, language, format = 'mp4', burnSubtitles = false }: ClipOptions): Promise<string> {
+export async function createVideoClip({ videoId, title = 'clip', url, start, duration, platform, subtitles, subtitlesAreCues = false, language, format = 'mp4', burnSubtitles = false }: ClipOptions): Promise<string> {
   await fs.ensureDir(CLIPS_DIR);
   
   const end = start + duration;
   const hasSubs = subtitles && subtitles.length > 0;
-  // 是否需要制作软字幕(只在你选择mp4且不硬字幕且非中文时产生软字幕)
-  const shouldMuxSubs = hasSubs && language !== 'zh' && format === 'mp4' && !burnSubtitles;
+  const mergedSubtitles = subtitlesAreCues
+    ? (subtitles || []).filter((s) => (s.text || '').trim() || (s.translatedText || '').trim())
+    : mergeSubtitlesForExport(subtitles || []);
+  const hasTranslatedSubs = mergedSubtitles.some((s) => s.translatedText && s.translatedText.trim());
+  // 英文视频切片统一输出中文字幕硬字幕
+  const shouldBurnTranslatedSubtitles = format === 'mp4' && language !== 'zh' && hasTranslatedSubs;
   const isMp3 = format === 'mp3';
   
   // 生成更友好的缓存文件名
   const safeTitle = sanitizeFilename(title);
-  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldMuxSubs ? '_subs_v2' : ''}${burnSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}`;
+  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldBurnTranslatedSubtitles ? '_burned_zh_v4' : ''}${burnSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}`;
   const ext = isMp3 ? 'mp3' : 'mp4';
   const outputPath = path.join(CLIPS_DIR, `${clipId}.${ext}`);
 
@@ -107,8 +207,8 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
   }
 
   // ==== 优化 1：尝试寻找本地是否存在完整版视频文件 ====
-  const fullVideoPath = path.join(CLIPS_DIR, `${videoId}_full.mp4`);
-  const hasLocalFullVideo = await fs.pathExists(fullVideoPath);
+  const fullVideoPath = await findCachedFullVideoPath(videoId);
+  const hasLocalFullVideo = Boolean(fullVideoPath);
   
   const tempRawPath = path.join(os.tmpdir(), `raw_${clipId}.mp4`);
   const srtPath = path.join(os.tmpdir(), `${clipId}.srt`);
@@ -121,18 +221,10 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
         return outputPath;
       }
       
-      if (burnSubtitles && hasSubs) {
-         // 硬字幕需要重新编码
-         const srtContent = generateSrt(subtitles!, start);
+      if (shouldBurnTranslatedSubtitles) {
+         const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
          await fs.writeFile(srtPath, srtContent);
-         // 替换反斜杠和冒号防止 Windows/FFmpeg 路径解析错误
-         const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-         
-         // 给视频底部增加 100px 的黑边，将字幕压入黑边中防止遮挡原视频的硬字幕
-         const padFilter = `pad=iw:ih+100:0:0:color=black`;
-         const subStyle = `Fontsize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=20,Alignment=2`;
-         const vfFilter = `${padFilter},subtitles=${safeSrtPath}:force_style='${subStyle}'`;
-
+         const vfFilter = buildHardSubtitleFilter(srtPath);
          await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
          return outputPath;
       }
@@ -183,28 +275,18 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
       }
       
       // 在线提取下处理硬字幕
-      if (burnSubtitles && hasSubs && !isMp3) {
-         console.log(`[Clipping] Burning subtitles...`);
-         const srtContent = generateSrt(subtitles!, 0); // 在线切出来的本身就是从 0 开始的
+      if (shouldBurnTranslatedSubtitles) {
+         console.log(`[Clipping] Burning translated subtitles...`);
+         const srtContent = generateSrt(mergedSubtitles, 0, { translatedOnly: true });
          await fs.writeFile(srtPath, srtContent);
-         const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-
-         const padFilter = `pad=iw:ih+100:0:0:color=black`;
-         const subStyle = `Fontsize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=20,Alignment=2`;
-         const vfFilter = `${padFilter},subtitles=${safeSrtPath}:force_style='${subStyle}'`;
+         const vfFilter = buildHardSubtitleFilter(srtPath);
 
          await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
          return outputPath;
       }
     }
  
-    if (shouldMuxSubs && !isMp3 && !burnSubtitles) {
-      // 在线拉取的 raw 往往时间戳已经是从 0 开始，所以不用减去 start
-      const srtContent = generateSrt(subtitles!, hasLocalFullVideo ? start : 0);
-      await fs.writeFile(srtPath, srtContent);
-      console.log(`[Clipping] Muxing soft subtitles into ${outputPath}...`);
-      await execAsync(`ffmpeg -y -i "${tempRawPath}" -i "${srtPath}" -c copy -c:s mov_text -metadata:s:s:0 language=chi -disposition:s:0 default "${outputPath}"`);
-    } else if (!isMp3 && !burnSubtitles) {
+    if (!isMp3 && !shouldBurnTranslatedSubtitles) {
       // 最终封装阶段：强制重编码为兼容性最高的 H.264 + YUV420P
       console.log(`[Clipping] Finalizing video with high-compatibility settings...`);
       await execAsync(`ffmpeg -y -i "${tempRawPath}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
@@ -224,15 +306,38 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
 /**
  * 下载完整视频
  */
-export async function downloadFullVideo({ videoId, title = 'video', url, platform, quality = '1080' }: { videoId: string, title?: string, url: string, platform: string, quality?: string }): Promise<string> {
+export async function downloadFullVideo({
+  videoId,
+  title = 'video',
+  url,
+  platform,
+  quality = '1080',
+  subtitles,
+  subtitlesAreCues = false,
+  language,
+}: FullDownloadOptions): Promise<string> {
   await fs.ensureDir(CLIPS_DIR);
-  
+
   const safeTitle = sanitizeFilename(title);
-  const outputPath = path.join(CLIPS_DIR, `${safeTitle}_${videoId}_full.mp4`);
+  const hasTranslatedSubs = Boolean(
+    subtitles?.some((s) => s.translatedText && s.translatedText.trim())
+  );
+  const shouldBurnSubtitles = language !== 'zh' && hasTranslatedSubs;
+  const mergedSubtitles = subtitlesAreCues
+    ? (subtitles || []).filter((s) => (s.text || '').trim() || (s.translatedText || '').trim())
+    : mergeSubtitlesForExport(subtitles || []);
+  const outputPath = path.join(
+    CLIPS_DIR,
+    `${safeTitle}_${videoId}_full_${quality}${shouldBurnSubtitles ? '_burned_zh_v4' : ''}.mp4`
+  );
 
   if (await fs.pathExists(outputPath)) {
     return outputPath;
   }
+
+  const rawPath = path.join(CLIPS_DIR, `${videoId}_full_${quality}_raw.mp4`);
+  const preparedPath = path.join(CLIPS_DIR, `${videoId}_full_${quality}_prepared.mp4`);
+  const srtPath = path.join(os.tmpdir(), `${videoId}_full_${quality}.srt`);
 
   try {
     let formatOption = 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best'; // 优先 H.264
@@ -241,7 +346,7 @@ export async function downloadFullVideo({ videoId, title = 'video', url, platfor
     }
 
     const dlFlags: any = {
-      output: outputPath,
+      output: rawPath,
       format: formatOption,
       mergeOutputFormat: 'mp4',
       noOverwrites: true,
@@ -254,28 +359,38 @@ export async function downloadFullVideo({ videoId, title = 'video', url, platfor
       dlFlags.cookies = cookiePath;
     }
 
-    console.log(`[Full Download] Downloading ${url} to ${outputPath}...`);
+    console.log(`[Full Download] Downloading ${url} to ${rawPath}...`);
     await youtubedl(url, dlFlags);
-    
-    // 增加 faststart 优化
-    const tempPath = path.join(CLIPS_DIR, `${videoId}_full_temp.mp4`);
-    if (await fs.pathExists(outputPath)) {
-      await fs.move(outputPath, tempPath);
+
+    if (await fs.pathExists(rawPath)) {
       const isHighRes = quality === '1440' || quality === '2160' || quality === 'best';
       if (isHighRes) {
         console.log(`[Full Download] High-res detected, transcoding to H.264 for compatibility...`);
         // 2K/4K 强制转码，确保 H.264 + YUV420P，否则微信无法播放
-        await execAsync(`ffmpeg -y -i "${tempPath}" -c:v libx264 -preset superfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
+        await execAsync(`ffmpeg -y -i "${rawPath}" -c:v libx264 -preset superfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${preparedPath}"`);
       } else {
-        await execAsync(`ffmpeg -y -i "${tempPath}" -c copy -movflags faststart "${outputPath}"`);
+        await execAsync(`ffmpeg -y -i "${rawPath}" -c copy -movflags faststart "${preparedPath}"`);
       }
-      await fs.remove(tempPath);
+    }
+
+    if (shouldBurnSubtitles && mergedSubtitles.length > 0) {
+      const srtContent = generateSrt(mergedSubtitles, 0, { translatedOnly: true });
+      await fs.writeFile(srtPath, srtContent);
+      const vfFilter = buildHardSubtitleFilter(srtPath);
+      console.log(`[Full Download] Burning translated subtitles into ${outputPath}...`);
+      await execAsync(`ffmpeg -y -i "${preparedPath}" -vf "${vfFilter}" -c:v libx264 -preset superfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
+    } else {
+      await fs.move(preparedPath, outputPath, { overwrite: true });
     }
 
     return outputPath;
   } catch (error: any) {
     console.error(`❌ [Full Download] Failed:`, error.message);
     throw error;
+  } finally {
+    await fs.remove(rawPath).catch(() => {});
+    await fs.remove(preparedPath).catch(() => {});
+    await fs.remove(srtPath).catch(() => {});
   }
 }
 

@@ -1,8 +1,12 @@
+import { createReadStream } from 'node:fs';
+import path from 'node:path';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import prisma, { Prisma } from '../lib/prisma.js';
 import { Schemas } from '../docs/openapi.js';
 import { getUserId } from '../utils/auth.js';
+import { downloadFullVideo } from '../services/clipping.js';
 import { exportToNotion } from '../services/notion.js';
+import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
 
 export async function videoRoutes(fastify: FastifyInstance) {
   /**
@@ -148,6 +152,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
+                transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
                 transcript: {
                   type: 'array',
                   items: Schemas.TranscriptSegment,
@@ -174,6 +179,9 @@ export async function videoRoutes(fastify: FastifyInstance) {
         subtitles: {
           orderBy: { sortOrder: 'asc' },
         },
+        subtitleCues: {
+          orderBy: { sortOrder: 'asc' },
+        },
       },
     });
 
@@ -184,6 +192,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
     const videoIndexedResult: any[] = await prisma.$queryRaw`SELECT 1 FROM videos WHERE video_id = ${videoId} AND "embedding" IS NOT NULL`;
     const subtitlesIndexedResult: any[] = await prisma.$queryRaw`SELECT 1 FROM subtitles WHERE video_id = ${videoId} AND "embedding" IS NOT NULL LIMIT 1`;
     const isIndexed = videoIndexedResult.length > 0 || subtitlesIndexedResult.length > 0;
+    const transcript = await getPreferredTranscriptForVideo(prisma, videoId);
 
     console.log(`[Video Route] ID: ${videoId}, isIndexed: ${isIndexed} (Video: ${videoIndexedResult.length}, Subtitles: ${subtitlesIndexedResult.length})`);
 
@@ -195,6 +204,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         videoDescription: video.videoDescription,
         videoHashtags: video.videoHashtags,
         isIndexed,
+        transcriptSource: video.subtitleCues.length > 0 ? 'cue' : 'raw',
         takeaways: video.takeaways.map((t) => ({
           id: t.id,
           title: t.title,
@@ -202,16 +212,123 @@ export async function videoRoutes(fastify: FastifyInstance) {
           timestamp: t.timestamp,
           duration: t.duration,
         })),
-        transcript: video.subtitles.map((s) => ({
-          text: s.text,
-          translatedText: s.translatedText,
-          offset: s.offset,
-          duration: s.duration,
-        })),
+        transcript,
         category: video.category,
         tags: video.tags ? video.tags.split(',') : [],
       },
     });
+  });
+
+  /**
+   * GET /api/videos/:videoId/download
+   * 下载完整视频文件
+   */
+  fastify.get('/api/videos/:videoId/download', {
+    schema: {
+      tags: ['Videos'],
+      summary: '下载完整视频',
+      description: '根据视频 ID 下载完整视频文件，支持指定期望清晰度。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      querystring: {
+        type: 'object',
+        properties: {
+          quality: {
+            type: 'string',
+            enum: ['1080', '1440', '2160', 'best'],
+            default: '1080',
+            description: '目标清晰度',
+          },
+        },
+      },
+      response: {
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string }, Querystring: { quality?: '1080' | '1440' | '2160' | 'best' } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+    const quality = request.query.quality || '1080';
+
+    const video = await prisma.video.findUnique({
+      where: { videoId },
+      select: {
+        videoId: true,
+        title: true,
+        url: true,
+        platform: true,
+        subtitles: {
+          orderBy: { sortOrder: 'asc' },
+          select: {
+            text: true,
+            translatedText: true,
+            offset: true,
+            duration: true,
+          },
+        },
+      },
+    });
+
+    if (!video) {
+      return reply.status(404).send({ error: 'Video not found', message: '视频不存在' });
+    }
+
+    try {
+      const subtitleSample = video.subtitles.slice(0, 20);
+      const chineseSubtitleCount = subtitleSample.filter((s) => /[\u4e00-\u9fa5]/.test(s.text)).length;
+      const isChinese = subtitleSample.length > 0
+        ? chineseSubtitleCount >= Math.ceil(subtitleSample.length / 3)
+        : /[\u4e00-\u9fa5]/.test(video.title || '');
+
+      const cueTranscript = await prisma.subtitleCue.findMany({
+        where: { videoId },
+        orderBy: { sortOrder: 'asc' },
+        select: {
+          text: true,
+          translatedText: true,
+          offset: true,
+          duration: true,
+        },
+      });
+      const transcript = cueTranscript.length > 0
+        ? cueTranscript
+        : await getPreferredTranscriptForVideo(prisma, videoId);
+
+      const filePath = await downloadFullVideo({
+        videoId: video.videoId,
+        title: video.title || 'video',
+        url: video.url,
+        platform: video.platform,
+        quality,
+        language: isChinese ? 'zh' : undefined,
+        subtitles: transcript.map((s) => ({
+          text: s.text,
+          translatedText: s.translatedText || undefined,
+          offset: s.offset,
+          duration: s.duration,
+        })),
+        subtitlesAreCues: cueTranscript.length > 0,
+      });
+
+      const filename = path.basename(filePath);
+      reply.header('Content-Type', 'video/mp4');
+      reply.header('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      return reply.send(createReadStream(filePath));
+    } catch (error: any) {
+      request.log.error({ err: error, videoId, quality }, 'Full video download failed');
+      return reply.status(500).send({
+        error: 'Download failed',
+        message: error?.message || '视频下载失败，请稍后重试',
+      });
+    }
   });
 
   /**
@@ -668,9 +785,26 @@ export async function videoRoutes(fastify: FastifyInstance) {
     });
 
     try {
-      // 简单探测视频是否为中文（基于标题或字幕内容）
-      const isChinese = /[\u4e00-\u9fa5]/.test(video.title || '') || subtitles.some(s => /[\u4e00-\u9fa5]/.test(s.text));
+      const subtitleSample = subtitles.slice(0, 20);
+      const chineseSubtitleCount = subtitleSample.filter((s) => /[\u4e00-\u9fa5]/.test(s.text)).length;
+      const isChinese = subtitleSample.length > 0
+        ? chineseSubtitleCount >= Math.ceil(subtitleSample.length / 3)
+        : /[\u4e00-\u9fa5]/.test(video.title || '');
       
+      const clipTranscript = await prisma.subtitleCue.findMany({
+        where: {
+          videoId,
+          offset: { gte: startMs - 2000, lte: endMs + 2000 },
+        },
+        orderBy: { sortOrder: 'asc' },
+        select: {
+          text: true,
+          translatedText: true,
+          offset: true,
+          duration: true,
+        },
+      });
+
       const { createVideoClip } = await import('../services/clipping.js');
       const filePath = await createVideoClip({
         videoId,
@@ -682,17 +816,17 @@ export async function videoRoutes(fastify: FastifyInstance) {
         language: isChinese ? 'zh' : undefined,
         format,
         burnSubtitles,
-        subtitles: subtitles.map(s => ({
+        subtitles: (clipTranscript.length > 0 ? clipTranscript : subtitles).map(s => ({
           text: s.text,
           translatedText: s.translatedText || undefined,
           offset: s.offset,
           duration: s.duration
-        }))
+        })),
+        subtitlesAreCues: clipTranscript.length > 0,
       });
 
       // 提取文件名并进行 RFC 5987 编码以支持中文
-      const safeTitle = (video.title || 'clip').replace(/[\\/:*?"<>|]/g, '_').trim();
-      const fileName = `${safeTitle}_${Math.floor(start)}s.${format === 'mp3' ? 'mp3' : 'mp4'}`;
+      const fileName = path.basename(filePath);
       const encodedFileName = encodeURIComponent(fileName).replace(/['()]/g, escape).replace(/\*/g, '%2A');
       const stream = (await import('fs')).createReadStream(filePath);
 
@@ -762,6 +896,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         where: { videoId, sortOrder: Number(sortOrder) },
         data: updateData
       });
+      await rebuildSubtitleCuesForVideo(prisma, videoId);
 
       // 3. 异步重构向量（由于是单条，速度极快，不使用 backgroundTask 也可以，但为了接口性能还是异步）
       const reindexSingle = async () => {

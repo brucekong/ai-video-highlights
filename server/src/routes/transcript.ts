@@ -3,6 +3,7 @@ import prisma from '../lib/prisma.js';
 import { fetchTranscript, type TranscriptSegment } from '../services/transcript.js';
 import { fetchBilibiliTranscript } from '../services/bilibili.js';
 import { fallbackToWhisper } from '../services/whisper.js';
+import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
 import { Schemas } from '../docs/openapi.js';
 
 interface TranscriptParams {
@@ -43,6 +44,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
               properties: {
                 videoId: { type: 'string' },
                 segmentCount: { type: 'integer' },
+                transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
                 segments: {
                   type: 'array',
                   items: Schemas.TranscriptSegment,
@@ -69,18 +71,16 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
       });
 
       if (cachedSubtitles.length > 0) {
+        const transcript = await getPreferredTranscriptForVideo(prisma, videoId);
+        const cueCount = await prisma.subtitleCue.count({ where: { videoId } });
         return reply.send({
           success: true,
           cached: true,
           data: {
             videoId,
-            segmentCount: cachedSubtitles.length,
-            segments: cachedSubtitles.map((s) => ({
-              text: s.text,
-              translatedText: s.translatedText,
-              offset: s.offset,
-              duration: s.duration,
-            })),
+            segmentCount: transcript.length,
+            transcriptSource: cueCount > 0 ? 'cue' : 'raw',
+            segments: transcript,
           },
         });
       }
@@ -127,19 +127,19 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
           sortOrder: index,
         })),
       });
+      await rebuildSubtitleCuesForVideo(prisma, videoId);
+
+      const preferredTranscript = await getPreferredTranscriptForVideo(prisma, videoId);
+      const cueCount = await prisma.subtitleCue.count({ where: { videoId } });
 
       return reply.send({
         success: true,
         cached: false,
         data: {
           videoId,
-          segmentCount: transcript.length,
-          segments: transcript.map((seg) => ({
-            text: seg.text,
-            translatedText: null, // 新生成的此时还没翻译
-            offset: seg.offset,
-            duration: seg.duration,
-          })),
+          segmentCount: preferredTranscript.length,
+          transcriptSource: cueCount > 0 ? 'cue' : 'raw',
+          segments: preferredTranscript,
         },
       });
     } catch (error: any) {

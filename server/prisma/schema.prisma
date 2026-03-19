@@ -30,6 +30,7 @@ model Video {
   translatedEmbedding Unsupported("vector(1024)")? @map("translated_embedding")
   chatMessages        ChatMessage[]
   subtitles           Subtitle[]
+  subtitleCues        SubtitleCue[]
   takeaways           Takeaway[]
   histories           UserHistory[]
 
@@ -111,4 +112,25 @@ model Subtitle {
   video               Video                  @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
 
   @@map("subtitles")
+}
+
+/// 派生字幕 Cue（用于展示和导出）
+model SubtitleCue {
+  id                   String   @id @default(cuid())
+  videoId              String   @map("video_id")
+  text                 String
+  translatedText       String?  @map("translated_text")
+  offset               Int
+  duration             Int
+  sortOrder            Int      @default(0) @map("sort_order")
+  sourceStartSortOrder Int      @map("source_start_sort_order")
+  sourceEndSortOrder   Int      @map("source_end_sort_order")
+  layoutVersion        Int      @default(1) @map("layout_version")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  video                Video    @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
+
+  @@unique([videoId, sortOrder])
+  @@index([videoId, offset])
+  @@map("subtitle_cues")
 }

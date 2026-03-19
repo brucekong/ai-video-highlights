@@ -23,9 +23,21 @@ const errorMsg = ref('');
 const isLooping = ref(false);
 const showOptions = ref(false);
 const exportFormat = ref<'mp4' | 'mp3'>('mp4');
-const burnSubtitles = ref(false);
+const burnSubtitles = ref(true);
 
 const API_BASE = import.meta.env.VITE_API_URL;
+
+const getFilenameFromDisposition = (value: string | null) => {
+  if (!value) return null;
+
+  const utfMatch = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utfMatch?.[1]) {
+    return decodeURIComponent(utfMatch[1]);
+  }
+
+  const basicMatch = value.match(/filename="?([^"]+)"?/i);
+  return basicMatch?.[1] || null;
+};
 
 // Format seconds to mm:ss
 const formatTime = (seconds: number) => {
@@ -150,8 +162,9 @@ const handleGenerate = async () => {
     const blob = await response.blob();
     const downloadUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
+    const serverFilename = getFilenameFromDisposition(response.headers.get('content-disposition'));
     link.href = downloadUrl;
-    link.download = `${props.videoTitle.slice(0, 20)}_clip_${Math.floor(startTime.value)}s.mp4`;
+    link.download = serverFilename || `${props.videoTitle.slice(0, 20)}_clip_${Math.floor(startTime.value)}s.${exportFormat.value}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -262,7 +275,7 @@ const handleGenerate = async () => {
                 <label class="checkbox-label">
                   <input type="checkbox" v-model="burnSubtitles" />
                   <span class="fake-checkbox"></span>
-                  内嵌 AI 双语字幕 (实验性)
+                  英文视频导出为中文字幕硬字幕
                 </label>
              </div>
            </div>

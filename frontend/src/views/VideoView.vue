@@ -40,6 +40,7 @@ const isLoading = ref(false);
 const showResult = ref(false);
 const takeaways = ref<Takeaway[]>([]);
 const transcript = ref<TranscriptSegment[]>([]);
+const transcriptSource = ref<'raw' | 'cue'>('raw');
 
 const videoTitle = ref('');
 const videoDescription = ref('');
@@ -201,6 +202,13 @@ const handleTranscriptMouseLeave = () => {
 // 智能合并字幕：不再是死板的两两合并，而是根据标点、时长、行数判断，保持语义完整性
 const mergedTranscript = computed(() => {
   if (transcript.value.length === 0) return [];
+  if (transcriptSource.value === 'cue') {
+    return transcript.value.map((seg, i) => ({
+      ...seg,
+      sortOrder: seg.sortOrder ?? i,
+      sourceIndices: seg.sourceIndices && seg.sourceIndices.length > 0 ? seg.sourceIndices : [i],
+    }));
+  }
   const merged: TranscriptSegment[] = [];
   let current: TranscriptSegment | null = null;
 
@@ -274,6 +282,17 @@ const mergedTranscript = computed(() => {
 const hasBilingualData = computed(() => {
   return transcript.value.some(seg => !!seg.translatedText);
 });
+
+const normalizeTranscript = (rawTranscript: any[], source: 'raw' | 'cue') => {
+  transcriptSource.value = source;
+  transcript.value = rawTranscript.map((seg: any, index: number) => ({
+    ...seg,
+    sortOrder: seg.sortOrder ?? index,
+    sourceIndices: Array.isArray(seg.sourceIndices) ? seg.sourceIndices : [seg.sortOrder ?? index],
+    text: decodeHtml(seg.text),
+    translatedText: decodeHtml(seg.translatedText)
+  }));
+};
 
 
 const errorMsg = ref('');
@@ -446,29 +465,18 @@ const pollAnalysisStatus = async () => {
 
       // 5. 更新翻译
       if (result.data.transcript && result.data.transcript.length > 0) {
+        normalizeTranscript(result.data.transcript, result.data.transcriptSource || 'raw');
         let hasMissingTrans = false;
-        let transCount = 0;
-
-        // 只有当存在需要翻译且尚未翻译的片段时，才保持翻译状态
-        transcript.value = transcript.value.map((seg, i) => {
-          const updated = result.data.transcript[i];
-          if (updated && updated.translatedText) {
-            transCount++;
-            return { ...seg, translatedText: decodeHtml(updated.translatedText) };
-          }
-          
-          // 判定逻辑：只有当不是中文，且不是噪音（过短或无字母数字），且完全没译文时，才标记为缺失
-          if (updated && !updated.translatedText) {
-            const isChinese = /[\u4e00-\u9fa5]/.test(seg.text);
-            const isNoise = !/[a-zA-Z0-9]/.test(seg.text) || seg.text.trim().length < 2;
-            if (!isChinese && !isNoise) {
-              hasMissingTrans = true;
-            }
-          }
-          return seg;
-        });
 
         // 判定结果：如果没有明确的缺失片段，标记为翻译完成
+        transcript.value.forEach((seg) => {
+          if (seg.translatedText) return;
+          const isChinese = /[\u4e00-\u9fa5]/.test(seg.text);
+          const isNoise = !/[a-zA-Z0-9]/.test(seg.text) || seg.text.trim().length < 2;
+          if (!isChinese && !isNoise) {
+            hasMissingTrans = true;
+          }
+        });
         if (!hasMissingTrans) {
           isTranslating.value = false;
         }
@@ -539,11 +547,7 @@ const handleAnalyze = async (force: boolean = false) => {
       mindmapRaw.value = result.data.mindmap || '';
 
       const rawTranscript = result.data.transcript || [];
-      transcript.value = rawTranscript.map((seg: any) => ({
-        ...seg,
-        text: decodeHtml(seg.text),
-        translatedText: decodeHtml(seg.translatedText)
-      }));
+      normalizeTranscript(rawTranscript, result.data.transcriptSource || 'raw');
 
       // 处理摘要
       if (result.data.takeaways && result.data.takeaways.length > 0) {
@@ -2376,6 +2380,7 @@ input::placeholder {
   color: var(--text-primary);
   font-weight: 500;
   word-break: break-word;
+  white-space: pre-line;
 }
 
 .original-text {
@@ -2383,6 +2388,7 @@ input::placeholder {
   line-height: 1.4;
   color: var(--text-secondary);
   word-break: break-word;
+  white-space: pre-line;
 }
 
 .original-text.has-translation {
@@ -2798,4 +2804,3 @@ input::placeholder {
   margin-bottom: 24px;
 }
 </style>
-

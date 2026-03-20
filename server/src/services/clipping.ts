@@ -9,6 +9,8 @@ const execAsync = promisify(exec);
 
 // 缓存目录
 const CLIPS_DIR = path.join(process.cwd(), 'cache', 'clips');
+const BURN_SUBTITLE_PAD_HEIGHT = 320;
+const BURN_SUBTITLE_SIDE_MARGIN = 90;
 
 interface SubtitleItem {
   text: string;
@@ -19,6 +21,117 @@ interface SubtitleItem {
 
 interface SrtOptions {
   translatedOnly?: boolean;
+}
+
+function measureBurnTextWidth(text: string): number {
+  let width = 0;
+  for (const char of text) {
+    if (/\s/.test(char)) {
+      width += 0.45;
+    } else if (/[\u4e00-\u9fa5]/.test(char)) {
+      width += 2;
+    } else if (/[A-Z]/.test(char)) {
+      width += 1.15;
+    } else {
+      width += 1;
+    }
+  }
+  return width;
+}
+
+function tokenizeMixedText(text: string): string[] {
+  return text
+    .match(/[\u4e00-\u9fa5]|[A-Za-z0-9']+|[^\s]/g)
+    ?.filter(Boolean) || [];
+}
+
+function joinMixedTokens(tokens: string[]): string {
+  let result = '';
+
+  for (const token of tokens) {
+    const needsSpace =
+      result.length > 0 &&
+      /[A-Za-z0-9']$/.test(result) &&
+      /^[A-Za-z0-9']/.test(token);
+
+    result += needsSpace ? ` ${token}` : token;
+  }
+
+  return result;
+}
+
+function findBestMixedBreakIndex(tokens: string[], targetWidth: number): number {
+  let bestIndex = -1;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let i = 1; i < tokens.length; i++) {
+    const first = joinMixedTokens(tokens.slice(0, i));
+    const second = joinMixedTokens(tokens.slice(i));
+    const firstWidth = measureBurnTextWidth(first);
+    const secondWidth = measureBurnTextWidth(second);
+
+    if (firstWidth > targetWidth * 1.12 || secondWidth > targetWidth * 1.35) {
+      continue;
+    }
+
+    let score = Math.abs(firstWidth - secondWidth);
+    if (firstWidth < targetWidth * 0.72) score += 8;
+    if (secondWidth < targetWidth * 0.45) score += 10;
+    if (/[，。！？；：,.!?]$/.test(first)) score -= 2;
+    if (/^[，。！？；：,.!?]/.test(second)) score += 8;
+    if (/^[A-Za-z0-9']/.test(tokens[i]) && /[A-Za-z0-9']$/.test(tokens[i - 1])) score += 3;
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+
+  if (bestIndex !== -1) {
+    return bestIndex;
+  }
+
+  let accumWidth = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const tokenWidth = measureBurnTextWidth(tokens[i]);
+    if (i > 0) {
+      const preview = joinMixedTokens(tokens.slice(0, i + 1));
+      accumWidth = measureBurnTextWidth(preview);
+    } else {
+      accumWidth = tokenWidth;
+    }
+    if (accumWidth >= targetWidth) {
+      return Math.max(1, i);
+    }
+  }
+
+  return Math.max(1, Math.floor(tokens.length / 2));
+}
+
+function layoutChineseTextForBurn(text: string, maxWidth: number = 20): string {
+  const normalized = text.replace(/\s+/g, '').trim();
+  if (!normalized) return normalized;
+
+  const tokens = tokenizeMixedText(normalized);
+  if (tokens.length < 2 || measureBurnTextWidth(joinMixedTokens(tokens)) <= maxWidth) {
+    return joinMixedTokens(tokens);
+  }
+
+  const breakIndex = findBestMixedBreakIndex(tokens, maxWidth);
+  return `${joinMixedTokens(tokens.slice(0, breakIndex))}\n${joinMixedTokens(tokens.slice(breakIndex))}`;
+}
+
+function formatSubtitleTextForBurn(text: string): string {
+  const normalized = text.trim();
+  if (!normalized) return normalized;
+
+  const chineseCount = (normalized.match(/[\u4e00-\u9fa5]/g) || []).length;
+  const isMostlyChinese = chineseCount >= Math.max(4, Math.floor(normalized.length / 3));
+  if (!isMostlyChinese) {
+    return normalized;
+  }
+
+  return layoutChineseTextForBurn(normalized, 20);
 }
 
 function mergeSubtitlesForExport(subtitles: SubtitleItem[]): SubtitleItem[] {
@@ -137,9 +250,12 @@ function generateSrt(subtitles: SubtitleItem[], startTimeSec: number, options: S
       // 过滤掉不在片段范围内的字幕
       if (end <= 0 || end <= start) return null;
 
-      const text = options.translatedOnly
+      const rawText = options.translatedOnly
         ? (s.translatedText || s.text)
         : (s.translatedText ? `${s.translatedText}\n${s.text}` : s.text);
+      const text = options.translatedOnly
+        ? formatSubtitleTextForBurn(rawText)
+        : rawText;
         
       return `${i + 1}\n${formatSrtTime(start)} --> ${formatSrtTime(end)}\n${text}\n`;
     })
@@ -149,9 +265,47 @@ function generateSrt(subtitles: SubtitleItem[], startTimeSec: number, options: S
 
 function buildHardSubtitleFilter(srtPath: string): string {
   const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
-  const padFilter = 'pad=iw:ih+140:0:0:color=black';
-  const subStyle = 'Fontsize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=0,MarginV=8,Alignment=2';
-  return `${padFilter},subtitles=${safeSrtPath}:force_style='${subStyle}'`;
+  const padFilter = `setpts=PTS-STARTPTS,pad=iw:ih+${BURN_SUBTITLE_PAD_HEIGHT}:0:0:color=black`;
+  const fontName = process.env.SUBTITLE_FONT
+    || (process.platform === 'darwin' ? 'PingFang SC' : process.platform === 'win32' ? 'Microsoft YaHei' : 'Noto Sans CJK SC');
+  const fontsDir = process.platform === 'darwin'
+    ? '/System/Library/Fonts'
+    : process.platform === 'win32'
+      ? 'C\\\\:/Windows/Fonts'
+      : '/usr/share/fonts';
+  const subStyle = `FontName=${fontName},Fontsize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=34,MarginL=${BURN_SUBTITLE_SIDE_MARGIN},MarginR=${BURN_SUBTITLE_SIDE_MARGIN},Alignment=2`;
+  return `${padFilter},subtitles=${safeSrtPath}:fontsdir=${fontsDir}:force_style='${subStyle}'`;
+}
+
+function getSubtitleFontFile(): string {
+  if (process.env.SUBTITLE_FONT_FILE) {
+    return process.env.SUBTITLE_FONT_FILE;
+  }
+
+  if (process.platform === 'darwin') {
+    return '/System/Library/Fonts/PingFang.ttc';
+  }
+
+  if (process.platform === 'win32') {
+    return 'C\\\\:/Windows/Fonts/msyh.ttc';
+  }
+
+  return '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc';
+}
+
+function escapeDrawtextPath(value: string): string {
+  return value.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+}
+
+function escapeDrawtextText(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\\\'")
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/,/g, '\\,')
+    .replace(/\n/g, '\\n');
 }
 
 async function findCachedFullVideoPath(videoId: string): Promise<string | null> {
@@ -198,7 +352,7 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
   
   // 生成更友好的缓存文件名
   const safeTitle = sanitizeFilename(title);
-  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldBurnTranslatedSubtitles ? '_burned_zh_v4' : ''}${burnSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}`;
+  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldBurnTranslatedSubtitles ? '_burned_zh_v21' : ''}${burnSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}`;
   const ext = isMp3 ? 'mp3' : 'mp4';
   const outputPath = path.join(CLIPS_DIR, `${clipId}.${ext}`);
 
@@ -212,8 +366,10 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
   
   const tempRawPath = path.join(os.tmpdir(), `raw_${clipId}.mp4`);
   const srtPath = path.join(os.tmpdir(), `${clipId}.srt`);
+  const subtitleWorkdir = path.join(os.tmpdir(), `subtitle_drawtext_${clipId}`);
 
   try {
+    await fs.ensureDir(subtitleWorkdir);
     if (hasLocalFullVideo) {
       console.log(`[Clipping] Found local full video, fast seeking...`);
       if (isMp3) {
@@ -222,11 +378,11 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
       }
       
       if (shouldBurnTranslatedSubtitles) {
-         const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
-         await fs.writeFile(srtPath, srtContent);
-         const vfFilter = buildHardSubtitleFilter(srtPath);
-         await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
-         return outputPath;
+        const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
+        await fs.writeFile(srtPath, srtContent);
+        const vfFilter = buildHardSubtitleFilter(srtPath);
+        await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
+        return outputPath;
       }
       
       await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -c copy "${tempRawPath}"`);
@@ -276,13 +432,12 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
       
       // 在线提取下处理硬字幕
       if (shouldBurnTranslatedSubtitles) {
-         console.log(`[Clipping] Burning translated subtitles...`);
-         const srtContent = generateSrt(mergedSubtitles, 0, { translatedOnly: true });
-         await fs.writeFile(srtPath, srtContent);
-         const vfFilter = buildHardSubtitleFilter(srtPath);
-
-         await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
-         return outputPath;
+        console.log(`[Clipping] Burning translated subtitles...`);
+        const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
+        await fs.writeFile(srtPath, srtContent);
+        const vfFilter = buildHardSubtitleFilter(srtPath);
+        await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
+        return outputPath;
       }
     }
  
@@ -300,6 +455,7 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
     await fs.remove(tempRawPath).catch(() => {});
     await fs.remove(tempRawPath.replace('.mp4', '.mp3')).catch(() => {});
     await fs.remove(srtPath).catch(() => {});
+    await fs.remove(subtitleWorkdir).catch(() => {});
   }
 }
 
@@ -328,7 +484,7 @@ export async function downloadFullVideo({
     : mergeSubtitlesForExport(subtitles || []);
   const outputPath = path.join(
     CLIPS_DIR,
-    `${safeTitle}_${videoId}_full_${quality}${shouldBurnSubtitles ? '_burned_zh_v4' : ''}.mp4`
+    `${safeTitle}_${videoId}_full_${quality}${shouldBurnSubtitles ? '_burned_zh_v21' : ''}.mp4`
   );
 
   if (await fs.pathExists(outputPath)) {

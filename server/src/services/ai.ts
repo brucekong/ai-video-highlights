@@ -174,10 +174,10 @@ export async function translateTranscriptSegments(
     apiKey,
   });
 
-  const BATCH_SIZE = 100;
   const results: string[] = new Array(texts.length);
   const batches: string[][] = [];
 
+  const BATCH_SIZE = 100;
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     batches.push(texts.slice(i, i + BATCH_SIZE));
   }

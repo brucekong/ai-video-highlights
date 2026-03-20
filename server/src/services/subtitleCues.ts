@@ -1,6 +1,6 @@
 import type { PrismaClient, Prisma } from '@prisma/client';
 
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;
 
 export interface SubtitleCueSource {
   text: string;
@@ -19,124 +19,6 @@ interface SubtitleCueDraft {
   sourceStartSortOrder: number;
   sourceEndSortOrder: number;
   layoutVersion: number;
-}
-
-function measureSubtitleWidth(text: string): number {
-  let width = 0;
-  for (const char of text) {
-    if (/\s/.test(char)) {
-      width += 0.5;
-    } else if (/[\u4e00-\u9fa5]/.test(char)) {
-      width += 2;
-    } else if (/[A-Z]/.test(char)) {
-      width += 1.15;
-    } else {
-      width += 1;
-    }
-  }
-  return width;
-}
-
-function isConnectorWord(word: string): boolean {
-  return /^(a|an|the|to|of|in|on|at|for|from|by|and|or|but|so|if|is|am|are|was|were|be|been|being|it|it's|its|you|your|we|our|they|their|he|she|that|this|these|those|behind|under|over|with)$/i.test(word);
-}
-
-function layoutEnglishText(text: string, maxWidth: number): string {
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  if (!normalized) return normalized;
-  if (measureSubtitleWidth(normalized) <= maxWidth) return normalized;
-
-  const words = normalized.split(' ');
-  if (words.length < 4) return normalized;
-
-  let bestIndex = -1;
-  let bestScore = Number.POSITIVE_INFINITY;
-
-  for (let i = 1; i < words.length - 1; i++) {
-    const first = words.slice(0, i).join(' ');
-    const second = words.slice(i).join(' ');
-    const firstWidth = measureSubtitleWidth(first);
-    const secondWidth = measureSubtitleWidth(second);
-
-    if (firstWidth > maxWidth * 1.25 || secondWidth > maxWidth * 1.25) {
-      continue;
-    }
-
-    let score = Math.abs(firstWidth - secondWidth);
-    if (firstWidth < maxWidth * 0.35 || secondWidth < maxWidth * 0.35) {
-      score += 10;
-    }
-    if (isConnectorWord(words[i - 1])) {
-      score += 6;
-    }
-    if (isConnectorWord(words[i])) {
-      score += 6;
-    }
-    if (/[,:;]$/.test(words[i - 1])) {
-      score -= 1.5;
-    }
-    if (/[.?!]$/.test(words[i - 1])) {
-      score += 4;
-    }
-
-    if (score < bestScore) {
-      bestScore = score;
-      bestIndex = i;
-    }
-  }
-
-  if (bestIndex === -1) {
-    return normalized;
-  }
-
-  return `${words.slice(0, bestIndex).join(' ')}\n${words.slice(bestIndex).join(' ')}`;
-}
-
-function layoutChineseText(text: string, maxChars: number): string {
-  const normalized = text.replace(/\s+/g, '').trim();
-  if (!normalized || normalized.length <= maxChars) return normalized;
-
-  const midpoint = Math.floor(normalized.length / 2);
-  let bestIndex = -1;
-  let bestScore = Number.POSITIVE_INFINITY;
-
-  for (let i = 2; i < normalized.length - 1; i++) {
-    const first = normalized.slice(0, i);
-    const second = normalized.slice(i);
-    if (first.length > maxChars * 1.4 || second.length > maxChars * 1.4) {
-      continue;
-    }
-
-    let score = Math.abs(i - midpoint);
-    if (/[，。！？；：,.!?]$/.test(first)) {
-      score += 3;
-    }
-    if (/^[，。！？；：,.!?]/.test(second)) {
-      score += 6;
-    }
-
-    if (score < bestScore) {
-      bestScore = score;
-      bestIndex = i;
-    }
-  }
-
-  if (bestIndex === -1) {
-    bestIndex = Math.min(maxChars, normalized.length - 1);
-  }
-
-  return `${normalized.slice(0, bestIndex)}\n${normalized.slice(bestIndex)}`;
-}
-
-function applyCueLayout(text: string | undefined): string | undefined {
-  if (!text) return text;
-  const normalized = text.trim();
-  if (!normalized) return normalized;
-
-  const isMostlyChinese = (normalized.match(/[\u4e00-\u9fa5]/g) || []).length >= Math.max(4, Math.floor(normalized.length / 3));
-  return isMostlyChinese
-    ? layoutChineseText(normalized, 18)
-    : layoutEnglishText(normalized, 34);
 }
 
 export function buildSubtitleCues(subtitles: SubtitleCueSource[]): SubtitleCueDraft[] {
@@ -214,8 +96,8 @@ export function buildSubtitleCues(subtitles: SubtitleCueSource[]): SubtitleCueDr
 
   return merged.map((cue, index) => ({
     ...cue,
-    text: applyCueLayout(cue.text) || cue.text,
-    translatedText: applyCueLayout(cue.translatedText) || cue.translatedText,
+    text: cue.text.trim(),
+    translatedText: cue.translatedText?.trim() || cue.translatedText,
     sortOrder: index,
   }));
 }

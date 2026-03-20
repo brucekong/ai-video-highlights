@@ -288,6 +288,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                         }
                       }
                    }
+                   await rebuildSubtitleCuesForVideo(prisma, videoId);
                    console.log(`[Background] Batch ${Math.floor(i / BATCH_SIZE) + 1} updated to DB.`);
                  } catch (batchErr) {
                    console.error(`[Background Task] Translation batch failed at index ${i}:`, batchErr);
@@ -313,7 +314,6 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                  console.error(`[Background Task] Title translation failed:`, titleErr);
                }
                console.log(`[Background] Stage 3: Translation and secondary indexing fully completed.`);
-               await rebuildSubtitleCuesForVideo(prisma, videoId);
              } catch (err) {
                console.error(`[Background Task] Stage 3 (Translation Flow) encountered fatal error:`, err);
              }

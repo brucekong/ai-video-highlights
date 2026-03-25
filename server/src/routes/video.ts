@@ -288,19 +288,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
         ? chineseSubtitleCount >= Math.ceil(subtitleSample.length / 3)
         : /[\u4e00-\u9fa5]/.test(video.title || '');
 
-      const cueTranscript = await prisma.subtitleCue.findMany({
-        where: { videoId },
-        orderBy: { sortOrder: 'asc' },
-        select: {
-          text: true,
-          translatedText: true,
-          offset: true,
-          duration: true,
-        },
-      });
-      const transcript = cueTranscript.length > 0
-        ? cueTranscript
-        : await getPreferredTranscriptForVideo(prisma, videoId);
+      const transcript = await getPreferredTranscriptForVideo(prisma, videoId);
+      const cueCount = await prisma.subtitleCue.count({ where: { videoId } });
 
       const filePath = await downloadFullVideo({
         videoId: video.videoId,
@@ -315,7 +304,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           offset: s.offset,
           duration: s.duration,
         })),
-        subtitlesAreCues: cueTranscript.length > 0,
+        subtitlesAreCues: cueCount > 0,
       });
 
       const filename = path.basename(filePath);
@@ -791,19 +780,11 @@ export async function videoRoutes(fastify: FastifyInstance) {
         ? chineseSubtitleCount >= Math.ceil(subtitleSample.length / 3)
         : /[\u4e00-\u9fa5]/.test(video.title || '');
       
-      const clipTranscript = await prisma.subtitleCue.findMany({
-        where: {
-          videoId,
-          offset: { gte: startMs - 2000, lte: endMs + 2000 },
-        },
-        orderBy: { sortOrder: 'asc' },
-        select: {
-          text: true,
-          translatedText: true,
-          offset: true,
-          duration: true,
-        },
-      });
+      const preferredTranscript = await getPreferredTranscriptForVideo(prisma, videoId);
+      const clipTranscript = preferredTranscript.filter((seg) =>
+        seg.offset >= startMs - 2000 && seg.offset <= endMs + 2000
+      );
+      const cueCount = await prisma.subtitleCue.count({ where: { videoId } });
 
       const { createVideoClip } = await import('../services/clipping.js');
       const filePath = await createVideoClip({
@@ -822,7 +803,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           offset: s.offset,
           duration: s.duration
         })),
-        subtitlesAreCues: clipTranscript.length > 0,
+        subtitlesAreCues: cueCount > 0,
       });
 
       // 提取文件名并进行 RFC 5987 编码以支持中文
@@ -931,6 +912,126 @@ export async function videoRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       fastify.log.error(error);
       return reply.status(500).send({ error: '更新失败', message: error.message });
+    }
+  });
+
+  fastify.put('/api/videos/:videoId/subtitles', {
+    schema: {
+      tags: ['Videos'],
+      summary: '修复展示字幕 cue',
+      description: '仅更新展示/烧录使用的 cue override，不修改原始字幕。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string' }
+        }
+      },
+      body: {
+        type: 'object',
+        properties: {
+          cueSortOrder: { type: 'integer' },
+          sourceSortOrders: {
+            type: 'array',
+            items: { type: 'integer' },
+            minItems: 1,
+          },
+          text: { type: 'string' },
+          translatedText: { type: 'string' }
+        }
+      },
+      response: {
+        200: Schemas.SuccessMessage,
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      }
+    }
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { cueSortOrder?: number; sourceSortOrders?: number[]; text?: string; translatedText?: string } }>,
+    reply: FastifyReply
+  ) => {
+    const { videoId } = request.params;
+    const { cueSortOrder, sourceSortOrders = [], text, translatedText } = request.body;
+
+    const normalizedSortOrders = Array.from(new Set(sourceSortOrders.map((value) => Number(value)).filter(Number.isInteger))).sort((a, b) => a - b);
+    const targetCueSortOrder = Number.isInteger(Number(cueSortOrder))
+      ? Number(cueSortOrder)
+      : normalizedSortOrders[0];
+
+    if (!Number.isInteger(targetCueSortOrder)) {
+      return reply.status(404).send({ error: '字幕片段不存在' });
+    }
+
+    try {
+      const cue = await prisma.subtitleCue.findFirst({
+        where: { videoId, sortOrder: targetCueSortOrder },
+      });
+
+      if (!cue) {
+        return reply.status(404).send({ error: '字幕片段不存在' });
+      }
+
+      const updateData: Record<string, string | null> = {};
+      if (text !== undefined) {
+        updateData.text = text;
+        updateData.overrideText = text;
+      }
+      if (translatedText !== undefined) {
+        updateData.translatedText = translatedText;
+        updateData.overrideTranslatedText = translatedText;
+      }
+
+      await prisma.subtitleCue.updateMany({
+        where: { videoId, sortOrder: targetCueSortOrder },
+        data: updateData,
+      });
+
+      return reply.send({ success: true, message: '字幕 cue 已更新' });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: '更新失败', message: error.message });
+    }
+  });
+
+  fastify.post('/api/videos/:videoId/rebuild-cues', {
+    schema: {
+      tags: ['Videos'],
+      summary: '重建视频字幕 cues',
+      description: '仅根据当前原始字幕和已有 override 重建展示/烧录使用的 cues。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string' }
+        }
+      },
+      response: {
+        200: Schemas.SuccessMessage,
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      }
+    }
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply
+  ) => {
+    const { videoId } = request.params;
+
+    try {
+      const video = await prisma.video.findUnique({
+        where: { videoId },
+        select: { videoId: true },
+      });
+
+      if (!video) {
+        return reply.status(404).send({ error: '视频不存在' });
+      }
+
+      await rebuildSubtitleCuesForVideo(prisma, videoId);
+      return reply.send({ success: true, message: '字幕 cues 已重建' });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: '重建失败', message: error.message });
     }
   });
 }

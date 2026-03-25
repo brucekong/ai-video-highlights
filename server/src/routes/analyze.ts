@@ -208,7 +208,6 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               const maxDurationSeconds = Math.ceil((lastSegment.offset + lastSegment.duration) / 1000);
               const aiResult = await analyzeTranscript(formattedText, maxDurationSeconds);
 
-              // 更新视频标题、脑图、分类和标签
               await prisma.video.update({
                 where: { videoId },
                 data: {
@@ -218,11 +217,10 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                   tags: Array.isArray(aiResult.tags) ? aiResult.tags.join(',') : '',
                   videoDescription: aiResult.videoDescription,
                   videoHashtags: aiResult.videoHashtags,
-                  duration: maxDurationSeconds
+                  duration: maxDurationSeconds,
                 }
               });
 
-              // 同时更新标题的原文向量（基于 AI 优化的新标题）
               const newTitleEmbedding = await getEmbedding(aiResult.title);
               await prisma.$executeRawUnsafe(
                 `UPDATE videos SET "embedding" = $1::vector WHERE video_id = $2`,
@@ -232,7 +230,14 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
 
               await prisma.takeaway.deleteMany({ where: { videoId } });
               await prisma.takeaway.createMany({
-                data: aiResult.takeaways.map((t, i) => ({ videoId, title: t.title, summary: t.summary, timestamp: t.timestamp, duration: t.duration, sortOrder: i })),
+                data: aiResult.takeaways.map((t, i) => ({
+                  videoId,
+                  title: t.title,
+                  summary: t.summary,
+                  timestamp: t.timestamp,
+                  duration: t.duration,
+                  sortOrder: i,
+                })),
               });
               console.log(`[Background] Stage 2: AI Summary & Mindmap completed.`);
             } catch (err) {
@@ -259,7 +264,6 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                    console.log(`[Background] Translating batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(totalSegments / BATCH_SIZE)} for ${videoId}...`);
                    const translatedBatch = await translateTranscriptSegments(batchTexts);
 
-                   // 1. 立即回填翻译文本
                    for (let j = 0; j < translatedBatch.length; j++) {
                      const sortOrder = i + j;
                      if (translatedBatch[j]) {
@@ -270,7 +274,6 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                      }
                    }
 
-                   // 2. 立即生成并回填翻译版本的向量索引 (对搜索即时生效)
                    const validBatchTexts = translatedBatch.filter(t => !!t);
                    if (validBatchTexts.length > 0) {
                       const transEmbeds = await getEmbeddings(validBatchTexts);
@@ -295,7 +298,6 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                  }
                }
 
-               // 3. 最后更新视频标题的翻译
                try {
                  const translatedTitle = await translateTranscriptSegments([metadata.title || videoId]);
                  if (translatedTitle[0]) {

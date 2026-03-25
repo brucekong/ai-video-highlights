@@ -120,6 +120,8 @@ model SubtitleCue {
   videoId              String   @map("video_id")
   text                 String
   translatedText       String?  @map("translated_text")
+  overrideText         String?  @map("override_text")
+  overrideTranslatedText String? @map("override_translated_text")
   offset               Int
   duration             Int
   sortOrder            Int      @default(0) @map("sort_order")

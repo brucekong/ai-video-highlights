@@ -8,7 +8,9 @@ import MindMapModal from '../components/MindMapModal.vue';
 import VideoSearchModal from '../components/VideoSearchModal.vue';
 import VideoClippingDrawer from '../components/VideoClippingDrawer.vue';
 import KnowledgeExportActions from '../components/KnowledgeExportActions.vue';
-import SubtitleEditModal from '../components/SubtitleEditModal.vue';
+import AppTooltip from '../components/AppTooltip.vue';
+import ConfirmActionModal from '../components/ConfirmActionModal.vue';
+import ActionNoticeModal from '../components/ActionNoticeModal.vue';
 import { useAuth } from '../services/auth';
 
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -31,7 +33,24 @@ interface TranscriptSegment {
   duration: number;  // 毫秒
   sortOrder?: number;
   sourceIndices?: number[]; // 用于追踪合并前的原始索引 / Used to track original indices before merging
+  anchorOffset?: number;
 }
+
+const HARD_MAX_CUE_DURATION_MS = 12000;
+const SOFT_MAX_CUE_DURATION_MS = 8000;
+const INCOMPLETE_TAIL_MAX_DURATION_MS = 10000;
+const CONTINUATION_MAX_DURATION_MS = 10000;
+const STRONG_CONTINUATION_MAX_GAP_MS = 3200;
+const STRONG_CONTINUATION_MAX_DURATION_MS = 12000;
+const LONG_PAUSE_MS = 650;
+const SAME_SECOND_MERGE_MAX_GAP_MS = 1000;
+const SAME_SECOND_MERGE_MAX_DURATION_MS = 6000;
+const SAME_SECOND_MERGE_MAX_CHARS = 80;
+const MAX_CHINESE_CUE_CHARS = 56;
+const MAX_LATIN_CUE_CHARS = 90;
+const SOURCE_KEEP_MAX_DURATION_MS = 6500;
+const SOURCE_FORCE_SPLIT_SENTENCE_COUNT = 4;
+const TRANSCRIPT_COLLAPSE_THRESHOLD = 140;
 
 
 const route = useRoute();
@@ -54,7 +73,6 @@ const mindmapRaw = ref(''); // 脑图 Markdown
 const showMindMap = ref(false); // 是否显示脑图
 const showSearchModal = ref(false); // 是否显示搜索弹窗
 const showClippingDrawer = ref(false); // 是否显示剪辑抽屉
-const showEditModal = ref(false); // 是否显示字幕编辑弹窗
 const editingSegment = ref<TranscriptSegment | null>(null); // 当前正在编辑的片段
 const clippingRange = ref<{ start?: number, end?: number }>({});
 
@@ -72,11 +90,15 @@ const chatListRef = ref<HTMLElement | null>(null);
 const isAutoScrollEnabled = ref(true);
 const selectedLoop = ref<{ start: number, end: number, id: string } | null>(null);
 const isClippingId = ref<string | null>(null); // 正在剪辑的 ID
+const isRebuildingCues = ref(false);
+const pendingAction = ref<null | 'rebuild-cues' | 'force-analyze'>(null);
+const actionNotice = ref<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
 // 字幕滚动自动归中行为控制变量
 const isHoveringTranscript = ref(false);
 const autoScrollPaused = ref(false);
 const isTranslating = ref(false);
+const expandedTranscriptKeys = ref<Record<string, boolean>>({});
 
 // 手动修复相关状态 / Manual fix states
 const editingSegIndex = ref<number | null>(null);
@@ -90,8 +112,7 @@ const startEdit = (seg: TranscriptSegment, index: number) => {
     text: seg.text,
     translatedText: seg.translatedText || ''
   };
-  showEditModal.value = true;
-  
+
   // 编辑过程中暂停视频 / Pause video during editing
   if (playerRef.value?.pause) {
     playerRef.value.pause();
@@ -101,52 +122,41 @@ const startEdit = (seg: TranscriptSegment, index: number) => {
 const cancelEdit = () => {
   editingSegIndex.value = null;
   editingSegment.value = null;
-  showEditModal.value = false;
-  
-  // 取消后恢复播放（可选，或者保持暂停由用户决定，此处选择恢复）
-  // if (playerRef.value?.play) playerRef.value.play();
+};
+
+const reloadTranscriptOnly = async () => {
+  if (!videoId.value) return;
+  const detailRes = await fetch(`${API_BASE}/api/videos/${videoId.value}`, {
+    headers: getAuthHeaders()
+  });
+  const detail = await detailRes.json();
+  if (detail.success && detail.data?.transcript) {
+    normalizeTranscript(detail.data.transcript, detail.data.transcriptSource || 'raw');
+  }
 };
 
 const saveEdit = async (seg: TranscriptSegment) => {
-  if (!videoId.value || !seg.sourceIndices || seg.sourceIndices.length === 0) return;
+  if (!videoId.value || seg.sortOrder === undefined) return;
   isSavingEdit.value = true;
 
   try {
-    const firstIdx = seg.sourceIndices[0];
-    const otherIndices = seg.sourceIndices.slice(1);
-
-    // 1. 更新第一段为全量内容 / Update first segment with full content
-    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/subtitles/${transcript.value[firstIdx].sortOrder}`, {
+    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/subtitles`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({
+        cueSortOrder: seg.sortOrder,
         text: editForm.value.text,
         translatedText: editForm.value.translatedText
       })
     });
 
-    if (!res.ok) throw new Error('Failed to update first segment');
+    if (!res.ok) throw new Error('Failed to update subtitles');
 
-    // 2. 将后续段落清空 / Clear subsequent segments
-    for (const idx of otherIndices) {
-       await fetch(`${API_BASE}/api/videos/${videoId.value}/subtitles/${transcript.value[idx].sortOrder}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ text: '', translatedText: '' })
-      });
-    }
-
-    // 3. 更新本地状态并退出编辑 / Update local state and exit edit
-    transcript.value[firstIdx].text = editForm.value.text;
-    transcript.value[firstIdx].translatedText = editForm.value.translatedText;
-    for (const idx of otherIndices) {
-      transcript.value[idx].text = '';
-      transcript.value[idx].translatedText = '';
-    }
+    // 2. 重新拉取最新 transcript，避免 cue/raw 映射错位
+    await reloadTranscriptOnly();
 
     editingSegIndex.value = null;
     editingSegment.value = null;
-    showEditModal.value = false;
   } catch (err) {
     console.error('Save edit failed:', err);
     alert('保存失败，请重试');
@@ -154,6 +164,70 @@ const saveEdit = async (seg: TranscriptSegment) => {
     isSavingEdit.value = false;
   }
 };
+
+const handleRebuildCues = async () => {
+  if (!videoId.value || isRebuildingCues.value) return;
+  isRebuildingCues.value = true;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/videos/${videoId.value}/rebuild-cues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || '重建字幕失败');
+    }
+
+    await reloadTranscriptOnly();
+    actionNotice.value = {
+      title: '重建成功',
+      message: '字幕 cues 已按最新规则重建完成。',
+      type: 'success',
+    };
+  } catch (err) {
+    console.error('Rebuild cues failed:', err);
+    alert('重建字幕失败，请重试');
+  } finally {
+    isRebuildingCues.value = false;
+  }
+};
+
+const handleForceAnalyze = async () => {
+  if (isLoading.value) return;
+  await handleAnalyze(true);
+};
+
+const openConfirmModal = (action: 'rebuild-cues' | 'force-analyze') => {
+  pendingAction.value = action;
+};
+
+const closeConfirmModal = () => {
+  if (isRebuildingCues.value || isLoading.value) return;
+  pendingAction.value = null;
+};
+
+const closeActionNotice = () => {
+  actionNotice.value = null;
+};
+
+const confirmPendingAction = async () => {
+  if (pendingAction.value === 'rebuild-cues') {
+    await handleRebuildCues();
+  } else if (pendingAction.value === 'force-analyze') {
+    await handleForceAnalyze();
+  }
+
+  if (!isRebuildingCues.value && !isLoading.value) {
+    pendingAction.value = null;
+  }
+};
+
 
 // 标题溢出检测
 const titleRef = ref<HTMLElement | null>(null);
@@ -199,6 +273,233 @@ const handleTranscriptMouseLeave = () => {
   }
 };
 
+const countCjkChars = (text: string) => (text.match(/[\u3400-\u9fff]/g) || []).length;
+const hasSentenceEnding = (text: string) => /[.?!。？！…]$/.test(text.trim());
+const hasWeakContinuationEnding = (text: string) => /[,，、;；:]$/.test(text.trim());
+const hasAnyPunctuation = (text: string) => /[.,?!，。？！、;；:：…]/.test(text.trim().slice(-1));
+const shouldJoinWithSpace = (currentText: string, nextText: string) => {
+  const trimmedCurrent = currentText.trim();
+  const trimmedNext = nextText.trim();
+  if (!trimmedCurrent || !trimmedNext) return false;
+  if (hasAnyPunctuation(trimmedCurrent)) return true;
+
+  const hasLatin = /[A-Za-z]/.test(trimmedCurrent) || /[A-Za-z]/.test(trimmedNext);
+  return hasLatin;
+};
+const splitTextIntoSentences = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const protectedText = trimmed
+    .replace(/\b(Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr)\./gi, '$1<prd>');
+  return (protectedText.match(/[^.?!。？！…]+[.?!。？！…]?/g) || [protectedText])
+    .map(part => part.replace(/<prd>/g, '.').trim())
+    .filter(Boolean);
+};
+const distributeDuration = (totalDuration: number, parts: string[]) => {
+  if (parts.length === 0) return [];
+  if (totalDuration <= 0) return parts.map(() => 0);
+
+  const weights = parts.map(part => Math.max(part.replace(/\s+/g, '').length, 1));
+  const weightSum = weights.reduce((sum, weight) => sum + weight, 0);
+  let assigned = 0;
+
+  return parts.map((_, index) => {
+    if (index === parts.length - 1) {
+      return Math.max(totalDuration - assigned, 0);
+    }
+    const duration = Math.max(1, Math.round((totalDuration * weights[index]) / weightSum));
+    assigned += duration;
+    return duration;
+  });
+};
+const endsWithAdjectivePhrase = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed || hasSentenceEnding(trimmed)) return false;
+
+  const words = trimmed
+    .replace(/[.,?!;:，。？！；：…]+$/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word.toLowerCase());
+
+  if (words.length === 0) return false;
+
+  const lastWord = words[words.length - 1] || '';
+  const prevWord = words[words.length - 2] || '';
+  const prevTwo = words.slice(-2).join(' ');
+  const prevThree = words.slice(-3).join(' ');
+
+  const adjectiveOrModifier = /^(perfect|good|great|nice|best|better|important|beautiful|lovely|little|big|small|right|wrong|same|next|first|last|special|fresh|clean|ready|safe|happy|sad|hungry|blue|red|green|young|old)$/.test(lastWord);
+  const articlePlusAdjective = /^(the|a|an|this|that|these|those|my|your|his|her|our|their)$/.test(prevWord) && adjectiveOrModifier;
+  const degreePlusAdjective = /^(very|so|too|quite|really)$/.test(prevWord) && adjectiveOrModifier;
+  const fixedLeadPhrase = /^(the most|the best|such a|such an)$/.test(prevTwo) || /^(one of the)$/.test(prevThree);
+
+  return articlePlusAdjective || degreePlusAdjective || fixedLeadPhrase;
+};
+const isShortNounCompletion = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  const normalized = trimmed
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .trim()
+    .toLowerCase();
+  if (!normalized) return false;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 4) return false;
+
+  const lastWord = words[words.length - 1] || '';
+  const nounLike = /^(spot|place|home|house|tree|time|day|way|idea|one|thing|door|doors|station|line|ticket|barrier|soil|sun|water|bottle|backpack|uniform|goggles|chicken|car|weekend|weekends)$/.test(lastWord);
+
+  return nounLike || words.length <= 2;
+};
+const shouldSplitSourceSegment = (seg: TranscriptSegment, textParts: string[]) => {
+  if (textParts.length <= 1) return false;
+
+  const fullText = (seg.text || '').trim();
+  const totalChars = fullText.replace(/\s+/g, '').length;
+  const lastPart = textParts[textParts.length - 1] || '';
+  const maxChars = getMaxCueChars(fullText);
+
+  if (looksIncompleteTail(lastPart)) return true;
+  if (textParts.length >= SOURCE_FORCE_SPLIT_SENTENCE_COUNT) return true;
+  if (seg.duration > SOURCE_KEEP_MAX_DURATION_MS) return true;
+  if (totalChars > maxChars) return true;
+
+  return false;
+};
+const expandTranscriptSegments = (segments: TranscriptSegment[]) => {
+  return segments.flatMap((seg) => {
+    const textParts = splitTextIntoSentences(seg.text || '');
+    if (!shouldSplitSourceSegment(seg, textParts)) return [seg];
+
+    const translatedParts = splitTextIntoSentences(seg.translatedText || '');
+    const partDurations = distributeDuration(seg.duration, textParts);
+    let runningOffset = seg.offset;
+
+    return textParts.map((textPart, index) => {
+      const duration = partDurations[index] ?? 0;
+      const expanded: TranscriptSegment = {
+        ...seg,
+        text: textPart,
+        translatedText: translatedParts.length === textParts.length
+          ? translatedParts[index]
+          : (index === 0 ? seg.translatedText : undefined),
+        offset: runningOffset,
+        duration,
+        sourceIndices: seg.sourceIndices,
+        anchorOffset: seg.anchorOffset ?? seg.offset,
+      };
+      runningOffset += duration;
+      return expanded;
+    });
+  });
+};
+const looksIncompleteTail = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (hasSentenceEnding(trimmed)) return false;
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  const lastWord = words[words.length - 1]?.toLowerCase() || '';
+
+  return /[\u4e00-\u9fa5]$/.test(trimmed)
+    || /^(i|you|he|she|we|they|it|my|your|his|her|our|their|its|this|that|these|those|the|a|an|some|any|another|to|of|for|with|and|or|but|so|because|what|which|who|when|where|why|how|is|are|am|was|were|do|does|did|can|could|should|would|will|shall|have|has|had)$/.test(lastWord);
+};
+const startsWithContinuation = (text: string) => {
+  const trimmed = text.trim().toLowerCase();
+  return /^(and|or|but|so|because|then|also|too|with|to|for|of|in|on|at|as|if|when|while|that|which|who|where|how|what|和|与|及|以及|并且|而且|但是|不过|所以|因为|然后|还|也|并|再)/.test(trimmed);
+};
+const getMaxCueChars = (text: string) => {
+  const cjkChars = countCjkChars(text);
+  return cjkChars >= Math.max(6, text.length / 3) ? MAX_CHINESE_CUE_CHARS : MAX_LATIN_CUE_CHARS;
+};
+const joinCueText = (currentText: string, nextText: string) => {
+  const trimmedCurrent = currentText.trim();
+  const trimmedNext = nextText.trim();
+  if (!trimmedCurrent) return trimmedNext;
+  if (!trimmedNext) return trimmedCurrent;
+
+  const sep = shouldJoinWithSpace(trimmedCurrent, trimmedNext) ? ' ' : '';
+  return `${trimmedCurrent}${sep}${trimmedNext}`.trim();
+};
+const shouldMergeCue = (current: TranscriptSegment, seg: TranscriptSegment) => {
+  const currentText = current.text.trim();
+  const nextText = seg.text.trim();
+  const combinedDuration = (seg.offset + seg.duration) - current.offset;
+  const gapDuration = seg.offset - (current.offset + current.duration);
+  const combinedText = `${currentText}${nextText}`;
+  const maxChars = getMaxCueChars(combinedText);
+  const combinedChars = combinedText.replace(/\s+/g, '').length;
+  const currentLooksIncomplete = looksIncompleteTail(currentText);
+  const hasContinuationSignal = hasWeakContinuationEnding(currentText) || startsWithContinuation(nextText);
+  const hasAdjectivePhraseTail = endsWithAdjectivePhrase(currentText);
+  const nextLooksLikeNounCompletion = isShortNounCompletion(nextText);
+  const closeDisplayedTime = Math.abs((seg.anchorOffset ?? seg.offset) - current.offset) < 1000;
+
+  if (combinedDuration > HARD_MAX_CUE_DURATION_MS) return false;
+  if (combinedChars > maxChars) return false;
+
+  const currentPrimarySource = current.sourceIndices?.[current.sourceIndices.length - 1];
+  const nextPrimarySource = seg.sourceIndices?.[0] ?? seg.sortOrder;
+  const isSameSource = currentPrimarySource !== undefined && nextPrimarySource !== undefined && currentPrimarySource === nextPrimarySource;
+  if (isSameSource) {
+    return true;
+  }
+
+  if (gapDuration > LONG_PAUSE_MS) return false;
+
+  if (
+    hasAdjectivePhraseTail
+    && nextLooksLikeNounCompletion
+    && gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
+    && combinedDuration <= STRONG_CONTINUATION_MAX_DURATION_MS
+  ) {
+    return true;
+  }
+
+  if (
+    closeDisplayedTime
+    && gapDuration <= SAME_SECOND_MERGE_MAX_GAP_MS
+    && combinedDuration <= SAME_SECOND_MERGE_MAX_DURATION_MS
+    && combinedChars <= SAME_SECOND_MERGE_MAX_CHARS
+  ) {
+    return true;
+  }
+
+  if (hasContinuationSignal) {
+    return combinedDuration <= CONTINUATION_MAX_DURATION_MS;
+  }
+
+  if (currentLooksIncomplete) {
+    return combinedDuration <= INCOMPLETE_TAIL_MAX_DURATION_MS;
+  }
+
+  if (!hasSentenceEnding(currentText)) {
+    return combinedDuration <= SOFT_MAX_CUE_DURATION_MS;
+  }
+
+  return false;
+};
+const getTranscriptExpandKey = (seg: TranscriptSegment, index: number) => {
+  return `${seg.sortOrder ?? index}-${seg.offset}-${seg.duration}`;
+};
+const shouldCollapseTranscript = (seg: TranscriptSegment) => {
+  const primaryText = (isBilingual.value && seg.translatedText ? seg.translatedText : seg.text) || '';
+  return primaryText.replace(/\s+/g, '').length > TRANSCRIPT_COLLAPSE_THRESHOLD;
+};
+const isTranscriptExpanded = (seg: TranscriptSegment, index: number) => {
+  return !!expandedTranscriptKeys.value[getTranscriptExpandKey(seg, index)];
+};
+const toggleTranscriptExpanded = (seg: TranscriptSegment, index: number) => {
+  const key = getTranscriptExpandKey(seg, index);
+  expandedTranscriptKeys.value = {
+    ...expandedTranscriptKeys.value,
+    [key]: !expandedTranscriptKeys.value[key],
+  };
+};
+
 // 智能合并字幕：不再是死板的两两合并，而是根据标点、时长、行数判断，保持语义完整性
 const mergedTranscript = computed(() => {
   if (transcript.value.length === 0) return [];
@@ -210,67 +511,46 @@ const mergedTranscript = computed(() => {
     }));
   }
   const merged: TranscriptSegment[] = [];
+  const expandedTranscript = expandTranscriptSegments(transcript.value);
   let current: TranscriptSegment | null = null;
 
-  for (let i = 0; i < transcript.value.length; i++) {
-    const seg = transcript.value[i];
+  for (let i = 0; i < expandedTranscript.length; i++) {
+    const seg = expandedTranscript[i];
     // 给原始数据补上 sortOrder (如果后端没传，用 i 兜底)
     if (seg.sortOrder === undefined) seg.sortOrder = i;
 
     if (!current) {
-      current = { ...seg, sourceIndices: [i] };
+      current = {
+        ...seg,
+        offset: seg.anchorOffset ?? seg.offset,
+        sourceIndices: seg.sourceIndices && seg.sourceIndices.length > 0
+          ? [...seg.sourceIndices]
+          : [seg.sortOrder ?? i],
+      };
       continue;
     }
 
-    // 判断逻辑：
-    // 1. 如果当前累积的文本还没有标点结尾
-    // 2. 或者当前累积时长太短（比如小于 3.5 秒）
-    // 3. 且合并后的总时长不超过 10 秒
-    const lastChar = current.text.trim().slice(-1);
-    const hasEndingPunctuation = /[.?!。？！]/.test(lastChar);
-    const currentDuration = (current.duration || 0);
-    const combinedDuration = (seg.offset + seg.duration) - current.offset;
-
-    // 判断逻辑：
-    // 1. 如果当前没有标点结尾，则尽量合并以防断句。但为了避免无限堆叠出非常大段的字幕，设定一个 28 秒的硬性时间限制。
-    // 2. 如果已经有标点结尾，且当前包短于 3.5 秒，允许再吃一条（限制在 10 秒以内），保证阅读舒适度。
-    let shouldMerge = false;
-    if (!hasEndingPunctuation) {
-      shouldMerge = combinedDuration < 28000;
-    } else {
-      shouldMerge = currentDuration < 3500 && combinedDuration < 10000;
-    }
-
-    if (shouldMerge) {
-      // 合并原文
-      const isChinese = /[\u4e00-\u9fa5]/.test(seg.text);
-      const lastTextChar = current.text.trim().slice(-1);
-      const hasAnyPunc = /[.,?!，。？！、;；]/.test(lastTextChar);
-      let sep = '';
-      if (!hasAnyPunc) {
-        sep = isChinese ? '，' : ' ';
-      } else {
-        sep = ' ';
-      }
-      current.text = current.text.trim() + sep + seg.text.trim();
-
-      // 合并译文 (如果存在)
+    if (shouldMergeCue(current, seg)) {
+      current.text = joinCueText(current.text, seg.text);
       if (seg.translatedText) {
-        const lastTransChar = (current.translatedText || '').trim().slice(-1);
-        const hasTransPunc = /[.,?!，。？！、;；]/.test(lastTransChar);
-        let transSep = '';
-        if (current.translatedText && !hasTransPunc) {
-          transSep = '，';
-        }
-        current.translatedText = (current.translatedText || '').trim() + transSep + seg.translatedText.trim();
+        current.translatedText = joinCueText(current.translatedText || '', seg.translatedText);
       }
 
-      current.sourceIndices?.push(i);
-      current.duration = combinedDuration;
+      const nextSourceIndices = seg.sourceIndices && seg.sourceIndices.length > 0
+        ? seg.sourceIndices
+        : [seg.sortOrder ?? i];
+      current.sourceIndices = Array.from(new Set([...(current.sourceIndices || []), ...nextSourceIndices]));
+      current.duration = (seg.offset + seg.duration) - current.offset;
     } else {
       // 达到断句条件，推入结果并开启新包
       merged.push(current);
-      current = { ...seg, sourceIndices: [i] };
+      current = {
+        ...seg,
+        offset: seg.anchorOffset ?? seg.offset,
+        sourceIndices: seg.sourceIndices && seg.sourceIndices.length > 0
+          ? [...seg.sourceIndices]
+          : [seg.sortOrder ?? i],
+      };
     }
   }
 
@@ -283,12 +563,54 @@ const hasBilingualData = computed(() => {
   return transcript.value.some(seg => !!seg.translatedText);
 });
 
+const isProbablyChineseText = (text: string) => /[\u4e00-\u9fa5]/.test(text);
+const isTranslationNoise = (text: string) => {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (!/[a-zA-Z0-9]/.test(trimmed)) return true;
+  return trimmed.length < 2;
+};
+
+const getTranslationProgress = (segments: TranscriptSegment[]) => {
+  let translatableCount = 0;
+  let missingCount = 0;
+
+  segments.forEach((seg) => {
+    if (seg.translatedText) return;
+    if (isProbablyChineseText(seg.text) || isTranslationNoise(seg.text)) return;
+    translatableCount += 1;
+    missingCount += 1;
+  });
+
+  const translatedCount = segments.filter((seg) => {
+    if (!seg.translatedText) return false;
+    return !isProbablyChineseText(seg.text) && !isTranslationNoise(seg.text);
+  }).length;
+
+  return {
+    translatableCount: translatableCount + translatedCount,
+    translatedCount,
+    missingCount,
+  };
+};
+
+const shouldShowTranslatingState = (segments: TranscriptSegment[]) => {
+  const { translatableCount, translatedCount, missingCount } = getTranslationProgress(segments);
+  if (translatableCount === 0) return false;
+
+  const completionRatio = translatedCount / translatableCount;
+  const hasOnlyTinyTailLeft = missingCount <= 3 && completionRatio >= 0.97;
+  return missingCount > 0 && !hasOnlyTinyTailLeft;
+};
+
 const normalizeTranscript = (rawTranscript: any[], source: 'raw' | 'cue') => {
   transcriptSource.value = source;
+  expandedTranscriptKeys.value = {};
   transcript.value = rawTranscript.map((seg: any, index: number) => ({
     ...seg,
     sortOrder: seg.sortOrder ?? index,
     sourceIndices: Array.isArray(seg.sourceIndices) ? seg.sourceIndices : [seg.sortOrder ?? index],
+    anchorOffset: seg.anchorOffset ?? seg.offset,
     text: decodeHtml(seg.text),
     translatedText: decodeHtml(seg.translatedText)
   }));
@@ -353,6 +675,27 @@ const formatTimeFromMs = (ms: number) => {
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
   return `${m}:${s < 10 ? '0' : ''}${s}`;
+};
+
+const formatPreciseTimeFromMs = (ms: number) => {
+  const totalTenths = Math.floor(ms / 100);
+  const totalSeconds = Math.floor(totalTenths / 10);
+  const tenths = totalTenths % 10;
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s}.${tenths}`;
+};
+
+const formatTranscriptTime = (segments: TranscriptSegment[], index: number) => {
+  const current = segments[index];
+  if (!current) return '0:00';
+
+  const currentSecond = Math.floor(current.offset / 1000);
+  const prevSecond = index > 0 ? Math.floor(segments[index - 1].offset / 1000) : null;
+  const nextSecond = index < segments.length - 1 ? Math.floor(segments[index + 1].offset / 1000) : null;
+  const hasCollision = currentSecond === prevSecond || currentSecond === nextSecond;
+
+  return hasCollision ? formatPreciseTimeFromMs(current.offset) : formatTimeFromMs(current.offset);
 };
 
 // 获取历史记录
@@ -463,23 +806,9 @@ const pollAnalysisStatus = async () => {
          }
       }
 
-      // 5. 更新翻译
       if (result.data.transcript && result.data.transcript.length > 0) {
         normalizeTranscript(result.data.transcript, result.data.transcriptSource || 'raw');
-        let hasMissingTrans = false;
-
-        // 判定结果：如果没有明确的缺失片段，标记为翻译完成
-        transcript.value.forEach((seg) => {
-          if (seg.translatedText) return;
-          const isChinese = /[\u4e00-\u9fa5]/.test(seg.text);
-          const isNoise = !/[a-zA-Z0-9]/.test(seg.text) || seg.text.trim().length < 2;
-          if (!isChinese && !isNoise) {
-            hasMissingTrans = true;
-          }
-        });
-        if (!hasMissingTrans) {
-          isTranslating.value = false;
-        }
+        isTranslating.value = shouldShowTranslatingState(transcript.value);
       }
 
       // 如果全部完成，停止轮询
@@ -568,21 +897,13 @@ const handleAnalyze = async (force: boolean = false) => {
          isIndexing.value = true;
       }
 
-      // 检查是否需要开启异步翻译状态
-      // 判定逻辑：如果不是纯中文视频，且当前译文尚未全量覆盖，则进入翻译状态
-      const isChineseVideo = transcript.value.slice(0, 10).every(s => /[\u4e00-\u9fa5]/.test(s.text));
-      const hasMissingTranslation = transcript.value.some(s => {
-        if (s.translatedText) return false;
-        const isChinese = /[\u4e00-\u9fa5]/.test(s.text);
-        const isNoise = !/[a-zA-Z0-9]/.test(s.text) || s.text.trim().length < 2;
-        return !isChinese && !isNoise;
-      });
+      const isChineseVideo = transcript.value.slice(0, 10).every(s => isProbablyChineseText(s.text));
+      const hasMissingTranslation = shouldShowTranslatingState(transcript.value);
 
       if (!isChineseVideo && hasMissingTranslation) {
         isTranslating.value = true;
-        isBilingual.value = true; // 自动开启双语显示
+        isBilingual.value = true;
       }
-
 
       showResult.value = true;
       window.dispatchEvent(new Event('video-analyzed')); // 刷新历史
@@ -1057,13 +1378,19 @@ const takeawayMap = computed(() => {
                      <span>核心摘要</span>
                      <span v-if="takeaways.length > 0" class="title-badge">{{ takeaways.length }}</span>
                    </h3>
-                   <div class="tooltip-wrapper" @mouseenter="checkTitleTruncation">
-                     <p ref="titleRef" v-if="videoTitle" class="video-title-hint">{{ videoTitle }}</p>
-                     <div v-if="videoTitle && isTitleTruncated" class="custom-tooltip title-tooltip">{{ videoTitle }}</div>
-                   </div>
+                   <AppTooltip
+                     v-if="videoTitle"
+                     :text="videoTitle"
+                     :disabled="!isTitleTruncated"
+                     align="left"
+                   >
+                     <div @mouseenter="checkTitleTruncation">
+                       <p ref="titleRef" class="video-title-hint">{{ videoTitle }}</p>
+                     </div>
+                   </AppTooltip>
                  </div>
                    <div class="sidebar-actions">
-                    <div class="tooltip-wrapper">
+                    <AppTooltip text="查看视频内容的 AI 脑图可视化">
                       <button
                         class="btn-mindmap"
                         :disabled="!mindmapRaw"
@@ -1073,10 +1400,9 @@ const takeawayMap = computed(() => {
                         <Map v-else :size="14" />
                         <span>脑图</span>
                       </button>
-                      <div class="custom-tooltip">查看视频内容的 AI 脑图可视化</div>
-                    </div>
+                    </AppTooltip>
 
-                    <div class="tooltip-wrapper">
+                    <AppTooltip text="基于语义在视频内搜索具体内容">
                       <button
                         v-if="showResult"
                         class="btn-search-in-video"
@@ -1087,10 +1413,9 @@ const takeawayMap = computed(() => {
                         <Search v-else :size="14" />
                         <span>检索</span>
                       </button>
-                      <div class="custom-tooltip">基于语义在视频内搜索具体内容</div>
-                    </div>
+                    </AppTooltip>
 
-                    <div class="tooltip-wrapper">
+                    <AppTooltip text="手动选取视频范围进行精准剪辑">
                       <button
                         v-if="showResult"
                         class="btn-search-in-video"
@@ -1099,8 +1424,7 @@ const takeawayMap = computed(() => {
                         <Scissors :size="14" />
                         <span>快速切片</span>
                       </button>
-                      <div class="custom-tooltip">手动选取视频范围进行精准剪辑</div>
-                    </div>
+                    </AppTooltip>
 
                     <KnowledgeExportActions
                       :video-id="videoId"
@@ -1267,17 +1591,26 @@ const takeawayMap = computed(() => {
                       <Loader2 :size="12" class="spin" />
                       <span>正在翻译中文...</span>
                     </div>
-                    <div class="tooltip-wrapper">
+                    <AppTooltip text="重建字幕分段：只刷新 cues，不重新分析" teleport>
                       <button
-                        class="btn-search-in-video"
+                        class="btn-search-in-video btn-rebuild-cues"
                         style="width: 32px; padding: 0;"
-                        @click="handleAnalyze(true)"
-                        title="重新分析：如果翻译或字幕错位，请尝试此操作"
+                        @click="openConfirmModal('rebuild-cues')"
+                        :disabled="isRebuildingCues"
                       >
-                        <RefreshCw :size="14" :class="{ 'spin': isLoading }" />
+                        <FileText :size="14" :class="{ 'spin': isRebuildingCues }" />
                       </button>
-                      <div class="custom-tooltip">强制重新分析并翻译该视频</div>
-                    </div>
+                    </AppTooltip>
+                    <AppTooltip text="重新分析视频：重新抓字幕、翻译并重跑 AI" teleport>
+                      <button
+                        class="btn-search-in-video btn-force-analyze"
+                        style="width: 32px; padding: 0;"
+                        @click="openConfirmModal('force-analyze')"
+                        :disabled="isLoading"
+                      >
+                        <Sparkles :size="14" :class="{ 'spin': isLoading }" />
+                      </button>
+                    </AppTooltip>
                     <div class="sidebar-divider"></div>
                     <button
                       v-if="hasBilingualData"
@@ -1304,16 +1637,37 @@ const takeawayMap = computed(() => {
                   :key="index"
                   :id="`seg-${index}`"
                   class="transcript-item"
-                  :class="{ 'active': activeTranscriptIndex === index }"
+                  :class="{ 'active': activeTranscriptIndex === index, editing: editingSegIndex === index }"
                   @click="jumpToTranscript(seg, index)"
                 >
                   <div class="seg-time">
                     <Clock :size="12" class="seg-time-icon" />
-                    <span>{{ formatTimeFromMs(seg.offset) }}</span>
+                    <span>{{ formatTranscriptTime(mergedTranscript, index) }}</span>
                   </div>
                   <div class="seg-text">
-                    <div v-if="isBilingual && seg.translatedText" class="translated-text">{{ seg.translatedText }}</div>
-                    <div class="original-text" :class="{ 'has-translation': isBilingual && seg.translatedText }">{{ seg.text }}</div>
+                    <div
+                      v-if="isBilingual && seg.translatedText"
+                      class="translated-text"
+                      :class="{ collapsed: shouldCollapseTranscript(seg) && !isTranscriptExpanded(seg, index) }"
+                    >
+                      {{ seg.translatedText }}
+                    </div>
+                    <div
+                      class="original-text"
+                      :class="{
+                        'has-translation': isBilingual && seg.translatedText,
+                        collapsed: shouldCollapseTranscript(seg) && !isTranscriptExpanded(seg, index)
+                      }"
+                    >
+                      {{ seg.text }}
+                    </div>
+                    <button
+                      v-if="shouldCollapseTranscript(seg)"
+                      class="seg-expand-btn"
+                      @click.stop="toggleTranscriptExpanded(seg, index)"
+                    >
+                      {{ isTranscriptExpanded(seg, index) ? '收起' : '展开全文' }}
+                    </button>
                   </div>
                   <div class="seg-actions">
                     <button class="btn-loop-action" @click.stop="startEdit(seg, index)" title="修正字幕或翻译">
@@ -1337,6 +1691,55 @@ const takeawayMap = computed(() => {
                     </button>
                     <div class="seg-play-icon">
                       <Play :size="14" />
+                    </div>
+                  </div>
+                  <div
+                    v-if="editingSegIndex === index"
+                    class="inline-edit-panel"
+                    @click.stop
+                  >
+                    <div class="inline-edit-header">
+                      <span class="inline-edit-title">编辑当前字幕</span>
+                      <span class="inline-edit-time">{{ formatTranscriptTime(mergedTranscript, index) }}</span>
+                    </div>
+                    <div class="inline-edit-grid">
+                      <label class="inline-edit-group">
+                        <span class="inline-edit-label">中文翻译</span>
+                        <textarea
+                          v-model="editForm.translatedText"
+                          class="inline-edit-textarea"
+                          rows="3"
+                          placeholder="请输入中文翻译..."
+                          :disabled="isSavingEdit"
+                        ></textarea>
+                      </label>
+                      <label class="inline-edit-group">
+                        <span class="inline-edit-label">原始内容</span>
+                        <textarea
+                          v-model="editForm.text"
+                          class="inline-edit-textarea"
+                          rows="3"
+                          placeholder="Original content here..."
+                          :disabled="isSavingEdit"
+                        ></textarea>
+                      </label>
+                    </div>
+                    <div class="inline-edit-actions">
+                      <button
+                        class="inline-edit-btn ghost"
+                        @click.stop="cancelEdit"
+                        :disabled="isSavingEdit"
+                      >
+                        取消
+                      </button>
+                      <button
+                        class="inline-edit-btn primary"
+                        @click.stop="editingSegment && saveEdit(editingSegment)"
+                        :disabled="isSavingEdit"
+                      >
+                        <Loader2 v-if="isSavingEdit" :size="14" class="spin" />
+                        <span>{{ isSavingEdit ? '保存中...' : '保存修改' }}</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1428,22 +1831,26 @@ const takeawayMap = computed(() => {
           @seek="handleSeek"
         />
 
-        <VideoSearchModal
-          :show="showSearchModal"
-          :video-id="videoId"
-          :video-title="videoTitle"
-          @close="showSearchModal = false"
-          @seek="handleSeek"
+        <ConfirmActionModal
+          :show="pendingAction !== null"
+          :title="pendingAction === 'rebuild-cues' ? '确认重建字幕分段' : '确认重新分析视频'"
+          :message="pendingAction === 'rebuild-cues'
+            ? '这会根据当前原始字幕重新生成 cues 分段，但不会重新抓取字幕，也不会重新跑 AI 分析。'
+            : '这会重新抓取字幕、翻译并重跑 AI 分析，适合在字幕错位或翻译异常时使用。'"
+          :confirm-text="pendingAction === 'rebuild-cues' ? '开始重建' : '重新分析'"
+          :loading="pendingAction === 'rebuild-cues' ? isRebuildingCues : isLoading"
+          @close="closeConfirmModal"
+          @confirm="confirmPendingAction"
         />
 
-        <SubtitleEditModal
-          :show="showEditModal"
-          :segment="editingSegment"
-          :is-bilingual="isBilingual"
-          :is-saving="isSavingEdit"
-          @close="cancelEdit"
-          @save="(data) => { editForm = data; saveEdit(editingSegment!) }"
+        <ActionNoticeModal
+          :show="actionNotice !== null"
+          :title="actionNotice?.title || ''"
+          :message="actionNotice?.message || ''"
+          :type="actionNotice?.type || 'info'"
+          @close="closeActionNotice"
         />
+
       </Teleport>
     </div>
   </div>
@@ -2060,12 +2467,13 @@ input::placeholder {
 /* Updated Sidebar Header for Tabs */
 .outline-sidebar {
   padding: 0 !important;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   height: calc(100vh - 140px);
   position: sticky;
   top: 100px;
+  z-index: 20;
 }
 
 .accent { color: var(--accent-color); }
@@ -2169,6 +2577,30 @@ input::placeholder {
   height: 32px;
 }
 
+.btn-rebuild-cues {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-rebuild-cues:hover:not(:disabled) {
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #b6f4c6;
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.btn-force-analyze {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-force-analyze:hover:not(:disabled) {
+  border-color: rgba(99, 102, 241, 0.35);
+  color: #d0d5ff;
+  background: rgba(99, 102, 241, 0.14);
+}
+
 .btn-search-in-video:hover:not(:disabled), .btn-mindmap:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
@@ -2193,75 +2625,6 @@ input::placeholder {
   margin: 0 4px;
 }
 
-
-/* Unified Custom Tooltip Styles */
-.tooltip-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.custom-tooltip {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(-8px);
-  background: #1e293b;
-  color: #f8fafc;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  line-height: 1.4;
-  /* 核心修复：强制宽度由内容决定，防止被父容器挤压 */
-  width: max-content;
-  min-width: 60px;
-  max-width: 280px;
-  white-space: normal;
-  word-break: break-word;
-  pointer-events: none;
-  opacity: 0;
-  visibility: hidden;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 9999; /* 提升至最高层级 */
-}
-
-/* 专门针对靠左标题的 Tooltip 样式：改为靠左对齐，防止边缘遮挡 */
-.custom-tooltip.title-tooltip {
-  left: 0;
-  transform: translateY(-8px);
-  width: max-content;
-  max-width: 320px;
-  text-align: left;
-}
-
-.custom-tooltip.title-tooltip::after {
-  left: 20px;
-  transform: translateX(0);
-}
-
-.custom-tooltip::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 5px;
-  border-style: solid;
-  border-color: #1e293b transparent transparent transparent;
-}
-
-.tooltip-wrapper:hover .custom-tooltip {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(-12px);
-}
-
-/* 覆盖标题 Tooltip 的悬浮位移逻辑 */
-.tooltip-wrapper:hover .custom-tooltip.title-tooltip {
-  transform: translateY(-12px);
-}
 
 /* Adjust timeline tooltip background to match */
 .timeline-tooltip {
@@ -2305,6 +2668,7 @@ input::placeholder {
 
 .transcript-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 12px;
   padding: 10px 12px;
@@ -2325,6 +2689,11 @@ input::placeholder {
   background: rgba(99, 102, 241, 0.08);
   border-color: rgba(99, 102, 241, 0.25);
   transform: translateX(6px);
+}
+
+.transcript-item.editing {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.2);
 }
 
 .transcript-item.active::before {
@@ -2396,6 +2765,37 @@ input::placeholder {
   font-size: 0.8rem;
 }
 
+.translated-text.collapsed,
+.original-text.collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.translated-text.collapsed {
+  -webkit-line-clamp: 4;
+}
+
+.original-text.collapsed {
+  -webkit-line-clamp: 3;
+}
+
+.seg-expand-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent-color);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg-expand-btn:hover {
+  color: var(--accent-light);
+}
+
 .transcript-item:not(.active) .seg-text {
   color: var(--text-secondary);
 }
@@ -2432,6 +2832,121 @@ input::placeholder {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.inline-edit-panel {
+  width: 100%;
+  margin-left: 70px;
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inline-edit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inline-edit-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.inline-edit-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.inline-edit-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.inline-edit-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inline-edit-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.inline-edit-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 74px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(12, 15, 24, 0.78);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  line-height: 1.5;
+  font-size: 0.88rem;
+}
+
+.inline-edit-textarea:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.55);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.inline-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.inline-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.inline-edit-btn.ghost {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.inline-edit-btn.ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.inline-edit-btn.primary {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
+
+.inline-edit-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.inline-edit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .btn-loop-action {

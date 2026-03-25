@@ -28,4 +28,4 @@ docs/*
 server/cache/
 .env
 .env.production
-
+*transcript_*.json

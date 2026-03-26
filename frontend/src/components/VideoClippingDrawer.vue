@@ -23,6 +23,7 @@ const errorMsg = ref('');
 const isLooping = ref(false);
 const showOptions = ref(false);
 const exportFormat = ref<'mp4' | 'mp3'>('mp4');
+const exportQuality = ref<'1080' | '1440' | '2160' | 'best'>('1080');
 const burnSubtitles = ref(true);
 
 const API_BASE = import.meta.env.VITE_API_URL;
@@ -59,6 +60,7 @@ watch(() => props.show, (val) => {
       endTime.value = Math.min(props.videoDuration, props.currentTime + 15);
     }
     errorMsg.value = '';
+    exportQuality.value = '1080';
   } else {
     // Stop loop when drawer is closed
     if (isLooping.value) {
@@ -149,6 +151,7 @@ const handleGenerate = async () => {
       body: JSON.stringify({
         start: startTime.value,
         duration: clipDuration.value,
+        quality: exportQuality.value,
         format: exportFormat.value,
         burnSubtitles: burnSubtitles.value
       })
@@ -198,6 +201,25 @@ const handleGenerate = async () => {
       <main class="drawer-content">
         <p class="subtitle">选取视频范围，一键生成高清 MP4 切片</p>
 
+        <div class="clip-summary-bar">
+          <div class="summary-chip primary">
+            <span class="summary-label">时长</span>
+            <strong>{{ clipDuration.toFixed(1) }}s</strong>
+          </div>
+          <div class="summary-chip">
+            <span class="summary-label">格式</span>
+            <strong>{{ exportFormat.toUpperCase() }}</strong>
+          </div>
+          <div v-if="exportFormat === 'mp4'" class="summary-chip">
+            <span class="summary-label">清晰度</span>
+            <strong>{{ exportQuality.toUpperCase() }}</strong>
+          </div>
+          <div class="summary-chip">
+            <span class="summary-label">快捷键</span>
+            <strong>I / O</strong>
+          </div>
+        </div>
+
         <div class="range-selector">
           <div class="time-box">
             <label>起始时间 / Start (I)</label>
@@ -215,7 +237,8 @@ const handleGenerate = async () => {
             <span class="formatted-time">{{ formatTime(startTime) }}</span>
           </div>
 
-          <div class="range-arrow">
+          <div class="range-center">
+            <div class="range-line"></div>
             <div class="duration-pill">{{ clipDuration.toFixed(1) }}s</div>
           </div>
 
@@ -253,19 +276,36 @@ const handleGenerate = async () => {
 
         <!-- 导出选项 Toggle -->
         <div class="export-options-toggle" @click="showOptions = !showOptions">
-          <span><Settings :size="12" /> 高级导出选项</span>
+          <span><Settings :size="12" /> {{ showOptions ? '收起高级选项' : '展开高级选项' }}</span>
         </div>
 
         <!-- 导出选项面板 -->
         <div v-if="showOptions" class="export-options-panel">
            <div class="option-row">
              <label>导出格式</label>
-             <div class="radio-group">
+             <div class="radio-group pill-group">
                 <label class="radio-label">
                   <input type="radio" v-model="exportFormat" value="mp4" /> MP4 视频
                 </label>
                 <label class="radio-label">
                   <input type="radio" v-model="exportFormat" value="mp3" /> MP3 音频
+                </label>
+             </div>
+           </div>
+           <div class="option-row" v-if="exportFormat === 'mp4'">
+             <label>切片清晰度</label>
+             <div class="radio-group pill-group">
+                <label class="radio-label">
+                  <input type="radio" v-model="exportQuality" value="1080" /> 1080P
+                </label>
+                <label class="radio-label">
+                  <input type="radio" v-model="exportQuality" value="1440" /> 2K
+                </label>
+                <label class="radio-label">
+                  <input type="radio" v-model="exportQuality" value="2160" /> 4K
+                </label>
+                <label class="radio-label">
+                  <input type="radio" v-model="exportQuality" value="best" /> 最佳
                 </label>
              </div>
            </div>
@@ -293,6 +333,10 @@ const handleGenerate = async () => {
       </main>
 
       <footer class="drawer-footer">
+        <div class="footer-meta">
+          <span>将导出当前选定片段</span>
+          <strong>{{ formatTime(startTime) }} - {{ formatTime(endTime) }}</strong>
+        </div>
         <button
           class="btn-primary"
           :disabled="!isValidRange || isGenerating"
@@ -366,26 +410,64 @@ const handleGenerate = async () => {
 }
 
 .drawer-content {
-  padding: 12px 16px;
+  padding: 14px 18px 16px;
   flex: 1;
 }
 
 .subtitle {
   color: rgba(255, 255, 255, 0.3);
   font-size: 0.75rem;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+}
+
+.clip-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.summary-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.8);
+  min-width: 110px;
+}
+
+.summary-chip.primary {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(99, 102, 241, 0.24);
+  color: #fff;
+}
+
+.summary-label {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.summary-chip strong {
+  font-size: 0.88rem;
+  font-weight: 700;
 }
 
 .range-selector {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-end;
-  gap: 12px;
-  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .time-box {
-  flex: 1;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .time-box label {
@@ -399,10 +481,10 @@ const handleGenerate = async () => {
 
 .input-with-action {
   display: flex;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  padding: 2px;
+  padding: 3px;
 }
 
 .input-with-action input {
@@ -410,71 +492,81 @@ const handleGenerate = async () => {
   background: transparent;
   border: none;
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 600;
-  padding: 5px 8px;
+  padding: 8px 10px;
   width: 100%;
   outline: none;
 }
 
 .btn-set {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.06);
   border: none;
   color: var(--accent-light);
   border-radius: 6px;
-  padding: 0 6px;
+  padding: 0 10px;
   display: flex;
   align-items: center;
-  gap: 3px;
-  font-size: 0.65rem;
+  gap: 4px;
+  font-size: 0.68rem;
   cursor: pointer;
 }
 
 .formatted-time {
   font-family: monospace;
-  font-size: 0.75rem;
+  font-size: 0.84rem;
   color: var(--accent-light);
-  margin-top: 4px;
+  margin-top: 8px;
   display: block;
+  font-weight: 700;
 }
 
-.range-arrow {
+.range-center {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding-bottom: 22px;
+  gap: 10px;
+}
+
+.range-line {
+  width: 1px;
+  flex: 1;
+  min-height: 72px;
+  background: linear-gradient(to bottom, transparent, rgba(99, 102, 241, 0.5), transparent);
 }
 
 .duration-pill {
   background: rgba(99, 102, 241, 0.15);
   color: var(--text-accent);
-  padding: 1px 8px;
-  border-radius: 12px;
-  font-size: 0.7rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
   font-weight: 700;
   border: 1px solid rgba(99, 102, 241, 0.2);
   white-space: nowrap;
+  box-shadow: 0 8px 18px rgba(99, 102, 241, 0.16);
 }
 
 .preview-actions {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .btn-outline {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.7);
-  padding: 8px 4px;
-  border-radius: 10px;
-  font-size: 0.75rem;
+  padding: 11px 10px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -493,7 +585,7 @@ const handleGenerate = async () => {
 .nudge-controls {
   display: flex;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 9px;
 }
 
 .btn-nudge {
@@ -520,7 +612,7 @@ const handleGenerate = async () => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   cursor: pointer;
 }
 
@@ -538,14 +630,14 @@ const handleGenerate = async () => {
 }
 
 .export-options-panel {
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-  padding: 12px;
-  margin-bottom: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
 }
 
 .option-row {
@@ -561,7 +653,21 @@ const handleGenerate = async () => {
 
 .radio-group, .toggle-group {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pill-group .radio-label {
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pill-group .radio-label:has(input:checked) {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #fff !important;
 }
 
 .radio-label, .checkbox-label {
@@ -600,21 +706,74 @@ const handleGenerate = async () => {
 .drawer-footer {
   padding: 12px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.footer-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.74rem;
+  min-width: 0;
+}
+
+.footer-meta strong {
+  color: #fff;
+  font-family: monospace;
+  font-size: 0.86rem;
 }
 
 .btn-primary {
-  width: 100%;
+  flex: 1;
   background: var(--accent-color);
   color: #fff;
   border: none;
-  padding: 10px;
-  border-radius: 10px;
+  padding: 12px 16px;
+  border-radius: 12px;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   cursor: pointer;
+  box-shadow: 0 16px 28px rgba(99, 102, 241, 0.28);
+}
+
+.btn-primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+@media (max-width: 900px) {
+  .range-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .range-center {
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+
+  .range-line {
+    width: 48px;
+    min-height: 1px;
+    flex: initial;
+    background: linear-gradient(to right, transparent, rgba(99, 102, 241, 0.5), transparent);
+  }
+
+  .preview-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .drawer-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .spin {

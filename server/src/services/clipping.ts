@@ -215,6 +215,7 @@ interface ClipOptions {
   subtitles?: SubtitleItem[];
   subtitlesAreCues?: boolean;
   language?: string;
+  quality?: '1080' | '1440' | '2160' | 'best';
   format?: string;
   burnSubtitles?: boolean;
 }
@@ -323,13 +324,24 @@ function escapeDrawtextText(value: string): string {
     .replace(/\n/g, '\\n');
 }
 
-async function findCachedFullVideoPath(videoId: string): Promise<string | null> {
+async function findCachedFullVideoPath(
+  videoId: string,
+  quality?: '1080' | '1440' | '2160' | 'best',
+): Promise<string | null> {
   const preferredLegacyPath = path.join(CLIPS_DIR, `${videoId}_full.mp4`);
-  if (await fs.pathExists(preferredLegacyPath)) {
+  if ((!quality || quality === '1080') && await fs.pathExists(preferredLegacyPath)) {
     return preferredLegacyPath;
   }
 
   const files = await fs.readdir(CLIPS_DIR).catch(() => []);
+  if (quality) {
+    const exactMatch = files.find((file) =>
+      file.includes(`_${videoId}_full_${quality}`) && file.endsWith('.mp4')
+    );
+    if (exactMatch) {
+      return path.join(CLIPS_DIR, exactMatch);
+    }
+  }
   const match = files.find((file) =>
     file.includes(`_${videoId}_full_`) && file.endsWith('.mp4')
   );
@@ -352,7 +364,20 @@ function formatTime(seconds: number): string {
 /**
  * 核心剪辑函数
  */
-export async function createVideoClip({ videoId, title = 'clip', url, start, duration, platform, subtitles, subtitlesAreCues = false, language, format = 'mp4', burnSubtitles = false }: ClipOptions): Promise<string> {
+export async function createVideoClip({
+  videoId,
+  title = 'clip',
+  url,
+  start,
+  duration,
+  platform,
+  subtitles,
+  subtitlesAreCues = false,
+  language,
+  quality = '1080',
+  format = 'mp4',
+  burnSubtitles = false,
+}: ClipOptions): Promise<string> {
   await fs.ensureDir(CLIPS_DIR);
 
   const end = start + duration;
@@ -367,7 +392,7 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
 
   // 生成更友好的缓存文件名
   const safeTitle = sanitizeFilename(title);
-  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}${shouldBurnTranslatedSubtitles ? '_burned_zh_v21' : ''}${burnSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}_${WATERMARK_VERSION}`;
+  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}_${quality}${shouldBurnTranslatedSubtitles ? '_burned_zh_v21' : ''}${burnSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}_${WATERMARK_VERSION}`;
   const ext = isMp3 ? 'mp3' : 'mp4';
   const outputPath = path.join(CLIPS_DIR, `${clipId}.${ext}`);
 
@@ -376,7 +401,7 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
   }
 
   // ==== 优化 1：尝试寻找本地是否存在完整版视频文件 ====
-  const fullVideoPath = await findCachedFullVideoPath(videoId);
+  const fullVideoPath = await findCachedFullVideoPath(videoId, quality);
   const hasLocalFullVideo = Boolean(fullVideoPath);
 
   const tempRawPath = path.join(os.tmpdir(), `raw_${clipId}.mp4`);
@@ -409,7 +434,11 @@ export async function createVideoClip({ videoId, title = 'clip', url, start, dur
         output: tempRawPath,
         // 提升画质至 1080p（大多数 1080p 只有分离流，因此分离流合并也是刚需，在保证不过度重压且有 copy 加持下，速度依然很快）
         // 修正：强制要求 vcodec 为 avc1 (H.264)，音频为 m4a (AAC)，这是兼容性的黄金组合
-        format: isMp3 ? 'bestaudio/best' : 'bestvideo[height<=1080][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best',
+        format: isMp3
+          ? 'bestaudio/best'
+          : quality === 'best'
+            ? 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best'
+            : `bestvideo[height<=${quality}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best`,
         downloadSections: `*${formatTime(start)}-${formatTime(end)}`,
         downloader: 'ffmpeg',
         downloaderArgs: 'ffmpeg:-c:v libx264 -c:a aac', // 下载时即尝试标准化

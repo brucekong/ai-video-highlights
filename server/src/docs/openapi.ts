@@ -1,6 +1,14 @@
 import type { FastifyDynamicSwaggerOptions } from '@fastify/swagger';
 
 export const Schemas = {
+  KeywordGlossaryItem: {
+    type: 'object',
+    properties: {
+      english: { type: 'string', description: '英文单词或短语' },
+      chinese: { type: 'string', description: '对应中文释义' },
+      type: { type: 'string', enum: ['word', 'phrase'], description: '词条类型' },
+    },
+  },
   TakeawayItem: {
     type: 'object',
     properties: {

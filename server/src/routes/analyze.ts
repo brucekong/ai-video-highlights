@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { fetchTranscript, formatTranscriptForAI, type TranscriptSegment } from '../services/transcript.js';
 import { fetchBilibiliTranscript } from '../services/bilibili.js';
@@ -50,6 +51,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                 mindmap: { type: 'string', nullable: true },
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
+                keywordGlossary: { type: 'array', items: Schemas.KeywordGlossaryItem, nullable: true },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
                 takeaways: { type: 'array', items: Schemas.TakeawayItem },
@@ -100,6 +102,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               mindmap: cached.mindmap,
               videoDescription: cached.videoDescription,
               videoHashtags: cached.videoHashtags,
+              keywordGlossary: Array.isArray(cached.keywordGlossary) ? cached.keywordGlossary : [],
               isIndexed,
               transcriptSource: cached.subtitleCues.length > 0 ? 'cue' : 'raw',
               takeaways: cached.takeaways,
@@ -217,6 +220,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                   tags: Array.isArray(aiResult.tags) ? aiResult.tags.join(',') : '',
                   videoDescription: aiResult.videoDescription,
                   videoHashtags: aiResult.videoHashtags,
+                  keywordGlossary: (aiResult.keywordGlossary || []) as unknown as Prisma.InputJsonValue,
                   duration: maxDurationSeconds,
                 }
               });
@@ -357,6 +361,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           mindmap: null,
           videoDescription: null,
           videoHashtags: null,
+          keywordGlossary: [],
           isIndexed: false, // 明确告知前端处于未索引状态，启动轮询
           transcriptSource: hasInitialCues > 0 ? 'cue' : 'raw',
           takeaways: [],

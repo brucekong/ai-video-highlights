@@ -7,6 +7,12 @@ export interface AITakeaway {
   duration: string;   // 如 "2:30"
 }
 
+export interface AIKeywordGlossaryItem {
+  english: string;
+  chinese: string;
+  type: 'word' | 'phrase';
+}
+
 const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任务是分析视频的转录文本，提取出最重要的核心观点和关键要点。
 
 请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
@@ -17,6 +23,13 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
   "tags": ["标签1", "标签2", "标签3"],
   "video_description": "一段吸引人的视频简介，适合发布在视频号、小红书等社交平台，需包含视频核心价值，字数约 100 字左右",
   "video_hashtags": "#话题1 #话题2 #话题3",
+  "keyword_glossary": [
+    {
+      "english": "water bottle",
+      "chinese": "水瓶",
+      "type": "phrase"
+    }
+  ],
   "takeaways": [
     {
       "title": "要点标题（简洁有力，10-20个字）",
@@ -40,8 +53,10 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
 9. 提取 3-5 个核心关键词作为标签
 10. 给出一个适合视频号（微信视频号）发布的视频描述，语气要有吸引力，概括视频价值
 11. 提取 3-5 个最相关的 #话题（hashtags），以空格分隔
-12. 生成一份完整的视频结构脑图Markdown文本，使用层级标题（# 为根，## 为二级，### 为三级），确保能够被 Markmap 渲染
-13. 只返回 JSON，不要有任何其他文字或 markdown 标记`
+12. 从字幕中提炼 8-15 个最值得学习的关键单词和短语，返回到 keyword_glossary 中。english 保留原文，chinese 给出自然中文释义，type 只能是 word 或 phrase
+13. 优先选择视频里高频、核心、场景相关的表达，避免过于基础的虚词
+14. 生成一份完整的视频结构脑图Markdown文本，使用层级标题（# 为根，## 为二级，### 为三级），确保能够被 Markmap 渲染
+15. 只返回 JSON，不要有任何其他文字或 markdown 标记`
 ;
 
 // 重试配置
@@ -63,7 +78,7 @@ function sleep(ms: number): Promise<void> {
 export async function analyzeTranscript(
   formattedTranscript: string,
   maxDurationSeconds?: number,
-): Promise<{ title: string; takeaways: AITakeaway[]; mindmap: string; category?: string; tags?: string[]; videoDescription?: string; videoHashtags?: string }> {
+): Promise<{ title: string; takeaways: AITakeaway[]; mindmap: string; category?: string; tags?: string[]; videoDescription?: string; videoHashtags?: string; keywordGlossary?: AIKeywordGlossaryItem[] }> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error('DEEPSEEK_API_KEY is not configured. Please set DEEPSEEK_API_KEY in server/.env');
@@ -130,6 +145,15 @@ export async function analyzeTranscript(
           tags: Array.isArray(parsed.tags) ? parsed.tags : [],
           videoDescription: parsed.video_description || '',
           videoHashtags: parsed.video_hashtags || '',
+          keywordGlossary: Array.isArray(parsed.keyword_glossary)
+            ? parsed.keyword_glossary
+              .map((item: any) => ({
+                english: String(item?.english || '').trim(),
+                chinese: String(item?.chinese || '').trim(),
+                type: item?.type === 'word' ? 'word' : 'phrase',
+              }))
+              .filter((item: AIKeywordGlossaryItem) => item.english && item.chinese)
+            : [],
         };
       } catch {
         console.error('Failed to parse AI response:', text);

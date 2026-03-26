@@ -25,6 +25,12 @@ interface Takeaway {
   duration: string;   // 如 "2:30"
 }
 
+interface KeywordGlossaryItem {
+  english: string;
+  chinese: string;
+  type: 'word' | 'phrase';
+}
+
 
 interface TranscriptSegment {
   text: string;
@@ -64,6 +70,14 @@ const transcriptSource = ref<'raw' | 'cue'>('raw');
 const videoTitle = ref('');
 const videoDescription = ref('');
 const videoHashtags = ref('');
+const keywordGlossary = ref<KeywordGlossaryItem[]>([]);
+const showKeywordGlossaryForm = ref(false);
+const isSavingKeywordGlossary = ref(false);
+const keywordGlossaryForm = ref<KeywordGlossaryItem>({
+  english: '',
+  chinese: '',
+  type: 'word',
+});
 const activeTakeawayIndex = ref<number | null>(null);
 const activeTranscriptIndex = ref<number | null>(null);
 const currentVideoTime = ref(0);
@@ -214,6 +228,88 @@ const closeConfirmModal = () => {
 
 const closeActionNotice = () => {
   actionNotice.value = null;
+};
+
+const normalizeKeywordGlossary = (items: any[]): KeywordGlossaryItem[] => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map((item) => ({
+      english: decodeHtml(String(item?.english || '')).trim(),
+      chinese: decodeHtml(String(item?.chinese || '')).trim(),
+      type: item?.type === 'word' ? 'word' as const : 'phrase' as const,
+    }))
+    .filter((item) => item.english && item.chinese);
+};
+
+const resetKeywordGlossaryForm = () => {
+  keywordGlossaryForm.value = {
+    english: '',
+    chinese: '',
+    type: 'word',
+  };
+};
+
+const openKeywordGlossaryForm = () => {
+  showKeywordGlossaryForm.value = true;
+};
+
+const cancelKeywordGlossaryForm = () => {
+  if (isSavingKeywordGlossary.value) return;
+  showKeywordGlossaryForm.value = false;
+  resetKeywordGlossaryForm();
+};
+
+const saveKeywordGlossaryItem = async () => {
+  if (!videoId.value) return;
+
+  const english = keywordGlossaryForm.value.english.trim();
+  const chinese = keywordGlossaryForm.value.chinese.trim();
+  const type = keywordGlossaryForm.value.type === 'phrase' ? 'phrase' : 'word';
+
+  if (!english || !chinese) {
+    actionNotice.value = {
+      title: '请补全词条',
+      message: '请填写英文和中文释义后再保存。',
+      type: 'error',
+    };
+    return;
+  }
+
+  isSavingKeywordGlossary.value = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/videos/${videoId.value}/keyword-glossary`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ english, chinese, type }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || '保存关键词失败');
+    }
+
+    const result = await response.json();
+    keywordGlossary.value = normalizeKeywordGlossary(result.data || []);
+    showKeywordGlossaryForm.value = false;
+    resetKeywordGlossaryForm();
+    actionNotice.value = {
+      title: '保存成功',
+      message: '关键词词条已加入当前视频。',
+      type: 'success',
+    };
+  } catch (error) {
+    console.error('Save keyword glossary failed:', error);
+    actionNotice.value = {
+      title: '保存失败',
+      message: '关键词词条保存失败，请稍后重试。',
+      type: 'error',
+    };
+  } finally {
+    isSavingKeywordGlossary.value = false;
+  }
 };
 
 const confirmPendingAction = async () => {
@@ -777,6 +873,7 @@ const pollAnalysisStatus = async () => {
       if (result.data.videoHashtags) {
         videoHashtags.value = decodeHtml(result.data.videoHashtags);
       }
+      keywordGlossary.value = normalizeKeywordGlossary(result.data.keywordGlossary || []);
 
       // 2. 更新摘要
       if (result.data.takeaways && result.data.takeaways.length > 0) {
@@ -844,6 +941,7 @@ const handleAnalyze = async (force: boolean = false) => {
   activeTranscriptIndex.value = null;
   videoDescription.value = '';
   videoHashtags.value = '';
+  keywordGlossary.value = [];
   currentVideoTime.value = 0;
 
   try {
@@ -873,6 +971,7 @@ const handleAnalyze = async (force: boolean = false) => {
       videoTitle.value = decodeHtml(result.data.videoTitle || '');
       videoDescription.value = decodeHtml(result.data.videoDescription || '');
       videoHashtags.value = decodeHtml(result.data.videoHashtags || '');
+      keywordGlossary.value = normalizeKeywordGlossary(result.data.keywordGlossary || []);
       mindmapRaw.value = result.data.mindmap || '';
 
       const rawTranscript = result.data.transcript || [];
@@ -1509,7 +1608,7 @@ const takeawayMap = computed(() => {
               </div>
 
               <!-- 新增：视频号发布提示区域 -->
-              <div v-if="videoDescription || videoHashtags" class="channels-publish-section animate-fade-in">
+              <div v-if="videoDescription || videoHashtags || keywordGlossary.length || showKeywordGlossaryForm" class="channels-publish-section animate-fade-in">
                 <div class="divider"></div>
                 <div class="publish-header">
                   <div class="publish-badge">
@@ -1536,6 +1635,113 @@ const takeawayMap = computed(() => {
                     </button>
                   </div>
                   <div class="publish-content hashtags">{{ videoHashtags }}</div>
+                </div>
+
+                <div v-if="keywordGlossary.length" class="publish-item">
+                  <div class="publish-label">
+                    <span>关键单词与短语 / Key Vocabulary</span>
+                    <button class="btn-copy-mini" @click="openKeywordGlossaryForm">
+                      <span>手动增加</span>
+                    </button>
+                  </div>
+                  <div class="glossary-grid">
+                    <div
+                      v-for="(item, index) in keywordGlossary"
+                      :key="`${item.english}-${index}`"
+                      class="glossary-card"
+                    >
+                      <div class="glossary-card-header">
+                        <span class="glossary-type">{{ item.type === 'word' ? '单词' : '短语' }}</span>
+                      </div>
+                      <div class="glossary-english">{{ item.english }}</div>
+                      <div class="glossary-chinese">{{ item.chinese }}</div>
+                    </div>
+                  </div>
+
+                  <div v-if="showKeywordGlossaryForm" class="glossary-form">
+                    <div class="glossary-form-row">
+                      <input
+                        v-model="keywordGlossaryForm.english"
+                        type="text"
+                        class="glossary-input"
+                        placeholder="英文单词或短语"
+                      />
+                      <input
+                        v-model="keywordGlossaryForm.chinese"
+                        type="text"
+                        class="glossary-input"
+                        placeholder="中文释义"
+                      />
+                    </div>
+                    <div class="glossary-form-actions">
+                      <select v-model="keywordGlossaryForm.type" class="glossary-select">
+                        <option value="word">单词</option>
+                        <option value="phrase">短语</option>
+                      </select>
+                      <button
+                        class="btn-glossary-action secondary"
+                        :disabled="isSavingKeywordGlossary"
+                        @click="cancelKeywordGlossaryForm"
+                      >
+                        取消
+                      </button>
+                      <button
+                        class="btn-glossary-action primary"
+                        :disabled="isSavingKeywordGlossary"
+                        @click="saveKeywordGlossaryItem"
+                      >
+                        {{ isSavingKeywordGlossary ? '保存中...' : '保存词条' }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else class="publish-item">
+                  <div class="publish-label">
+                    <span>关键单词与短语 / Key Vocabulary</span>
+                    <button class="btn-copy-mini" @click="openKeywordGlossaryForm">
+                      <span>手动增加</span>
+                    </button>
+                  </div>
+                  <div v-if="showKeywordGlossaryForm" class="glossary-form empty">
+                    <div class="glossary-form-row">
+                      <input
+                        v-model="keywordGlossaryForm.english"
+                        type="text"
+                        class="glossary-input"
+                        placeholder="英文单词或短语"
+                      />
+                      <input
+                        v-model="keywordGlossaryForm.chinese"
+                        type="text"
+                        class="glossary-input"
+                        placeholder="中文释义"
+                      />
+                    </div>
+                    <div class="glossary-form-actions">
+                      <select v-model="keywordGlossaryForm.type" class="glossary-select">
+                        <option value="word">单词</option>
+                        <option value="phrase">短语</option>
+                      </select>
+                      <button
+                        class="btn-glossary-action secondary"
+                        :disabled="isSavingKeywordGlossary"
+                        @click="cancelKeywordGlossaryForm"
+                      >
+                        取消
+                      </button>
+                      <button
+                        class="btn-glossary-action primary"
+                        :disabled="isSavingKeywordGlossary"
+                        @click="saveKeywordGlossaryItem"
+                      >
+                        {{ isSavingKeywordGlossary ? '保存中...' : '保存词条' }}
+                      </button>
+                    </div>
+                  </div>
+                  <div v-else class="publish-content glossary-empty-state">
+                    暂时还没有提炼出的关键词词条，你也可以先手动补充。
+                  </div>
                 </div>
               </div>
 
@@ -3294,6 +3500,137 @@ input::placeholder {
 .publish-content.hashtags {
   color: var(--accent-color);
   font-weight: 500;
+}
+
+.glossary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.glossary-card {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.glossary-card-header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.glossary-type {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--accent-color);
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.24);
+}
+
+.glossary-english {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.glossary-chinese {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.glossary-form {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.glossary-form.empty {
+  margin-top: 0;
+}
+
+.glossary-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.glossary-input,
+.glossary-select {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  padding: 10px 12px;
+  font-size: 0.9rem;
+}
+
+.glossary-input:focus,
+.glossary-select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14);
+}
+
+.glossary-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-glossary-action {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-glossary-action.secondary {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+}
+
+.btn-glossary-action.secondary:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.btn-glossary-action.primary {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
+}
+
+.btn-glossary-action.primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.btn-glossary-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.glossary-empty-state {
+  color: var(--text-secondary);
 }
 
 .btn-copy-mini {

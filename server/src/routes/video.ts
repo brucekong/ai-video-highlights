@@ -9,6 +9,79 @@ import { exportToNotion } from '../services/notion.js';
 import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
 
 export async function videoRoutes(fastify: FastifyInstance) {
+  fastify.post('/api/videos/:videoId/keyword-glossary', {
+    schema: {
+      tags: ['Videos'],
+      summary: '新增关键词词条',
+      description: '为当前视频手动追加一个关键单词或短语词条。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      body: {
+        type: 'object',
+        required: ['english', 'chinese', 'type'],
+        properties: {
+          english: { type: 'string' },
+          chinese: { type: 'string' },
+          type: { type: 'string', enum: ['word', 'phrase'] },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: {
+              type: 'array',
+              items: Schemas.KeywordGlossaryItem,
+            },
+          },
+        },
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { english: string; chinese: string; type: 'word' | 'phrase' } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+    const english = request.body.english.trim();
+    const chinese = request.body.chinese.trim();
+    const type = request.body.type === 'word' ? 'word' : 'phrase';
+
+    const video = await prisma.video.findUnique({
+      where: { videoId },
+      select: { videoId: true, keywordGlossary: true },
+    });
+
+    if (!video) {
+      return reply.status(404).send({ error: '视频不存在' });
+    }
+
+    const existing = Array.isArray(video.keywordGlossary) ? video.keywordGlossary as any[] : [];
+    const nextGlossary = [
+      ...existing,
+      { english, chinese, type },
+    ];
+
+    await prisma.video.update({
+      where: { videoId },
+      data: {
+        keywordGlossary: nextGlossary as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return reply.send({
+      success: true,
+      data: nextGlossary,
+    });
+  });
+
   /**
    * GET /api/videos
    * 获取分析过的视频列表。如果用户已登录，获取该用户的历史记录；否则返回空。
@@ -151,6 +224,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
                 mindmap: { type: 'string', nullable: true, description: '视频结构脑图 Markdown' },
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
+                keywordGlossary: { type: 'array', items: Schemas.KeywordGlossaryItem, nullable: true },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
                 transcript: {
@@ -203,6 +277,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         mindmap: video.mindmap,
         videoDescription: video.videoDescription,
         videoHashtags: video.videoHashtags,
+        keywordGlossary: Array.isArray(video.keywordGlossary) ? video.keywordGlossary : [],
         isIndexed,
         transcriptSource: video.subtitleCues.length > 0 ? 'cue' : 'raw',
         takeaways: video.takeaways.map((t) => ({
@@ -742,6 +817,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
         properties: {
           start: { type: 'number', description: '起始秒数' },
           duration: { type: 'number', description: '持续秒数' },
+          quality: {
+            type: 'string',
+            enum: ['1080', '1440', '2160', 'best'],
+            default: '1080',
+            description: '目标清晰度',
+          },
           format: { type: 'string', default: 'mp4' },
           burnSubtitles: { type: 'boolean', default: false }
         }
@@ -754,11 +835,11 @@ export async function videoRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (
-    request: FastifyRequest<{ Params: { videoId: string }; Body: { start: number; duration: number; format?: string; burnSubtitles?: boolean } }>,
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { start: number; duration: number; quality?: '1080' | '1440' | '2160' | 'best'; format?: string; burnSubtitles?: boolean } }>,
     reply: FastifyReply
   ) => {
     const { videoId } = request.params;
-    const { start, duration, format = 'mp4', burnSubtitles = false } = request.body;
+    const { start, duration, quality = '1080', format = 'mp4', burnSubtitles = false } = request.body;
     const video = await prisma.video.findUnique({ where: { videoId } });
     if (!video) return reply.status(404).send({ error: '视频不存在' });
 
@@ -794,6 +875,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         start,
         duration,
         platform: video.platform,
+        quality,
         language: isChinese ? 'zh' : undefined,
         format,
         burnSubtitles,

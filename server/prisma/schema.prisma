@@ -26,6 +26,7 @@ model Video {
   tags                String?                @map("tags")
   videoDescription    String?                @map("video_description")
   videoHashtags       String?                @map("video_hashtags")
+  keywordGlossary     Json?                  @map("keyword_glossary")
   embedding           Unsupported("vector(1024)")?
   translatedEmbedding Unsupported("vector(1024)")? @map("translated_embedding")
   chatMessages        ChatMessage[]

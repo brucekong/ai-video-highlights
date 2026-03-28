@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { fetchTranscript, formatTranscriptForAI, type TranscriptSegment } from '../services/transcript.js';
 import { fetchBilibiliTranscript } from '../services/bilibili.js';
-import { analyzeTranscript, translateTranscriptSegments, getEmbedding, getEmbeddings } from '../services/ai.js';
+import { analyzeTranscriptSummary, generatePublishAssist, generateMindmap, translateTranscriptSegments, getEmbedding, getEmbeddings } from '../services/ai.js';
 import { fallbackToWhisper } from '../services/whisper.js';
 import { fetchVideoMetadata } from '../services/metadata.js';
 import { containsSensitiveContent } from '../services/safety.js';
@@ -52,6 +52,9 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
                 keywordGlossary: { type: 'array', items: Schemas.KeywordGlossaryItem, nullable: true },
+                summaryReady: { type: 'boolean' },
+                publishReady: { type: 'boolean' },
+                mindmapReady: { type: 'boolean' },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
                 takeaways: { type: 'array', items: Schemas.TakeawayItem },
@@ -103,6 +106,9 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               videoDescription: cached.videoDescription,
               videoHashtags: cached.videoHashtags,
               keywordGlossary: Array.isArray(cached.keywordGlossary) ? cached.keywordGlossary : [],
+              summaryReady: cached.takeaways.length > 0,
+              publishReady: Boolean(cached.videoDescription || cached.videoHashtags || (Array.isArray(cached.keywordGlossary) && cached.keywordGlossary.length > 0)),
+              mindmapReady: Boolean(cached.mindmap),
               isIndexed,
               transcriptSource: cached.subtitleCues.length > 0 ? 'cue' : 'raw',
               takeaways: cached.takeaways,
@@ -203,29 +209,25 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
             }
           };
 
-          // STAGE 2: AI 深度分析 (摘要、脑图)
-          const aiAnalysisTask = async () => {
+          // STAGE 2A: AI 核心摘要
+          const summaryTask = async () => {
             try {
-              console.log(`[Background] Stage 2: AI Summary & Mindmap starting...`);
+              console.log(`[Background] Stage 2A: AI Summary starting...`);
               const lastSegment = transcript[transcript.length - 1];
               const maxDurationSeconds = Math.ceil((lastSegment.offset + lastSegment.duration) / 1000);
-              const aiResult = await analyzeTranscript(formattedText, maxDurationSeconds);
+              const summaryResult = await analyzeTranscriptSummary(formattedText, maxDurationSeconds);
 
               await prisma.video.update({
                 where: { videoId },
                 data: {
-                  title: aiResult.title,
-                  mindmap: aiResult.mindmap,
-                  category: aiResult.category,
-                  tags: Array.isArray(aiResult.tags) ? aiResult.tags.join(',') : '',
-                  videoDescription: aiResult.videoDescription,
-                  videoHashtags: aiResult.videoHashtags,
-                  keywordGlossary: (aiResult.keywordGlossary || []) as unknown as Prisma.InputJsonValue,
+                  title: summaryResult.title,
+                  category: summaryResult.category,
+                  tags: Array.isArray(summaryResult.tags) ? summaryResult.tags.join(',') : '',
                   duration: maxDurationSeconds,
                 }
               });
 
-              const newTitleEmbedding = await getEmbedding(aiResult.title);
+              const newTitleEmbedding = await getEmbedding(summaryResult.title);
               await prisma.$executeRawUnsafe(
                 `UPDATE videos SET "embedding" = $1::vector WHERE video_id = $2`,
                 `[${newTitleEmbedding.join(',')}]`,
@@ -234,7 +236,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
 
               await prisma.takeaway.deleteMany({ where: { videoId } });
               await prisma.takeaway.createMany({
-                data: aiResult.takeaways.map((t, i) => ({
+                data: summaryResult.takeaways.map((t, i) => ({
                   videoId,
                   title: t.title,
                   summary: t.summary,
@@ -243,59 +245,119 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                   sortOrder: i,
                 })),
               });
-              console.log(`[Background] Stage 2: AI Summary & Mindmap completed.`);
+              console.log(`[Background] Stage 2A: AI Summary completed.`);
             } catch (err) {
-              console.error(`[Background Task] Stage 2 (AI Analysis) failed:`, err);
+              console.error(`[Background Task] Stage 2A (Summary) failed:`, err);
             }
           };
 
-          // STAGE 3: 翻译流程 (文本翻译 + 向量化) - 采用增量批处理
+          // STAGE 2B: 发布辅助（描述、话题、关键词）
+          const publishAssistTask = async () => {
+            try {
+              console.log(`[Background] Stage 2B: Publish assist starting...`);
+              const publishResult = await generatePublishAssist(formattedText);
+
+              await prisma.video.update({
+                where: { videoId },
+                data: {
+                  videoDescription: publishResult.videoDescription,
+                  videoHashtags: publishResult.videoHashtags,
+                  keywordGlossary: (publishResult.keywordGlossary || []) as unknown as Prisma.InputJsonValue,
+                }
+              });
+
+              console.log(`[Background] Stage 2B: Publish assist completed.`);
+            } catch (err) {
+              console.error(`[Background Task] Stage 2B (Publish Assist) failed:`, err);
+            }
+          };
+
+          // STAGE 2C: AI 脑图
+          const mindmapTask = async () => {
+            try {
+              console.log(`[Background] Stage 2C: Mindmap starting...`);
+              const mindmapResult = await generateMindmap(formattedText);
+
+              await prisma.video.update({
+                where: { videoId },
+                data: {
+                  mindmap: mindmapResult.mindmap,
+                }
+              });
+
+              console.log(`[Background] Stage 2C: Mindmap completed.`);
+            } catch (err) {
+              console.error(`[Background Task] Stage 2C (Mindmap) failed:`, err);
+            }
+          };
+
+          // STAGE 3: 翻译流程
+          // 先按展示 cue 级别翻译，避免把半句原始 subtitle 直接送入模型导致整段串位。
           const translationFlowTask = async () => {
              try {
                const needsTranslation = transcript.slice(0, 10).filter(s => !/[\u4e00-\u9fa5]/.test(s.text)).length > 5;
                if (!needsTranslation) return;
 
-               console.log(`[Background] Stage 3: Incremental translation starting for ${videoId}...`);
+               console.log(`[Background] Stage 3: Cue-level translation starting for ${videoId}...`);
+
+               await rebuildSubtitleCuesForVideo(prisma, videoId);
+
+               const cueSegments = await prisma.subtitleCue.findMany({
+                 where: { videoId },
+                 orderBy: { sortOrder: 'asc' },
+                 select: {
+                   sortOrder: true,
+                   text: true,
+                   sourceStartSortOrder: true,
+                   sourceEndSortOrder: true,
+                 },
+               });
+
+               const translatableCues = cueSegments.filter((cue) => !/[\u4e00-\u9fa5]/.test(cue.text || ''));
+               if (translatableCues.length === 0) return;
 
                const BATCH_SIZE = 50;
-               const totalSegments = transcript.length;
+               const totalSegments = translatableCues.length;
 
                for (let i = 0; i < totalSegments; i += BATCH_SIZE) {
                  try {
-                   const batch = transcript.slice(i, i + BATCH_SIZE);
-                   const batchTexts = batch.map(s => s.text);
+                   const batch = translatableCues.slice(i, i + BATCH_SIZE);
+                   const batchTexts = batch.map((cue) => cue.text);
 
                    console.log(`[Background] Translating batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(totalSegments / BATCH_SIZE)} for ${videoId}...`);
                    const translatedBatch = await translateTranscriptSegments(batchTexts);
 
                    for (let j = 0; j < translatedBatch.length; j++) {
-                     const sortOrder = i + j;
-                     if (translatedBatch[j]) {
-                        await prisma.subtitle.updateMany({
-                          where: { videoId, sortOrder },
-                          data: { translatedText: translatedBatch[j] }
-                        });
+                     const cue = batch[j];
+                     const translatedText = translatedBatch[j];
+                     if (!cue || !translatedText) continue;
+
+                     await prisma.subtitleCue.updateMany({
+                       where: { videoId, sortOrder: cue.sortOrder },
+                       data: {
+                         translatedText,
+                         overrideTranslatedText: translatedText,
+                       },
+                     });
+
+                     // Single-source cues can safely backfill the raw subtitle too,
+                     // which helps embeddings and any raw-subtitle consumers.
+                     if (cue.sourceStartSortOrder === cue.sourceEndSortOrder) {
+                       await prisma.subtitle.updateMany({
+                         where: { videoId, sortOrder: cue.sourceStartSortOrder },
+                         data: { translatedText }
+                       });
+
+                       const vec = await getEmbedding(translatedText);
+                       await prisma.$executeRawUnsafe(
+                         `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+                         `[${vec.join(',')}]`,
+                         videoId,
+                         cue.sourceStartSortOrder
+                       );
                      }
                    }
 
-                   const validBatchTexts = translatedBatch.filter(t => !!t);
-                   if (validBatchTexts.length > 0) {
-                      const transEmbeds = await getEmbeddings(validBatchTexts);
-                      let transIdx = 0;
-                      for (let j = 0; j < translatedBatch.length; j++) {
-                        const sortOrder = i + j;
-                        if (translatedBatch[j]) {
-                          const vec = transEmbeds[transIdx++];
-                          await prisma.$executeRawUnsafe(
-                            `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
-                            `[${vec.join(',')}]`,
-                            videoId,
-                            sortOrder
-                          );
-                        }
-                      }
-                   }
-                   await rebuildSubtitleCuesForVideo(prisma, videoId);
                    console.log(`[Background] Batch ${Math.floor(i / BATCH_SIZE) + 1} updated to DB.`);
                  } catch (batchErr) {
                    console.error(`[Background Task] Translation batch failed at index ${i}:`, batchErr);
@@ -328,8 +390,8 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           // 核心执行逻辑：
           // 1. 先做原文索引（最快解锁按钮）
           await initialEmbeddingTask();
-          // 2. 然后并行处理 AI 分析和翻译流
-          await Promise.all([aiAnalysisTask(), translationFlowTask()]);
+          // 2. 然后并行处理摘要、发布辅助、脑图和翻译流
+          await Promise.all([summaryTask(), publishAssistTask(), mindmapTask(), translationFlowTask()]);
 
         } catch (err) {
           console.error(`[Background Task Overall] ${videoId}:`, err);
@@ -362,6 +424,9 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           videoDescription: null,
           videoHashtags: null,
           keywordGlossary: [],
+          summaryReady: false,
+          publishReady: false,
+          mindmapReady: false,
           isIndexed: false, // 明确告知前端处于未索引状态，启动轮询
           transcriptSource: hasInitialCues > 0 ? 'cue' : 'raw',
           takeaways: [],

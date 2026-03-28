@@ -27,6 +27,7 @@ const exportQuality = ref<'1080' | '1440' | '2160' | 'best'>('1080');
 const burnSubtitles = ref(true);
 
 const API_BASE = import.meta.env.VITE_API_URL;
+const MIN_CLIP_DURATION = 0.5;
 
 const getFilenameFromDisposition = (value: string | null) => {
   if (!value) return null;
@@ -48,16 +49,49 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
 };
 
+const roundToTenth = (value: number) => Math.round(value * 10) / 10;
+
+const clampTime = (value: number) => {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(props.videoDuration || 0, value));
+};
+
+const normalizeRange = (start: number, end: number) => {
+  let safeStart = clampTime(start);
+  let safeEnd = clampTime(end);
+
+  if (safeStart > safeEnd) {
+    [safeStart, safeEnd] = [safeEnd, safeStart];
+  }
+
+  if (safeEnd - safeStart < MIN_CLIP_DURATION) {
+    if (safeEnd + MIN_CLIP_DURATION <= (props.videoDuration || 0)) {
+      safeEnd = safeStart + MIN_CLIP_DURATION;
+    } else {
+      safeStart = Math.max(0, safeEnd - MIN_CLIP_DURATION);
+    }
+  }
+
+  return {
+    start: roundToTenth(safeStart),
+    end: roundToTenth(safeEnd),
+  };
+};
+
+const applyRange = (start: number, end: number) => {
+  const normalized = normalizeRange(start, end);
+  startTime.value = normalized.start;
+  endTime.value = normalized.end;
+};
+
 // Initialize markers when opens
 watch(() => props.show, (val) => {
   if (val) {
     originalTime.value = props.currentTime;
     if (props.initialStart !== undefined && props.initialEnd !== undefined) {
-      startTime.value = props.initialStart;
-      endTime.value = props.initialEnd;
+      applyRange(props.initialStart, props.initialEnd);
     } else {
-      startTime.value = Math.max(0, props.currentTime - 15);
-      endTime.value = Math.min(props.videoDuration, props.currentTime + 15);
+      applyRange(props.currentTime - 15, props.currentTime + 15);
     }
     errorMsg.value = '';
     exportQuality.value = '1080';
@@ -76,7 +110,7 @@ const clipDuration = computed(() => {
 });
 
 const isValidRange = computed(() => {
-  return endTime.value > startTime.value && clipDuration.value >= 0.5 && clipDuration.value <= 600; // Limit to 10 mins
+  return endTime.value > startTime.value && clipDuration.value >= MIN_CLIP_DURATION && clipDuration.value <= 600; // Limit to 10 mins
 });
 
 const setStart = () => {
@@ -89,6 +123,14 @@ const setEnd = () => {
 
 const previewRange = () => {
   emit('seek', startTime.value * 1000);
+};
+
+const previewStart = () => {
+  emit('seek', startTime.value * 1000);
+};
+
+const previewEnd = () => {
+  emit('seek', endTime.value * 1000);
 };
 
 const toggleLoop = () => {
@@ -104,14 +146,25 @@ const toggleLoop = () => {
 };
 
 const nudgeStart = (amount: number) => {
-  startTime.value = Math.max(0, Math.min(endTime.value - 0.5, startTime.value + amount));
-  startTime.value = Math.round(startTime.value * 10) / 10;
+  const nextStart = startTime.value + amount;
+  applyRange(nextStart, endTime.value);
 };
 
 const nudgeEnd = (amount: number) => {
-  endTime.value = Math.max(startTime.value + 0.5, Math.min(props.videoDuration, endTime.value + amount));
-  endTime.value = Math.round(endTime.value * 10) / 10;
+  const nextEnd = endTime.value + amount;
+  applyRange(startTime.value, nextEnd);
 };
+
+watch([startTime, endTime], ([start, end], [prevStart, prevEnd]) => {
+  if (!props.show) return;
+  if (start === prevStart && end === prevEnd) return;
+
+  const normalized = normalizeRange(start, end);
+  if (normalized.start !== start || normalized.end !== end) {
+    startTime.value = normalized.start;
+    endTime.value = normalized.end;
+  }
+});
 
 // Keyboard Shortcuts
 const handleKeyDown = (e: KeyboardEvent) => {
@@ -222,7 +275,13 @@ const handleGenerate = async () => {
 
         <div class="range-selector">
           <div class="time-box">
-            <label>起始时间 / Start (I)</label>
+            <div class="time-box-header">
+              <label>起始时间 / Start (I)</label>
+              <button class="btn-mini-preview" @click="previewStart" title="跳到起始时间并播放">
+                <Play :size="12" />
+                <span>播放</span>
+              </button>
+            </div>
             <div class="input-with-action">
               <input type="number" v-model.number="startTime" step="0.1" min="0" :max="endTime" />
               <button class="btn-set" @click="setStart" title="快捷键: I">
@@ -243,7 +302,13 @@ const handleGenerate = async () => {
           </div>
 
           <div class="time-box">
-            <label>结束时间 / End (O)</label>
+            <div class="time-box-header">
+              <label>结束时间 / End (O)</label>
+              <button class="btn-mini-preview" @click="previewEnd" title="跳到结束时间并播放">
+                <Play :size="12" />
+                <span>播放</span>
+              </button>
+            </div>
             <div class="input-with-action">
               <input type="number" v-model.number="endTime" step="0.1" :min="startTime" :max="videoDuration" />
               <button class="btn-set" @click="setEnd" title="快捷键: O">
@@ -470,13 +535,41 @@ const handleGenerate = async () => {
   border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
+.time-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
 .time-box label {
-  display: block;
   font-size: 0.7rem;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.25);
-  margin-bottom: 4px;
   text-transform: uppercase;
+  margin: 0;
+}
+
+.btn-mini-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent-light);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-mini-preview:hover {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.34);
+  color: #fff;
 }
 
 .input-with-action {

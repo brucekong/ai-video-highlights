@@ -11,6 +11,8 @@ const execAsync = promisify(exec);
 const CLIPS_DIR = path.join(process.cwd(), 'cache', 'clips');
 const BURN_SUBTITLE_PAD_HEIGHT = 320;
 const BURN_SUBTITLE_SIDE_MARGIN = 90;
+const BURN_SUBTITLE_REFERENCE_WIDTH = 1080;
+const BURN_SUBTITLE_FONT_SIZE = 18;
 
 interface SubtitleItem {
   text: string;
@@ -70,16 +72,36 @@ function findBestMixedBreakIndex(tokens: string[], targetWidth: number): number 
     const firstWidth = measureBurnTextWidth(first);
     const secondWidth = measureBurnTextWidth(second);
 
-    if (firstWidth > targetWidth * 1.12 || secondWidth > targetWidth * 1.35) {
+    if (firstWidth > targetWidth * 1.18 || secondWidth > targetWidth * 1.42) {
       continue;
     }
 
     let score = Math.abs(firstWidth - secondWidth);
-    if (firstWidth < targetWidth * 0.72) score += 8;
-    if (secondWidth < targetWidth * 0.45) score += 10;
-    if (/[，。！？；：,.!?]$/.test(first)) score -= 2;
-    if (/^[，。！？；：,.!?]/.test(second)) score += 8;
-    if (/^[A-Za-z0-9']/.test(tokens[i]) && /[A-Za-z0-9']$/.test(tokens[i - 1])) score += 3;
+    if (firstWidth < targetWidth * 0.66) score += 10;
+    if (secondWidth < targetWidth * 0.4) score += 12;
+
+    // Favor the common short-video rhythm: shorter first line, longer second line.
+    // Penalize "top heavy" layouts where the first line is noticeably wider.
+    if (firstWidth > secondWidth) {
+      score += (firstWidth - secondWidth) * 1.8;
+    } else {
+      score -= Math.min(secondWidth - firstWidth, 6) * 0.6;
+    }
+
+    // Avoid extremes: first line too packed, or second line too tiny.
+    if (firstWidth > targetWidth * 0.96) score += 8;
+    if (secondWidth < targetWidth * 0.52) score += 6;
+
+    // Strongly prefer breaking after punctuation, and avoid starting a line
+    // with punctuation marks.
+    if (/[，。！？；：,.!?]$/.test(first)) score -= 12;
+    if (/[、，；：]$/.test(first)) score -= 4;
+    if (/^[，。！？；：,.!?]/.test(second)) score += 16;
+
+    // Avoid awkward splits inside English word groups when possible.
+    if (/^[A-Za-z0-9']/.test(tokens[i]) && /[A-Za-z0-9']$/.test(tokens[i - 1])) score += 6;
+    if (/^(了|吗|呢|呀|啊|吧)$/.test(tokens[i])) score += 6;
+    if (/^(和|与|及|并且|但是|所以|因为)$/.test(tokens[i])) score += 5;
 
     if (score < bestScore) {
       bestScore = score;
@@ -108,7 +130,20 @@ function findBestMixedBreakIndex(tokens: string[], targetWidth: number): number 
   return Math.max(1, Math.floor(tokens.length / 2));
 }
 
-function layoutChineseTextForBurn(text: string, maxWidth: number = 20): string {
+function getBurnSubtitleMaxWidth(text: string): number {
+  const referenceUsableWidth = BURN_SUBTITLE_REFERENCE_WIDTH - BURN_SUBTITLE_SIDE_MARGIN * 2;
+  const hasLatin = /[A-Za-z]/.test(text);
+  const estimatedUnitWidth = hasLatin
+    ? BURN_SUBTITLE_FONT_SIZE * 1.25
+    : BURN_SUBTITLE_FONT_SIZE * 1.7;
+
+  // Calibrated against a typical 1080px mobile export with 90px side margins.
+  // This intentionally allows longer single lines than before, but still keeps
+  // the subtitle within a comfortable central reading area.
+  return Math.max(22, Math.min(30, Math.round(referenceUsableWidth / estimatedUnitWidth)));
+}
+
+function layoutChineseTextForBurn(text: string, maxWidth: number = getBurnSubtitleMaxWidth(text)): string {
   const normalized = text.replace(/\s+/g, '').trim();
   if (!normalized) return normalized;
 
@@ -131,7 +166,7 @@ function formatSubtitleTextForBurn(text: string): string {
     return normalized;
   }
 
-  return layoutChineseTextForBurn(normalized, 20);
+  return layoutChineseTextForBurn(normalized, getBurnSubtitleMaxWidth(normalized));
 }
 
 function mergeSubtitlesForExport(subtitles: SubtitleItem[]): SubtitleItem[] {
@@ -273,7 +308,7 @@ function buildHardSubtitleFilter(srtPath: string): string {
     : process.platform === 'win32'
       ? 'C\\\\:/Windows/Fonts'
       : '/usr/share/fonts';
-  const subStyle = `FontName=${fontName},Fontsize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=34,MarginL=${BURN_SUBTITLE_SIDE_MARGIN},MarginR=${BURN_SUBTITLE_SIDE_MARGIN},Alignment=2`;
+  const subStyle = `FontName=${fontName},Fontsize=${BURN_SUBTITLE_FONT_SIZE},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=34,MarginL=${BURN_SUBTITLE_SIDE_MARGIN},MarginR=${BURN_SUBTITLE_SIDE_MARGIN},Alignment=2`;
   return `${padFilter},subtitles=${safeSrtPath}:fontsdir=${fontsDir}:force_style='${subStyle}'`;
 }
 
@@ -341,6 +376,11 @@ async function findCachedFullVideoPath(
     if (exactMatch) {
       return path.join(CLIPS_DIR, exactMatch);
     }
+
+    // When the user explicitly requests a quality, do not silently fall back
+    // to another cached resolution (for example reuse a 1440p full cache for
+    // a 2160p clip request). Missing exact cache should trigger a fresh fetch.
+    return null;
   }
   const match = files.find((file) =>
     file.includes(`_${videoId}_full_`) && file.endsWith('.mp4')
@@ -405,6 +445,7 @@ export async function createVideoClip({
   const hasLocalFullVideo = Boolean(fullVideoPath);
 
   const tempRawPath = path.join(os.tmpdir(), `raw_${clipId}.mp4`);
+  const tempPreparedPath = path.join(os.tmpdir(), `prepared_${clipId}.mp4`);
   const srtPath = path.join(os.tmpdir(), `${clipId}.srt`);
   const subtitleWorkdir = path.join(os.tmpdir(), `subtitle_drawtext_${clipId}`);
 
@@ -421,11 +462,13 @@ export async function createVideoClip({
         const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
         await fs.writeFile(srtPath, srtContent);
         const vfFilter = appendWatermarkFilter(buildHardSubtitleFilter(srtPath));
-        await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
+        await execAsync(`ffmpeg -y -i "${fullVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
         return outputPath;
       }
 
-      await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -c copy "${tempRawPath}"`);
+      // Avoid stream-copy cutting here. Copy-based trimming around non-keyframes
+      // can produce clips with damaged/misaligned audio tracks on some sources.
+      await execAsync(`ffmpeg -y -i "${fullVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${tempRawPath}"`);
     } else {
       console.log(`[Clipping] Local video not found, downloading segment online using extreme fast mode...`);
 
@@ -474,13 +517,18 @@ export async function createVideoClip({
         }
       }
 
+      // Rebuild timestamps and normalize audio before any final burn/remux step.
+      // This helps avoid intermittent silent spans caused by section downloads
+      // with uneven/non-monotonic audio timestamps.
+      await execAsync(`ffmpeg -y -fflags +genpts -i "${tempRawPath}" -map 0:v:0 -map 0:a:0? -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${tempPreparedPath}"`);
+
       // 在线提取下处理硬字幕
       if (shouldBurnTranslatedSubtitles) {
         console.log(`[Clipping] Burning translated subtitles...`);
         const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
         await fs.writeFile(srtPath, srtContent);
         const vfFilter = appendWatermarkFilter(buildHardSubtitleFilter(srtPath));
-        await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k "${outputPath}"`);
+        await execAsync(`ffmpeg -y -i "${tempPreparedPath}" -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
         return outputPath;
       }
     }
@@ -489,7 +537,8 @@ export async function createVideoClip({
       // 最终封装阶段：强制重编码为兼容性最高的 H.264 + YUV420P
       console.log(`[Clipping] Finalizing video with high-compatibility settings...`);
       const vfFilter = appendWatermarkFilter();
-      await execAsync(`ffmpeg -y -i "${tempRawPath}" -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
+      const finalInputPath = await fs.pathExists(tempPreparedPath) ? tempPreparedPath : tempRawPath;
+      await execAsync(`ffmpeg -y -i "${finalInputPath}" -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
     }
 
     return outputPath;
@@ -498,6 +547,7 @@ export async function createVideoClip({
     throw error;
   } finally {
     await fs.remove(tempRawPath).catch(() => {});
+    await fs.remove(tempPreparedPath).catch(() => {});
     await fs.remove(tempRawPath.replace('.mp4', '.mp3')).catch(() => {});
     await fs.remove(srtPath).catch(() => {});
     await fs.remove(subtitleWorkdir).catch(() => {});

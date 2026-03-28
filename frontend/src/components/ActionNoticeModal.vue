@@ -6,10 +6,8 @@ withDefaults(defineProps<{
   title: string;
   message: string;
   type?: 'success' | 'error' | 'info';
-  buttonText?: string;
 }>(), {
   type: 'info',
-  buttonText: '我知道了',
 });
 
 const emit = defineEmits<{
@@ -18,54 +16,43 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <Transition name="fade">
-    <div v-if="show" class="notice-overlay" @click.self="emit('close')">
-      <div class="notice-modal glass-panel animate-zoom-in">
-        <div class="notice-icon-wrap" :class="type">
-          <CheckCircle2 v-if="type === 'success'" :size="30" class="notice-icon" />
-          <AlertTriangle v-else-if="type === 'error'" :size="30" class="notice-icon" />
-          <Info v-else :size="30" class="notice-icon" />
-        </div>
+  <Transition name="toast">
+    <div v-if="show" class="notice-toast glass-panel" :class="type" @click="emit('close')">
+      <div class="notice-icon-wrap" :class="type">
+        <CheckCircle2 v-if="type === 'success'" :size="18" class="notice-icon" />
+        <AlertTriangle v-else-if="type === 'error'" :size="18" class="notice-icon" />
+        <Info v-else :size="18" class="notice-icon" />
+      </div>
+      <div class="notice-copy">
         <h3>{{ title }}</h3>
         <p>{{ message }}</p>
-
-        <div class="notice-actions">
-          <button class="btn-primary" @click="emit('close')">{{ buttonText }}</button>
-        </div>
       </div>
     </div>
   </Transition>
 </template>
 
 <style scoped>
-.notice-overlay {
+.notice-toast {
   position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.58);
-  backdrop-filter: blur(8px);
+  top: 24px;
+  right: 24px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(15, 15, 18, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.38);
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 12px;
   z-index: 3000;
-  padding: 20px;
-}
-
-.notice-modal {
-  width: 100%;
-  max-width: 420px;
-  padding: 28px 24px 22px;
-  text-align: center;
-  background: rgba(15, 15, 18, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
 }
 
 .notice-icon-wrap {
-  width: 64px;
-  height: 64px;
-  border-radius: 999px;
-  margin: 0 auto 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -91,35 +78,42 @@ const emit = defineEmits<{
   color: #a5b4fc;
 }
 
-.notice-modal h3 {
-  margin: 0 0 10px;
-  font-size: 1.1rem;
-  color: #fff;
+.notice-copy {
+  min-width: 0;
 }
 
-.notice-modal p {
+.notice-copy h3 {
+  margin: 0 0 4px;
+  font-size: 0.92rem;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.notice-copy p {
   margin: 0;
   color: var(--text-secondary);
-  line-height: 1.65;
-  font-size: 0.94rem;
+  line-height: 1.5;
+  font-size: 0.82rem;
+  word-break: break-word;
 }
 
-.notice-actions {
-  margin-top: 22px;
-  display: flex;
-  justify-content: center;
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.2s ease;
 }
 
-.btn-primary {
-  min-width: 110px;
-  height: 38px;
-  padding: 0 16px;
-  border-radius: 10px;
-  border: 1px solid var(--accent-color);
-  background: var(--accent-color);
-  color: white;
-  font-size: 0.88rem;
-  font-weight: 600;
-  cursor: pointer;
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.98);
+}
+
+@media (max-width: 640px) {
+  .notice-toast {
+    top: 16px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
 }
 </style>

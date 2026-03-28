@@ -93,7 +93,7 @@ const handleAnalyze = () => {
               <input
                 v-model="videoUrl"
                 type="text"
-                placeholder="YouTube 或 Bilibili 链接..."
+                placeholder="YouTube链接..."
                 :disabled="isAnalyzing || showSuccess"
                 @keyup.enter="handleAnalyze"
               />

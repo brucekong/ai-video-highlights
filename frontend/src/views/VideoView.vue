@@ -57,6 +57,7 @@ const MAX_LATIN_CUE_CHARS = 90;
 const SOURCE_KEEP_MAX_DURATION_MS = 6500;
 const SOURCE_FORCE_SPLIT_SENTENCE_COUNT = 4;
 const TRANSCRIPT_COLLAPSE_THRESHOLD = 140;
+const BOTTOM_SUBTITLE_TOGGLE_STORAGE_KEY = 'video-view-bottom-subtitle-visible';
 
 
 const route = useRoute();
@@ -83,6 +84,7 @@ const activeTranscriptIndex = ref<number | null>(null);
 const currentVideoTime = ref(0);
 const videoDuration = ref(0); // 从播放器获取的真实时长
 const isBilingual = ref(true); // 是否开启双语模式
+const showBottomSubtitleDock = ref(true);
 const mindmapRaw = ref(''); // 脑图 Markdown
 const showMindMap = ref(false); // 是否显示脑图
 const showSearchModal = ref(false); // 是否显示搜索弹窗
@@ -105,7 +107,8 @@ const isAutoScrollEnabled = ref(true);
 const selectedLoop = ref<{ start: number, end: number, id: string } | null>(null);
 const isClippingId = ref<string | null>(null); // 正在剪辑的 ID
 const isRebuildingCues = ref(false);
-const pendingAction = ref<null | 'rebuild-cues' | 'force-analyze'>(null);
+const isRetranslatingCues = ref(false);
+const pendingAction = ref<null | 'rebuild-cues' | 'retranslate-cues' | 'force-analyze'>(null);
 const actionNotice = ref<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
 // 字幕滚动自动归中行为控制变量
@@ -199,16 +202,58 @@ const handleRebuildCues = async () => {
     }
 
     await reloadTranscriptOnly();
-    actionNotice.value = {
+    showActionNotice({
       title: '重建成功',
       message: '字幕 cues 已按最新规则重建完成。',
       type: 'success',
-    };
+    });
   } catch (err) {
     console.error('Rebuild cues failed:', err);
-    alert('重建字幕失败，请重试');
+    showActionNotice({
+      title: '重建失败',
+      message: '重建字幕失败，请稍后重试。',
+      type: 'error',
+    });
   } finally {
     isRebuildingCues.value = false;
+  }
+};
+
+const handleRetranslateCues = async () => {
+  if (!videoId.value || isRetranslatingCues.value) return;
+  isRetranslatingCues.value = true;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/videos/${videoId.value}/retranslate-cues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders()
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || '重翻译字幕失败');
+    }
+
+    await reloadTranscriptOnly();
+    isTranslating.value = shouldShowTranslatingState(transcript.value);
+    showActionNotice({
+      title: '重翻译完成',
+      message: '展示字幕已按最新规则重新翻译。',
+      type: 'success',
+    });
+  } catch (err) {
+    console.error('Retranslate cues failed:', err);
+    showActionNotice({
+      title: '重翻译失败',
+      message: '仅重翻译字幕失败，请稍后重试。',
+      type: 'error',
+    });
+  } finally {
+    isRetranslatingCues.value = false;
   }
 };
 
@@ -217,17 +262,30 @@ const handleForceAnalyze = async () => {
   await handleAnalyze(true);
 };
 
-const openConfirmModal = (action: 'rebuild-cues' | 'force-analyze') => {
+const openConfirmModal = (action: 'rebuild-cues' | 'retranslate-cues' | 'force-analyze') => {
   pendingAction.value = action;
 };
 
 const closeConfirmModal = () => {
-  if (isRebuildingCues.value || isLoading.value) return;
+  if (isRebuildingCues.value || isRetranslatingCues.value || isLoading.value) return;
   pendingAction.value = null;
 };
 
 const closeActionNotice = () => {
+  if (actionNoticeTimeout) {
+    clearTimeout(actionNoticeTimeout);
+    actionNoticeTimeout = null;
+  }
   actionNotice.value = null;
+};
+
+const showActionNotice = (notice: { title: string; message: string; type: 'success' | 'error' | 'info' }) => {
+  actionNotice.value = notice;
+  if (actionNoticeTimeout) clearTimeout(actionNoticeTimeout);
+  actionNoticeTimeout = window.setTimeout(() => {
+    actionNotice.value = null;
+    actionNoticeTimeout = null;
+  }, 2200);
 };
 
 const normalizeKeywordGlossary = (items: any[]): KeywordGlossaryItem[] => {
@@ -249,6 +307,14 @@ const resetKeywordGlossaryForm = () => {
   };
 };
 
+const keywordGlossaryCopyText = computed(() => {
+  if (!keywordGlossary.value.length) return '';
+
+  return keywordGlossary.value
+    .map((item, index) => `${index + 1}. ${item.english} - ${item.chinese}`)
+    .join('\n');
+});
+
 const openKeywordGlossaryForm = () => {
   showKeywordGlossaryForm.value = true;
 };
@@ -267,11 +333,11 @@ const saveKeywordGlossaryItem = async () => {
   const type = keywordGlossaryForm.value.type === 'phrase' ? 'phrase' : 'word';
 
   if (!english || !chinese) {
-    actionNotice.value = {
+    showActionNotice({
       title: '请补全词条',
       message: '请填写英文和中文释义后再保存。',
       type: 'error',
-    };
+    });
     return;
   }
 
@@ -295,18 +361,18 @@ const saveKeywordGlossaryItem = async () => {
     keywordGlossary.value = normalizeKeywordGlossary(result.data || []);
     showKeywordGlossaryForm.value = false;
     resetKeywordGlossaryForm();
-    actionNotice.value = {
+    showActionNotice({
       title: '保存成功',
       message: '关键词词条已加入当前视频。',
       type: 'success',
-    };
+    });
   } catch (error) {
     console.error('Save keyword glossary failed:', error);
-    actionNotice.value = {
+    showActionNotice({
       title: '保存失败',
       message: '关键词词条保存失败，请稍后重试。',
       type: 'error',
-    };
+    });
   } finally {
     isSavingKeywordGlossary.value = false;
   }
@@ -315,11 +381,13 @@ const saveKeywordGlossaryItem = async () => {
 const confirmPendingAction = async () => {
   if (pendingAction.value === 'rebuild-cues') {
     await handleRebuildCues();
+  } else if (pendingAction.value === 'retranslate-cues') {
+    await handleRetranslateCues();
   } else if (pendingAction.value === 'force-analyze') {
     await handleForceAnalyze();
   }
 
-  if (!isRebuildingCues.value && !isLoading.value) {
+  if (!isRebuildingCues.value && !isRetranslatingCues.value && !isLoading.value) {
     pendingAction.value = null;
   }
 };
@@ -336,6 +404,7 @@ const checkTitleTruncation = () => {
 let pollingInterval: any = null;
 let resumeScrollTimeout: any = null;
 let programmaticScrollTimeout: any = null;
+let actionNoticeTimeout: any = null;
 let isProgrammaticScroll = false;
 
 const startResumeTimeout = (duration: number) => {
@@ -386,10 +455,22 @@ const splitTextIntoSentences = (text: string) => {
   const trimmed = text.trim();
   if (!trimmed) return [];
   const protectedText = trimmed
-    .replace(/\b(Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr)\./gi, '$1<prd>');
+    .replace(/\b(Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr)\./gi, '$1<prd>')
+    .replace(/(\d)\.(\d)/g, '$1<prd>$2');
   return (protectedText.match(/[^.?!。？！…]+[.?!。？！…]?/g) || [protectedText])
     .map(part => part.replace(/<prd>/g, '.').trim())
     .filter(Boolean);
+};
+const endsWithCountLead = (text: string) => {
+  const words = text
+    .trim()
+    .replace(/[.,?!;:，。？！；：…]+$/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase());
+
+  const lastWord = words[words.length - 1] || '';
+  return /^(one|two|three|four|five|six|seven|eight|nine|ten|once|twice|thrice|many|several|few|couple|\d+)$/.test(lastWord);
 };
 const distributeDuration = (totalDuration: number, parts: string[]) => {
   if (parts.length === 0) return [];
@@ -425,7 +506,9 @@ const endsWithAdjectivePhrase = (text: string) => {
   const prevTwo = words.slice(-2).join(' ');
   const prevThree = words.slice(-3).join(' ');
 
-  const adjectiveOrModifier = /^(perfect|good|great|nice|best|better|important|beautiful|lovely|little|big|small|right|wrong|same|next|first|last|special|fresh|clean|ready|safe|happy|sad|hungry|blue|red|green|young|old)$/.test(lastWord);
+  // Keep a broader adjective whitelist so common phrase splits like
+  // "my bad" + "habits" still merge back into one readable cue.
+  const adjectiveOrModifier = /^(perfect|good|great|nice|best|better|important|beautiful|lovely|little|big|small|right|wrong|same|next|first|last|special|fresh|clean|ready|safe|happy|sad|hungry|blue|red|green|young|old|bad|new|hard|easy|simple|different|strong|weak|real|main|full|short|long|early|late)$/.test(lastWord);
   const articlePlusAdjective = /^(the|a|an|this|that|these|those|my|your|his|her|our|their)$/.test(prevWord) && adjectiveOrModifier;
   const degreePlusAdjective = /^(very|so|too|quite|really)$/.test(prevWord) && adjectiveOrModifier;
   const fixedLeadPhrase = /^(the most|the best|such a|such an)$/.test(prevTwo) || /^(one of the)$/.test(prevThree);
@@ -446,7 +529,7 @@ const isShortNounCompletion = (text: string) => {
   if (words.length === 0 || words.length > 4) return false;
 
   const lastWord = words[words.length - 1] || '';
-  const nounLike = /^(spot|place|home|house|tree|time|day|way|idea|one|thing|door|doors|station|line|ticket|barrier|soil|sun|water|bottle|backpack|uniform|goggles|chicken|car|weekend|weekends)$/.test(lastWord);
+  const nounLike = /^(spot|place|home|house|tree|time|times|day|days|way|ways|idea|ideas|one|thing|things|door|doors|station|line|ticket|tickets|barrier|soil|sun|water|bottle|bottles|backpack|uniform|goggles|chicken|car|cars|weekend|weekends|habit|habits|choice|choices|example|examples|problem|problems|plan|plans|moment|moments|memory|memories|feeling|feelings)$/.test(lastWord);
 
   return nounLike || words.length <= 2;
 };
@@ -530,6 +613,7 @@ const shouldMergeCue = (current: TranscriptSegment, seg: TranscriptSegment) => {
   const combinedChars = combinedText.replace(/\s+/g, '').length;
   const currentLooksIncomplete = looksIncompleteTail(currentText);
   const hasContinuationSignal = hasWeakContinuationEnding(currentText) || startsWithContinuation(nextText);
+  const hasCountLeadTail = endsWithCountLead(currentText);
   const hasAdjectivePhraseTail = endsWithAdjectivePhrase(currentText);
   const nextLooksLikeNounCompletion = isShortNounCompletion(nextText);
   const closeDisplayedTime = Math.abs((seg.anchorOffset ?? seg.offset) - current.offset) < 1000;
@@ -545,6 +629,14 @@ const shouldMergeCue = (current: TranscriptSegment, seg: TranscriptSegment) => {
   }
 
   if (gapDuration > LONG_PAUSE_MS) return false;
+
+  if (
+    hasCountLeadTail
+    && gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
+    && combinedDuration <= STRONG_CONTINUATION_MAX_DURATION_MS
+  ) {
+    return true;
+  }
 
   if (
     hasAdjectivePhraseTail
@@ -599,15 +691,15 @@ const toggleTranscriptExpanded = (seg: TranscriptSegment, index: number) => {
 // 智能合并字幕：不再是死板的两两合并，而是根据标点、时长、行数判断，保持语义完整性
 const mergedTranscript = computed(() => {
   if (transcript.value.length === 0) return [];
-  if (transcriptSource.value === 'cue') {
-    return transcript.value.map((seg, i) => ({
-      ...seg,
-      sortOrder: seg.sortOrder ?? i,
-      sourceIndices: seg.sourceIndices && seg.sourceIndices.length > 0 ? seg.sourceIndices : [i],
-    }));
-  }
   const merged: TranscriptSegment[] = [];
-  const expandedTranscript = expandTranscriptSegments(transcript.value);
+  const baseTranscript = transcript.value.map((seg, i) => ({
+    ...seg,
+    sortOrder: seg.sortOrder ?? i,
+    sourceIndices: seg.sourceIndices && seg.sourceIndices.length > 0 ? seg.sourceIndices : [i],
+  }));
+  const expandedTranscript = transcriptSource.value === 'cue'
+    ? baseTranscript
+    : expandTranscriptSegments(baseTranscript);
   let current: TranscriptSegment | null = null;
 
   for (let i = 0; i < expandedTranscript.length; i++) {
@@ -654,6 +746,12 @@ const mergedTranscript = computed(() => {
   return merged;
 });
 
+const currentTranscriptSegment = computed(() => {
+  const activeIndex = activeTranscriptIndex.value;
+  if (activeIndex === null || activeIndex < 0) return null;
+  return mergedTranscript.value[activeIndex] || null;
+});
+
 // 是否存在双语数据
 const hasBilingualData = computed(() => {
   return transcript.value.some(seg => !!seg.translatedText);
@@ -695,7 +793,7 @@ const shouldShowTranslatingState = (segments: TranscriptSegment[]) => {
   if (translatableCount === 0) return false;
 
   const completionRatio = translatedCount / translatableCount;
-  const hasOnlyTinyTailLeft = missingCount <= 3 && completionRatio >= 0.97;
+  const hasOnlyTinyTailLeft = missingCount <= 5 && completionRatio >= 0.97;
   return missingCount > 0 && !hasOnlyTinyTailLeft;
 };
 
@@ -802,6 +900,11 @@ const formatTranscriptTime = (segments: TranscriptSegment[], index: number) => {
 
 
 onMounted(() => {
+  const persistedBottomSubtitlePreference = window.localStorage.getItem(BOTTOM_SUBTITLE_TOGGLE_STORAGE_KEY);
+  if (persistedBottomSubtitlePreference !== null) {
+    showBottomSubtitleDock.value = persistedBottomSubtitlePreference === 'true';
+  }
+
   if (route.query.url) {
     videoUrl.value = route.query.url as string;
     handleAnalyze();
@@ -816,6 +919,7 @@ onMounted(() => {
 import { onUnmounted } from 'vue';
 onUnmounted(() => {
   if (pollingInterval) clearInterval(pollingInterval);
+  if (actionNoticeTimeout) clearTimeout(actionNoticeTimeout);
 });
 
 // 监听 URL 中的参数变化，实现同一视频多次搜索跳转
@@ -843,12 +947,18 @@ watch(() => route.query.url, (newUrl) => {
   }
 });
 
+watch(showBottomSubtitleDock, (value) => {
+  window.localStorage.setItem(BOTTOM_SUBTITLE_TOGGLE_STORAGE_KEY, String(value));
+});
+
 const isAnalyzingSummary = ref(false); // 是否正在分析摘要/脑图
+const isGeneratingMindmap = ref(false);
+const isGeneratingPublishAssist = ref(false);
 const isIndexing = ref(false); // 是否正在进行向量化索引（用于语义搜索）
 
 // 轮询更新摘要、脑图、翻译和索引
 const pollAnalysisStatus = async () => {
-  if (!videoId.value || (!isAnalyzingSummary.value && !isIndexing.value && !isTranslating.value)) {
+  if (!videoId.value || (!isAnalyzingSummary.value && !isGeneratingMindmap.value && !isGeneratingPublishAssist.value && !isIndexing.value && !isTranslating.value)) {
     if (pollingInterval) {
       clearInterval(pollingInterval);
       pollingInterval = null;
@@ -867,12 +977,8 @@ const pollAnalysisStatus = async () => {
       if (result.data.videoTitle) {
         videoTitle.value = decodeHtml(result.data.videoTitle);
       }
-      if (result.data.videoDescription) {
-        videoDescription.value = decodeHtml(result.data.videoDescription);
-      }
-      if (result.data.videoHashtags) {
-        videoHashtags.value = decodeHtml(result.data.videoHashtags);
-      }
+      videoDescription.value = decodeHtml(result.data.videoDescription || '');
+      videoHashtags.value = decodeHtml(result.data.videoHashtags || '');
       keywordGlossary.value = normalizeKeywordGlossary(result.data.keywordGlossary || []);
 
       // 2. 更新摘要
@@ -884,14 +990,20 @@ const pollAnalysisStatus = async () => {
         }));
       }
 
-      // 只要摘要或脑图有一个出来了，通常表示 AI 解析已完成
-      if ((result.data.takeaways && result.data.takeaways.length > 0) || result.data.mindmap) {
+      if (result.data.summaryReady) {
         isAnalyzingSummary.value = false;
       }
 
       // 3. 更新脑图
       if (result.data.mindmap) {
         mindmapRaw.value = result.data.mindmap;
+      }
+      if (result.data.mindmapReady) {
+        isGeneratingMindmap.value = false;
+      }
+
+      if (result.data.publishReady) {
+        isGeneratingPublishAssist.value = false;
       }
 
       // 4. 更新索引状态 (只要后端返回 true，就释放前端按钮)
@@ -909,7 +1021,7 @@ const pollAnalysisStatus = async () => {
       }
 
       // 如果全部完成，停止轮询
-      if (!isAnalyzingSummary.value && !isIndexing.value && !isTranslating.value) {
+      if (!isAnalyzingSummary.value && !isGeneratingMindmap.value && !isGeneratingPublishAssist.value && !isIndexing.value && !isTranslating.value) {
         if (pollingInterval) {
           clearInterval(pollingInterval);
           pollingInterval = null;
@@ -932,6 +1044,8 @@ const handleAnalyze = async (force: boolean = false) => {
   showResult.value = false;
   isTranslating.value = false;
   isAnalyzingSummary.value = false;
+  isGeneratingMindmap.value = false;
+  isGeneratingPublishAssist.value = false;
   isIndexing.value = false;
 
   if (pollingInterval) clearInterval(pollingInterval);
@@ -988,8 +1102,11 @@ const handleAnalyze = async (force: boolean = false) => {
       } else {
         // 如果摘要为空，开启异步分析状态
         takeaways.value = [];
-        isAnalyzingSummary.value = true;
+        isAnalyzingSummary.value = !result.data.summaryReady;
       }
+
+      isGeneratingMindmap.value = !result.data.mindmapReady;
+      isGeneratingPublishAssist.value = !result.data.publishReady;
 
       // 索引状态
       if (!result.data.isIndexed) {
@@ -1008,7 +1125,7 @@ const handleAnalyze = async (force: boolean = false) => {
       window.dispatchEvent(new Event('video-analyzed')); // 刷新历史
 
       // 开启轮询 (如果任何一个异步状态处于 active)
-      if (isAnalyzingSummary.value || isIndexing.value || isTranslating.value) {
+      if (isAnalyzingSummary.value || isGeneratingMindmap.value || isGeneratingPublishAssist.value || isIndexing.value || isTranslating.value) {
         pollingInterval = setInterval(pollAnalysisStatus, 3000);
       }
 
@@ -1196,13 +1313,21 @@ watch(showResult, (val) => {
 });
 
 // 复制文本到剪贴板
-const copyToClipboard = async (text: string) => {
+const copyToClipboard = async (text: string, message: string = '内容已复制到剪贴板。') => {
   try {
     await navigator.clipboard.writeText(text);
-    // 这里如果有个 toast 组件会更好，暂时用 console 或简单反馈
-    alert('已复制到剪贴板');
+    showActionNotice({
+      title: '复制成功',
+      message,
+      type: 'success',
+    });
   } catch (err) {
     console.error('Failed to copy: ', err);
+    showActionNotice({
+      title: '复制失败',
+      message: '复制到剪贴板失败，请稍后重试。',
+      type: 'error',
+    });
   }
 };
 
@@ -1419,7 +1544,7 @@ const takeawayMap = computed(() => {
               <Sparkles :size="64" class="empty-icon" />
            </div>
            <h2>AI Video Highlights</h2>
-           <p>在上方粘贴 YouTube 或 Bilibili 链接并点击“AI 分析转换”。我们的 AI 将提取核心摘要，方便您精准跳转到精彩片段。</p>
+           <p>在上方粘贴 YouTube 链接并点击“AI 分析转换”。我们的 AI 将提取核心摘要，方便您精准跳转到精彩片段。</p>
         </div>
 
         <!-- Loading State -->
@@ -1450,6 +1575,21 @@ const takeawayMap = computed(() => {
           <!-- Left: Video Player + Takeaways -->
           <div class="left-column">
             <div class="video-section glass-panel">
+              <div v-if="showResult && mergedTranscript.length > 0" class="video-subtitle-toolbar">
+                <div class="video-subtitle-toolbar-copy">
+                  <span class="video-subtitle-toolbar-title">视频下方字幕对照</span>
+                  <span class="video-subtitle-toolbar-hint">播放时同步显示当前句子，不用总看右侧</span>
+                </div>
+                <button
+                  class="toggle-bilingual-btn subtitle-dock-toggle"
+                  :class="{ active: showBottomSubtitleDock }"
+                  @click="showBottomSubtitleDock = !showBottomSubtitleDock"
+                  title="切换视频下方字幕对照"
+                >
+                  {{ showBottomSubtitleDock ? '已开启' : '已关闭' }}
+                </button>
+              </div>
+
               <YouTubePlayer
                 v-if="platform === 'youtube' && youtubeVideoId"
                 ref="playerRef"
@@ -1466,6 +1606,47 @@ const takeawayMap = computed(() => {
                 @timeupdate="handleTimeUpdate"
                 @duration="handleDuration"
               />
+
+              <div
+                v-if="showResult && showBottomSubtitleDock && currentTranscriptSegment"
+                class="video-subtitle-dock"
+                @click="jumpToTranscript(currentTranscriptSegment, activeTranscriptIndex || 0)"
+              >
+                <div class="video-subtitle-dock-meta">
+                  <div class="seg-time video-subtitle-time">
+                    <Clock :size="12" class="seg-time-icon" />
+                    <span>{{ formatTranscriptTime(mergedTranscript, activeTranscriptIndex || 0) }}</span>
+                  </div>
+                  <div class="video-subtitle-dock-actions">
+                    <button
+                      class="btn-loop-action subtitle-dock-action"
+                      :class="{ active: selectedLoop?.id === 'dock-seg-' + (activeTranscriptIndex || 0) }"
+                      @click.stop="startLoop(currentTranscriptSegment.offset / 1000, (currentTranscriptSegment.offset + currentTranscriptSegment.duration) / 1000, 'dock-seg-' + (activeTranscriptIndex || 0))"
+                      title="循环播放当前句"
+                    >
+                      <RefreshCw :size="14" :class="{ 'spin': selectedLoop?.id === 'dock-seg-' + (activeTranscriptIndex || 0) }" />
+                    </button>
+                    <button
+                      class="btn-loop-action subtitle-dock-action"
+                      @click.stop="openClippingDrawer(currentTranscriptSegment.offset / 1000, (currentTranscriptSegment.offset + currentTranscriptSegment.duration) / 1000)"
+                      title="基于当前句剪辑"
+                    >
+                      <Scissors :size="14" />
+                    </button>
+                  </div>
+                </div>
+                <div class="video-subtitle-dock-text">
+                  <div v-if="isBilingual && currentTranscriptSegment.translatedText" class="video-subtitle-dock-translated">
+                    {{ currentTranscriptSegment.translatedText }}
+                  </div>
+                  <div
+                    class="video-subtitle-dock-original"
+                    :class="{ 'has-translation': isBilingual && currentTranscriptSegment.translatedText }"
+                  >
+                    {{ currentTranscriptSegment.text }}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- AI Takeaways (below video) -->
@@ -1495,7 +1676,7 @@ const takeawayMap = computed(() => {
                         :disabled="!mindmapRaw"
                         @click="showMindMap = true"
                       >
-                        <Loader2 v-if="!mindmapRaw && isAnalyzingSummary" :size="14" class="spin" />
+                        <Loader2 v-if="!mindmapRaw && isGeneratingMindmap" :size="14" class="spin" />
                         <Map v-else :size="14" />
                         <span>脑图</span>
                       </button>
@@ -1608,12 +1789,19 @@ const takeawayMap = computed(() => {
               </div>
 
               <!-- 新增：视频号发布提示区域 -->
-              <div v-if="videoDescription || videoHashtags || keywordGlossary.length || showKeywordGlossaryForm" class="channels-publish-section animate-fade-in">
+              <div v-if="videoDescription || videoHashtags || keywordGlossary.length || showKeywordGlossaryForm || isGeneratingPublishAssist" class="channels-publish-section animate-fade-in">
                 <div class="divider"></div>
                 <div class="publish-header">
                   <div class="publish-badge">
                     <Sparkles :size="12" />
                     <span>视频号发布辅助</span>
+                  </div>
+                </div>
+
+                <div v-if="isGeneratingPublishAssist && !videoDescription && !videoHashtags && !keywordGlossary.length && !showKeywordGlossaryForm" class="publish-item">
+                  <div class="publish-content glossary-empty-state">
+                    <Loader2 :size="16" class="spin" />
+                    <span>正在生成发布文案、话题和词汇整理...</span>
                   </div>
                 </div>
 
@@ -1640,9 +1828,14 @@ const takeawayMap = computed(() => {
                 <div v-if="keywordGlossary.length" class="publish-item">
                   <div class="publish-label">
                     <span>关键单词与短语 / Key Vocabulary</span>
-                    <button class="btn-copy-mini" @click="openKeywordGlossaryForm">
-                      <span>手动增加</span>
-                    </button>
+                    <div class="publish-label-actions">
+                      <button class="btn-copy-mini" @click="copyToClipboard(keywordGlossaryCopyText)">
+                        <span>复制列表</span>
+                      </button>
+                      <button class="btn-copy-mini" @click="openKeywordGlossaryForm">
+                        <span>手动增加</span>
+                      </button>
+                    </div>
                   </div>
                   <div class="glossary-grid">
                     <div
@@ -1656,6 +1849,14 @@ const takeawayMap = computed(() => {
                       <div class="glossary-english">{{ item.english }}</div>
                       <div class="glossary-chinese">{{ item.chinese }}</div>
                     </div>
+                  </div>
+
+                  <div class="glossary-list-panel">
+                    <div class="glossary-list-header">
+                      <span>可复制列表</span>
+                      <span class="glossary-list-count">{{ keywordGlossary.length }} 条</span>
+                    </div>
+                    <pre class="glossary-list-text">{{ keywordGlossaryCopyText }}</pre>
                   </div>
 
                   <div v-if="showKeywordGlossaryForm" class="glossary-form">
@@ -1805,6 +2006,16 @@ const takeawayMap = computed(() => {
                         :disabled="isRebuildingCues"
                       >
                         <FileText :size="14" :class="{ 'spin': isRebuildingCues }" />
+                      </button>
+                    </AppTooltip>
+                    <AppTooltip text="仅重翻译展示字幕：不重抓字幕、不重跑摘要" teleport>
+                      <button
+                        class="btn-search-in-video btn-retranslate-cues"
+                        style="width: 32px; padding: 0;"
+                        @click="openConfirmModal('retranslate-cues')"
+                        :disabled="isRetranslatingCues"
+                      >
+                        <RefreshCw :size="14" :class="{ 'spin': isRetranslatingCues }" />
                       </button>
                     </AppTooltip>
                     <AppTooltip text="重新分析视频：重新抓字幕、翻译并重跑 AI" teleport>
@@ -2039,12 +2250,26 @@ const takeawayMap = computed(() => {
 
         <ConfirmActionModal
           :show="pendingAction !== null"
-          :title="pendingAction === 'rebuild-cues' ? '确认重建字幕分段' : '确认重新分析视频'"
+          :title="pendingAction === 'rebuild-cues'
+            ? '确认重建字幕分段'
+            : pendingAction === 'retranslate-cues'
+              ? '确认仅重翻译展示字幕'
+              : '确认重新分析视频'"
           :message="pendingAction === 'rebuild-cues'
             ? '这会根据当前原始字幕重新生成 cues 分段，但不会重新抓取字幕，也不会重新跑 AI 分析。'
-            : '这会重新抓取字幕、翻译并重跑 AI 分析，适合在字幕错位或翻译异常时使用。'"
-          :confirm-text="pendingAction === 'rebuild-cues' ? '开始重建' : '重新分析'"
-          :loading="pendingAction === 'rebuild-cues' ? isRebuildingCues : isLoading"
+            : pendingAction === 'retranslate-cues'
+              ? '这会仅重建并重翻译展示用的字幕 cues，不重新抓取字幕，也不重新生成摘要、脑图和发布辅助。'
+              : '这会重新抓取字幕、翻译并重跑 AI 分析，适合在字幕错位或翻译异常时使用。'"
+          :confirm-text="pendingAction === 'rebuild-cues'
+            ? '开始重建'
+            : pendingAction === 'retranslate-cues'
+              ? '开始重翻译'
+              : '重新分析'"
+          :loading="pendingAction === 'rebuild-cues'
+            ? isRebuildingCues
+            : pendingAction === 'retranslate-cues'
+              ? isRetranslatingCues
+              : isLoading"
           @close="closeConfirmModal"
           @confirm="confirmPendingAction"
         />
@@ -2355,10 +2580,118 @@ input::placeholder {
   padding: 24px;
   display: flex;
   flex-direction: column;
+  gap: 16px;
   height: max-content;
   /* position: sticky;
   top: 100px;
   z-index: 10; */
+}
+
+.video-subtitle-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.video-subtitle-toolbar-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.video-subtitle-toolbar-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.video-subtitle-toolbar-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.subtitle-dock-toggle {
+  flex-shrink: 0;
+}
+
+.video-subtitle-dock {
+  border: 1px solid rgba(99, 102, 241, 0.22);
+  background:
+    linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(15, 23, 42, 0.68)),
+    rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  padding: 14px 22px 18px;
+  box-shadow: 0 16px 28px -20px rgba(99, 102, 241, 0.55);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.video-subtitle-dock:hover {
+  border-color: rgba(99, 102, 241, 0.38);
+  transform: translateY(-1px);
+}
+
+.video-subtitle-dock-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.video-subtitle-time {
+  background: rgba(99, 102, 241, 0.14);
+  color: var(--text-accent);
+}
+
+.video-subtitle-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subtitle-dock-action {
+  opacity: 1;
+}
+
+.video-subtitle-dock-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  min-height: 104px;
+  padding: 6px 12px 2px;
+}
+
+.video-subtitle-dock-translated {
+  width: min(100%, 760px);
+  font-size: clamp(1.6rem, 2.2vw, 2.2rem);
+  line-height: 1.45;
+  color: #ffffff;
+  font-weight: 700;
+  white-space: pre-wrap;
+  word-break: break-word;
+  letter-spacing: 0.01em;
+  text-shadow: 0 4px 18px rgba(15, 23, 42, 0.35);
+}
+
+.video-subtitle-dock-original {
+  width: min(100%, 760px);
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: rgba(226, 232, 240, 0.92);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.video-subtitle-dock-original.has-translation {
+  color: rgba(226, 232, 240, 0.58);
+  font-size: 0.92rem;
 }
 
 /* Takeaways Section (below video) */
@@ -2805,6 +3138,18 @@ input::placeholder {
   border-color: rgba(99, 102, 241, 0.35);
   color: #d0d5ff;
   background: rgba(99, 102, 241, 0.14);
+}
+
+.btn-retranslate-cues {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-retranslate-cues:hover:not(:disabled) {
+  border-color: rgba(14, 165, 233, 0.35);
+  color: #c8efff;
+  background: rgba(14, 165, 233, 0.14);
 }
 
 .btn-search-in-video:hover:not(:disabled), .btn-mindmap:hover:not(:disabled) {
@@ -3395,6 +3740,44 @@ input::placeholder {
     height: 400px;
     position: static;
   }
+
+  .video-subtitle-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .subtitle-dock-toggle {
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .video-subtitle-dock {
+    padding: 14px;
+  }
+
+  .video-subtitle-dock-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .video-subtitle-dock-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .video-subtitle-dock-text {
+    min-height: 88px;
+    padding-inline: 4px;
+  }
+
+  .video-subtitle-dock-translated {
+    font-size: clamp(1.3rem, 5.4vw, 1.7rem);
+  }
+
+  .video-subtitle-dock-original {
+    font-size: 0.86rem;
+  }
 }
 
 
@@ -3485,6 +3868,12 @@ input::placeholder {
   color: var(--text-secondary);
 }
 
+.publish-label-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .publish-content {
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid var(--border-color);
@@ -3547,6 +3936,41 @@ input::placeholder {
   color: var(--text-secondary);
   line-height: 1.5;
   word-break: break-word;
+}
+
+.glossary-list-panel {
+  margin-top: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.24);
+  padding: 12px 14px;
+}
+
+.glossary-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.glossary-list-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+  color: var(--accent-light);
+}
+
+.glossary-list-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
 }
 
 .glossary-form {

@@ -7,6 +7,7 @@ import { getUserId } from '../utils/auth.js';
 import { downloadFullVideo } from '../services/clipping.js';
 import { exportToNotion } from '../services/notion.js';
 import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
+import { getEmbedding, translateTranscriptSegments } from '../services/ai.js';
 
 export async function videoRoutes(fastify: FastifyInstance) {
   fastify.post('/api/videos/:videoId/keyword-glossary', {
@@ -225,6 +226,9 @@ export async function videoRoutes(fastify: FastifyInstance) {
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
                 keywordGlossary: { type: 'array', items: Schemas.KeywordGlossaryItem, nullable: true },
+                summaryReady: { type: 'boolean' },
+                publishReady: { type: 'boolean' },
+                mindmapReady: { type: 'boolean' },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
                 transcript: {
@@ -278,6 +282,9 @@ export async function videoRoutes(fastify: FastifyInstance) {
         videoDescription: video.videoDescription,
         videoHashtags: video.videoHashtags,
         keywordGlossary: Array.isArray(video.keywordGlossary) ? video.keywordGlossary : [],
+        summaryReady: video.takeaways.length > 0,
+        publishReady: Boolean(video.videoDescription || video.videoHashtags || (Array.isArray(video.keywordGlossary) && video.keywordGlossary.length > 0)),
+        mindmapReady: Boolean(video.mindmap),
         isIndexed,
         transcriptSource: video.subtitleCues.length > 0 ? 'cue' : 'raw',
         takeaways: video.takeaways.map((t) => ({
@@ -1114,6 +1121,97 @@ export async function videoRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       fastify.log.error(error);
       return reply.status(500).send({ error: '重建失败', message: error.message });
+    }
+  });
+
+  fastify.post('/api/videos/:videoId/retranslate-cues', {
+    schema: {
+      tags: ['Videos'],
+      summary: '仅重翻译展示字幕 cues',
+      description: '基于当前字幕重建 cues，并仅重新翻译展示用的 cue，不重新抓取字幕，也不重新生成摘要/脑图。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string' }
+        }
+      },
+      response: {
+        200: Schemas.SuccessMessage,
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      }
+    }
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply
+  ) => {
+    const { videoId } = request.params;
+
+    try {
+      const video = await prisma.video.findUnique({
+        where: { videoId },
+        select: { videoId: true },
+      });
+
+      if (!video) {
+        return reply.status(404).send({ error: '视频不存在' });
+      }
+
+      await rebuildSubtitleCuesForVideo(prisma, videoId);
+
+      const cueSegments = await prisma.subtitleCue.findMany({
+        where: { videoId },
+        orderBy: { sortOrder: 'asc' },
+        select: {
+          sortOrder: true,
+          text: true,
+          sourceStartSortOrder: true,
+          sourceEndSortOrder: true,
+        },
+      });
+
+      const translatableCues = cueSegments.filter((cue) => !/[\u4e00-\u9fa5]/.test(cue.text || ''));
+      const BATCH_SIZE = 50;
+
+      for (let i = 0; i < translatableCues.length; i += BATCH_SIZE) {
+        const batch = translatableCues.slice(i, i + BATCH_SIZE);
+        const translatedBatch = await translateTranscriptSegments(batch.map((cue) => cue.text));
+
+        for (let j = 0; j < translatedBatch.length; j++) {
+          const cue = batch[j];
+          const translatedText = translatedBatch[j];
+          if (!cue || !translatedText) continue;
+
+          await prisma.subtitleCue.updateMany({
+            where: { videoId, sortOrder: cue.sortOrder },
+            data: {
+              translatedText,
+              overrideTranslatedText: translatedText,
+            },
+          });
+
+          if (cue.sourceStartSortOrder === cue.sourceEndSortOrder) {
+            await prisma.subtitle.updateMany({
+              where: { videoId, sortOrder: cue.sourceStartSortOrder },
+              data: { translatedText },
+            });
+
+            const vec = await getEmbedding(translatedText);
+            await prisma.$executeRawUnsafe(
+              `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+              `[${vec.join(',')}]`,
+              videoId,
+              cue.sourceStartSortOrder
+            );
+          }
+        }
+      }
+
+      return reply.send({ success: true, message: '字幕 cues 已重新翻译' });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: '重翻译失败', message: error.message });
     }
   });
 }

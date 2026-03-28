@@ -13,7 +13,24 @@ export interface AIKeywordGlossaryItem {
   type: 'word' | 'phrase';
 }
 
-const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任务是分析视频的转录文本，提取出最重要的核心观点和关键要点。
+export interface AISummaryResult {
+  title: string;
+  takeaways: AITakeaway[];
+  category?: string;
+  tags?: string[];
+}
+
+export interface AIPublishAssistResult {
+  videoDescription?: string;
+  videoHashtags?: string;
+  keywordGlossary?: AIKeywordGlossaryItem[];
+}
+
+export interface AIMindmapResult {
+  mindmap: string;
+}
+
+const SUMMARY_SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任务是分析视频的转录文本，提取出最重要的核心观点和关键要点。
 
 请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
 
@@ -21,15 +38,6 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
   "title": "视频的简短标题",
   "category": "视频分类（如：技术、职场、财商、生活、其它）",
   "tags": ["标签1", "标签2", "标签3"],
-  "video_description": "一段吸引人的视频简介，适合发布在视频号、小红书等社交平台，需包含视频核心价值，字数约 100 字左右",
-  "video_hashtags": "#话题1 #话题2 #话题3",
-  "keyword_glossary": [
-    {
-      "english": "water bottle",
-      "chinese": "水瓶",
-      "type": "phrase"
-    }
-  ],
   "takeaways": [
     {
       "title": "要点标题（简洁有力，10-20个字）",
@@ -51,13 +59,48 @@ const SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任
 7. 如果转录文本是英文，请将标题和摘要翻译成中文
 8. 根据内容判定一个最准确的分类（建议：技术、职场、教育、自媒体、财商、人文、生活、运动、其它）
 9. 提取 3-5 个核心关键词作为标签
-10. 给出一个适合视频号（微信视频号）发布的视频描述，语气要有吸引力，概括视频价值
-11. 提取 3-5 个最相关的 #话题（hashtags），以空格分隔
-12. 从字幕中提炼 8-15 个最值得学习的关键单词和短语，返回到 keyword_glossary 中。english 保留原文，chinese 给出自然中文释义，type 只能是 word 或 phrase
-13. 优先选择视频里高频、核心、场景相关的表达，避免过于基础的虚词
-14. 生成一份完整的视频结构脑图Markdown文本，使用层级标题（# 为根，## 为二级，### 为三级），确保能够被 Markmap 渲染
-15. 只返回 JSON，不要有任何其他文字或 markdown 标记`
+10. 只返回 JSON，不要有任何其他文字或 markdown 标记`
 ;
+
+const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。你的任务是基于视频转录文本，为“视频号/小红书类平台发布”生成辅助文案。
+
+请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
+
+{
+  "video_description": "一段吸引人的视频简介，适合发布在视频号、小红书等社交平台，需包含视频核心价值，字数约 100 字左右",
+  "video_hashtags": "#话题1 #话题2 #话题3",
+  "keyword_glossary": [
+    {
+      "english": "water bottle",
+      "chinese": "水瓶",
+      "type": "phrase"
+    }
+  ]
+}
+
+要求：
+1. video_description 要自然、适合发布，不要空泛套话
+2. video_hashtags 提取 3-5 个最相关的话题，使用空格分隔
+3. keyword_glossary 提炼 8-15 个最值得学习的关键单词和短语
+4. english 保留原文，chinese 给出自然中文释义，type 只能是 word 或 phrase
+5. 优先选择视频里高频、核心、场景相关的表达，避免过于基础的虚词
+6. 如果视频主要是中文，keyword_glossary 可以返回空数组
+7. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
+
+const MINDMAP_SYSTEM_PROMPT = `你是一个视频结构化分析助手。你的任务是根据视频转录文本生成一份完整、层次清晰的脑图 Markdown。
+
+请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
+
+{
+  "mindmap": "# 视频主题\\n## 核心模块 A\\n### 子观点 1\\n### 子观点 2\\n## 核心模块 B"
+}
+
+要求：
+1. 输出的 mindmap 必须是完整的 Markdown 层级结构
+2. 使用 # 作为根节点，## 为二级，### 为三级
+3. 内容要尽量覆盖视频结构和主线，而不是简单摘抄
+4. 确保结果可被 Markmap 渲染
+5. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
 
 // 重试配置
 const MAX_RETRIES = 3;
@@ -70,31 +113,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * 使用 DeepSeek AI 分析转录文本，提取关键要点
- * DeepSeek API 兼容 OpenAI 格式，使用 openai SDK 调用
- * 内置自动重试机制
- */
-export async function analyzeTranscript(
-  formattedTranscript: string,
-  maxDurationSeconds?: number,
-): Promise<{ title: string; takeaways: AITakeaway[]; mindmap: string; category?: string; tags?: string[]; videoDescription?: string; videoHashtags?: string; keywordGlossary?: AIKeywordGlossaryItem[] }> {
+function createDeepSeekClient(): OpenAI {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
     throw new Error('DEEPSEEK_API_KEY is not configured. Please set DEEPSEEK_API_KEY in server/.env');
   }
 
-  const client = new OpenAI({
+  return new OpenAI({
     baseURL: 'https://api.deepseek.com',
     apiKey,
   });
+}
 
-  // 在 User Prompt 中也补充一下时长限制（如果有）
-  const durationConstraint = maxDurationSeconds
+function buildDurationConstraint(maxDurationSeconds?: number): string {
+  return maxDurationSeconds
     ? `注意：视频总时长约为 ${Math.floor(maxDurationSeconds / 60)} 分 ${maxDurationSeconds % 60} 秒，提取的时间戳绝对不能超过这个范围。`
     : '';
+}
 
-  // 带重试的 API 调用
+async function requestJsonFromDeepSeek(params: {
+  systemPrompt: string;
+  userContent: string;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<any> {
+  const client = createDeepSeekClient();
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -102,20 +145,20 @@ export async function analyzeTranscript(
       console.log(`🤖 DeepSeek API attempt ${attempt}/${MAX_RETRIES}...`);
 
       const completion = await client.chat.completions.create({
-        model: 'deepseek-chat',  // DeepSeek-V3
+        model: 'deepseek-chat',
         messages: [
           {
             role: 'system',
-            content: SYSTEM_PROMPT,
+            content: params.systemPrompt,
           },
           {
             role: 'user',
-            content: `${durationConstraint}\n以下是视频转录文本：\n\n${formattedTranscript}`,
+            content: params.userContent,
           },
         ],
-        temperature: 0.3,        // 较低的温度使输出更稳定
-        max_tokens: 4096,
-        response_format: { type: 'json_object' },  // 强制 JSON 输出
+        temperature: params.temperature ?? 0.3,
+        max_tokens: params.maxTokens ?? 4096,
+        response_format: { type: 'json_object' },
       });
 
       const text = completion.choices[0]?.message?.content;
@@ -123,60 +166,95 @@ export async function analyzeTranscript(
         throw new Error('DeepSeek returned empty response');
       }
 
-      try {
-        const parsed = JSON.parse(text);
-        let finalTakeaways = (parsed.takeaways || []).map((t: any, index: number) => ({
-          title: t.title || `Key Point ${index + 1}`,
-          summary: t.summary || '',
-          timestamp: typeof t.timestamp === 'number' ? t.timestamp : 0,
-          duration: t.duration || '0:00',
-        }));
-
-        // 兜底过滤：如果 AI 依然返回了超过视频时长的点，则将其修正或剔除
-        if (maxDurationSeconds) {
-          finalTakeaways = finalTakeaways.filter((t: AITakeaway) => t.timestamp < maxDurationSeconds);
-        }
-
-        return {
-          title: parsed.title || 'Untitled Video',
-          takeaways: finalTakeaways,
-          mindmap: parsed.mindmap || '',
-          category: parsed.category || '其它',
-          tags: Array.isArray(parsed.tags) ? parsed.tags : [],
-          videoDescription: parsed.video_description || '',
-          videoHashtags: parsed.video_hashtags || '',
-          keywordGlossary: Array.isArray(parsed.keyword_glossary)
-            ? parsed.keyword_glossary
-              .map((item: any) => ({
-                english: String(item?.english || '').trim(),
-                chinese: String(item?.chinese || '').trim(),
-                type: item?.type === 'word' ? 'word' : 'phrase',
-              }))
-              .filter((item: AIKeywordGlossaryItem) => item.english && item.chinese)
-            : [],
-        };
-      } catch {
-        console.error('Failed to parse AI response:', text);
-        throw new Error('Failed to parse AI analysis result');
-      }
+      return JSON.parse(text);
     } catch (error: any) {
       lastError = error;
       const statusCode = error.status || error.statusCode;
       const isRateLimit = statusCode === 429 || error.message?.includes('429') || error.message?.includes('Too Many Requests');
 
       if (isRateLimit && attempt < MAX_RETRIES) {
-        const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1); // 指数退避: 3s, 6s, 12s
+        const delayMs = BASE_DELAY_MS * Math.pow(2, attempt - 1);
         console.log(`⏳ Rate limited (429). Waiting ${Math.round(delayMs / 1000)}s before retry ${attempt + 1}...`);
         await sleep(delayMs);
         continue;
       }
 
-      // 非 429 错误或重试次数用完，直接抛出
       throw error;
     }
   }
 
-  throw lastError || new Error('Failed to analyze transcript after retries');
+  throw lastError || new Error('Failed to request DeepSeek JSON result');
+}
+
+/**
+ * 生成摘要与要点
+ */
+export async function analyzeTranscriptSummary(
+  formattedTranscript: string,
+  maxDurationSeconds?: number,
+): Promise<AISummaryResult> {
+  const durationConstraint = buildDurationConstraint(maxDurationSeconds);
+  const parsed = await requestJsonFromDeepSeek({
+    systemPrompt: SUMMARY_SYSTEM_PROMPT,
+    userContent: `${durationConstraint}\n以下是视频转录文本：\n\n${formattedTranscript}`,
+    maxTokens: 2600,
+  });
+
+  let finalTakeaways = (parsed.takeaways || []).map((t: any, index: number) => ({
+    title: t.title || `Key Point ${index + 1}`,
+    summary: t.summary || '',
+    timestamp: typeof t.timestamp === 'number' ? t.timestamp : 0,
+    duration: t.duration || '0:00',
+  }));
+
+  if (maxDurationSeconds) {
+    finalTakeaways = finalTakeaways.filter((t: AITakeaway) => t.timestamp < maxDurationSeconds);
+  }
+
+  return {
+    title: parsed.title || 'Untitled Video',
+    takeaways: finalTakeaways,
+    category: parsed.category || '其它',
+    tags: Array.isArray(parsed.tags) ? parsed.tags : [],
+  };
+}
+
+export async function generatePublishAssist(
+  formattedTranscript: string,
+): Promise<AIPublishAssistResult> {
+  const parsed = await requestJsonFromDeepSeek({
+    systemPrompt: PUBLISH_ASSIST_SYSTEM_PROMPT,
+    userContent: `以下是视频转录文本：\n\n${formattedTranscript}`,
+    maxTokens: 1800,
+  });
+
+  return {
+    videoDescription: parsed.video_description || '',
+    videoHashtags: parsed.video_hashtags || '',
+    keywordGlossary: Array.isArray(parsed.keyword_glossary)
+      ? parsed.keyword_glossary
+        .map((item: any) => ({
+          english: String(item?.english || '').trim(),
+          chinese: String(item?.chinese || '').trim(),
+          type: item?.type === 'word' ? 'word' : 'phrase',
+        }))
+        .filter((item: AIKeywordGlossaryItem) => item.english && item.chinese)
+      : [],
+  };
+}
+
+export async function generateMindmap(
+  formattedTranscript: string,
+): Promise<AIMindmapResult> {
+  const parsed = await requestJsonFromDeepSeek({
+    systemPrompt: MINDMAP_SYSTEM_PROMPT,
+    userContent: `以下是视频转录文本：\n\n${formattedTranscript}`,
+    maxTokens: 2200,
+  });
+
+  return {
+    mindmap: parsed.mindmap || '',
+  };
 }
 /**
  * 翻译字幕片段
@@ -188,15 +266,7 @@ export async function translateTranscriptSegments(
 ): Promise<string[]> {
   if (!texts || texts.length === 0) return [];
 
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    throw new Error('DEEPSEEK_API_KEY is not configured');
-  }
-
-  const client = new OpenAI({
-    baseURL: 'https://api.deepseek.com',
-    apiKey,
-  });
+  const client = createDeepSeekClient();
 
   const results: string[] = new Array(texts.length);
   const batches: string[][] = [];
@@ -236,6 +306,7 @@ export async function translateTranscriptSegments(
 1. **严格 1:1 照切**：输入中给定的键（如 "0", "1"），输出必须完全对应。绝对不能少掉任何一个键。
 2. **绝对禁止行间合并**：不管两行上下文多么连贯，不管原句是不是断开了，**严禁**把第 1 行的意思合并翻译到第 0 行！如果第 0 行原文只有 "Because it is"，译文只能是 "因为它是"，绝不能包含第 1 行的词汇！
 3. **消除幻觉**：如果原文字段里没有某个词的意思，你的翻译里就绝不能凭空多出这个意思。
+4. **单行必须译完整**：如果某一行原文里本身包含两句或两个分句，译文必须覆盖这一整行的全部意思，不能只翻后半句或只翻前半句。
 
 **期望的输出格式**（纯 JSON）：
 {

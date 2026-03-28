@@ -1,6 +1,6 @@
 import type { PrismaClient, Prisma, SubtitleCue } from '@prisma/client';
 
-const LAYOUT_VERSION = 30;
+const LAYOUT_VERSION = 31;
 
 const HARD_MAX_DURATION_MS = 12000;
 const SOFT_MAX_DURATION_MS = 8000;
@@ -31,6 +31,10 @@ function countCjkChars(text: string): number {
   return (text.match(/[\u3400-\u9fff]/g) || []).length;
 }
 
+function countLatinChars(text: string): number {
+  return (text.match(/[A-Za-z]/g) || []).length;
+}
+
 function hasSentenceEnding(text: string): boolean {
   return /[.?!。？！…]$/.test(text.trim());
 }
@@ -55,6 +59,18 @@ function endsWithStrongContinuationWord(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const lastWord = words[words.length - 1]?.replace(/[.,?!;:，。？！；：…]+$/g, '').toLowerCase() || '';
   return /^(to|be|on|in|at|for|with|of|from|into|onto|about|after|before|under|over|need|needs|needed|want|wants|wanted|like|likes|liked|have|has|had|get|gets|got|make|makes|made|take|takes|took|put|puts|keep|keeps|kept|sit|sits|sat|stand|stands|stood|lie|lies|lay|the|a|an|my|your|his|her|our|their|this|that|these|those|most|more|less|another|other|only|same|next|first|last|such|each|every|any|some|no)$/.test(lastWord);
+}
+
+function endsWithCountLead(text: string): boolean {
+  const words = text
+    .trim()
+    .replace(/[.,?!;:，。？！；：…]+$/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase());
+
+  const lastWord = words[words.length - 1] || '';
+  return /^(one|two|three|four|five|six|seven|eight|nine|ten|once|twice|thrice|many|several|few|couple|\d+)$/.test(lastWord);
 }
 
 function isShortCompletionText(text: string): boolean {
@@ -128,6 +144,41 @@ function shouldJoinWithSpace(currentText: string, nextText: string): boolean {
   return hasLatin;
 }
 
+function isChineseDominantTranscript(subtitles: SubtitleCueSource[]): boolean {
+  const samples = subtitles
+    .map((subtitle) => (subtitle.text || '').trim())
+    .filter(Boolean)
+    .slice(0, 12);
+
+  if (samples.length === 0) return false;
+
+  const chineseSegments = samples.filter((text) => countCjkChars(text) > 0).length;
+  const cjkChars = samples.reduce((sum, text) => sum + countCjkChars(text), 0);
+  const latinChars = samples.reduce((sum, text) => sum + countLatinChars(text), 0);
+
+  return chineseSegments >= Math.ceil(samples.length * 0.6)
+    && cjkChars >= Math.max(12, latinChars);
+}
+
+function startsWithChineseClauseConnector(text: string): boolean {
+  return /^(所以|但是|不过|然后|而且|并且|因为|如果|可是|而是|而且|此外|另外|对|那|那么|这个|这就|就是|再|还|也|于是|后来|同时|结果)/.test(text.trim());
+}
+
+function shouldInsertChineseComma(currentText: string, nextText: string): boolean {
+  const trimmedCurrent = currentText.trim();
+  const trimmedNext = nextText.trim();
+  if (!trimmedCurrent || !trimmedNext) return false;
+  if (hasAnyPunctuation(trimmedCurrent) || /^[，。、！？；：,.?!;:]/.test(trimmedNext)) return false;
+
+  const currentCjk = countCjkChars(trimmedCurrent);
+  const nextCjk = countCjkChars(trimmedNext);
+
+  if (currentCjk === 0 || nextCjk === 0) return false;
+  if (startsWithChineseClauseConnector(trimmedNext)) return true;
+
+  return currentCjk >= 8 && nextCjk >= 6;
+}
+
 function getMaxChars(text: string): number {
   const cjkChars = countCjkChars(text);
   return cjkChars >= Math.max(6, text.length / 3) ? MAX_CHINESE_CHARS : MAX_LATIN_CHARS;
@@ -139,9 +190,18 @@ function shouldSplitSourceSubtitle(subtitle: SubtitleCueSource, textParts: strin
   const fullText = (subtitle.text || '').trim();
   const totalChars = fullText.replace(/\s+/g, '').length;
   const maxChars = getMaxChars(fullText);
+  const hasStrongSentenceBoundary = textParts.some((part) => hasSentenceEnding(part));
+  const shouldKeepCompactSentencePair =
+    textParts.length === 2
+    && hasStrongSentenceBoundary
+    && subtitle.duration <= 6000
+    && totalChars <= Math.max(34, Math.floor(maxChars * 0.55));
 
+  // 对非常短、非常紧凑的双句字幕保留原块，避免 "Good morning. Time for..."
+  // 这类自然连读被拆得过碎。
+  if (shouldKeepCompactSentencePair) return false;
   // 调试断句时，优先尊重强标点形成的句子边界，而不是原始字幕块边界。
-  if (textParts.some((part) => hasSentenceEnding(part))) return true;
+  if (hasStrongSentenceBoundary) return true;
   if (textParts.length >= SOURCE_FORCE_SPLIT_SENTENCE_COUNT) return true;
   if (subtitle.duration > SOURCE_KEEP_MAX_DURATION_MS) return true;
   if (totalChars > maxChars) return true;
@@ -160,6 +220,7 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
   const currentLooksIncomplete = looksIncompleteTail(currentText);
   const hasContinuationSignal = hasWeakContinuationEnding(currentText) || startsWithContinuation(nextText);
   const hasStrongContinuationTail = endsWithStrongContinuationWord(currentText);
+  const hasCountLeadTail = endsWithCountLead(currentText);
   const hasAdjectivePhraseTail = endsWithAdjectivePhrase(currentText);
   const nextLooksLikeCompletion = isShortCompletionText(nextText) || /^[a-z]/.test(nextText);
   const nextLooksLikeNounCompletion = isShortNounCompletion(nextText);
@@ -169,6 +230,11 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
   if (combinedChars > maxChars) return false;
 
   if (hasStrongContinuationTail && nextLooksLikeCompletion) {
+    return gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
+      && combinedDuration <= STRONG_CONTINUATION_MAX_DURATION_MS;
+  }
+
+  if (hasCountLeadTail && nextLooksLikeCompletion) {
     return gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
       && combinedDuration <= STRONG_CONTINUATION_MAX_DURATION_MS;
   }
@@ -219,11 +285,19 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
   return false;
 }
 
-function joinCueText(currentText: string, nextText: string): string {
+function joinCueText(
+  currentText: string,
+  nextText: string,
+  options?: { punctuateChinese?: boolean },
+): string {
   const trimmedCurrent = currentText.trim();
   const trimmedNext = nextText.trim();
   if (!trimmedCurrent) return trimmedNext;
   if (!trimmedNext) return trimmedCurrent;
+
+  if (options?.punctuateChinese && shouldInsertChineseComma(trimmedCurrent, trimmedNext)) {
+    return `${trimmedCurrent}，${trimmedNext}`.trim();
+  }
 
   const separator = shouldJoinWithSpace(trimmedCurrent, trimmedNext) ? ' ' : '';
   return `${trimmedCurrent}${separator}${trimmedNext}`.trim();
@@ -242,7 +316,8 @@ function splitTextIntoSentences(text: string): string[] {
   const trimmed = text.trim();
   if (!trimmed) return [];
   const protectedText = trimmed
-    .replace(/\b(Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr)\./gi, '$1<prd>');
+    .replace(/\b(Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr)\./gi, '$1<prd>')
+    .replace(/(\d)\.(\d)/g, '$1<prd>$2');
   const parts = protectedText.match(/[^.?!。？！…]+[.?!。？！…]?/g) || [protectedText];
   return parts
     .map((part) => part.replace(/<prd>/g, '.').trim())
@@ -368,6 +443,7 @@ export function buildSubtitleCues(subtitles: SubtitleCueSource[]): SubtitleCueDr
 
   if (normalized.length === 0) return [];
 
+  const punctuateChinese = isChineseDominantTranscript(normalized);
   const merged: SubtitleCueDraft[] = [];
   let current: SubtitleCueDraft | null = null;
 
@@ -404,7 +480,7 @@ export function buildSubtitleCues(subtitles: SubtitleCueSource[]): SubtitleCueDr
     }
 
     const wasIncompleteBeforeMerge = looksIncompleteTail(current.text.trim()) || endsWithStrongContinuationWord(current.text.trim());
-    current.text = joinCueText(current.text, seg.text || '');
+    current.text = joinCueText(current.text, seg.text || '', { punctuateChinese });
 
     if (seg.translatedText?.trim()) {
       current.translatedText = joinCueText(current.translatedText || '', seg.translatedText);
@@ -458,16 +534,52 @@ function rangesOverlap(
   return !(endA < startB || endB < startA);
 }
 
-function joinCueTexts(texts: Array<string | null | undefined>): string | undefined {
+function joinCueTexts(
+  texts: Array<string | null | undefined>,
+  options?: { punctuateChinese?: boolean },
+): string | undefined {
   let current = '';
 
   texts.forEach((text) => {
     const trimmed = text?.trim();
     if (!trimmed) return;
-    current = current ? joinCueText(current, trimmed) : trimmed;
+    current = current ? joinCueText(current, trimmed, options) : trimmed;
   });
 
   return current || undefined;
+}
+
+function normalizeOverrideComparisonText(text: string | null | undefined): string {
+  return (text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function looksLikeStaleSubstringOverride(
+  overrideText: string | null | undefined,
+  generatedText: string | null | undefined,
+): boolean {
+  const normalizedOverride = normalizeOverrideComparisonText(overrideText);
+  const normalizedGenerated = normalizeOverrideComparisonText(generatedText);
+
+  if (!normalizedOverride || !normalizedGenerated) return false;
+  if (normalizedOverride === normalizedGenerated) return false;
+  if (!normalizedGenerated.includes(normalizedOverride)) return false;
+
+  const rawIndex = normalizedGenerated.indexOf(normalizedOverride);
+  if (rawIndex < 0) return false;
+
+  const prefix = normalizedGenerated.slice(0, rawIndex).trim();
+  const suffix = normalizedGenerated.slice(rawIndex + normalizedOverride.length).trim();
+
+  // If the override is just a truncated middle/ending slice of the freshly
+  // generated cue, it usually comes from an old cue layout and should not
+  // erase newly recovered spoken text.
+  const lostLeadingSentence = !!prefix && /[.?!。？！…]\s*$/.test(prefix);
+  const lostTrailingSentence = !!suffix && /^[^.?!。？！…]*[.?!。？！…]/.test(suffix);
+
+  return lostLeadingSentence || lostTrailingSentence;
 }
 
 function applyCueOverrides(
@@ -475,6 +587,7 @@ function applyCueOverrides(
   existingCues: SubtitleCue[],
   subtitles: SubtitleCueSource[],
 ): SubtitleCueDraft[] {
+  const punctuateChinese = isChineseDominantTranscript(subtitles);
   const overrides = existingCues
     .filter(hasCueOverride)
     .sort((a, b) => {
@@ -520,10 +633,16 @@ function applyCueOverrides(
 
     const startSubtitle = subtitleBySortOrder.get(overrideCue.sourceStartSortOrder);
     const endSubtitle = subtitleBySortOrder.get(overrideCue.sourceEndSortOrder);
-    const generatedText = joinCueTexts(overlapping.map((cue) => cue.text));
+    const generatedText = joinCueTexts(overlapping.map((cue) => cue.text), { punctuateChinese });
     const generatedTranslatedText = joinCueTexts(overlapping.map((cue) => cue.translatedText));
-    const effectiveText = overrideCue.overrideText ?? generatedText ?? overrideCue.text;
-    const effectiveTranslatedText = overrideCue.overrideTranslatedText ?? generatedTranslatedText ?? overrideCue.translatedText ?? undefined;
+    const keepTextOverride = overrideCue.overrideText !== null
+      && !looksLikeStaleSubstringOverride(overrideCue.overrideText, generatedText);
+    const keepTranslatedOverride = overrideCue.overrideTranslatedText !== null
+      && !looksLikeStaleSubstringOverride(overrideCue.overrideTranslatedText, generatedTranslatedText);
+    const effectiveText = keepTextOverride ? overrideCue.overrideText : (generatedText ?? overrideCue.text);
+    const effectiveTranslatedText = keepTranslatedOverride
+      ? overrideCue.overrideTranslatedText ?? undefined
+      : (generatedTranslatedText ?? overrideCue.translatedText ?? undefined);
     const offset = startSubtitle?.offset ?? overlapping[0]?.offset ?? overrideCue.offset;
     const duration = endSubtitle
       ? (endSubtitle.offset + endSubtitle.duration) - offset
@@ -532,10 +651,10 @@ function applyCueOverrides(
         : overrideCue.duration;
 
     nextCues.push({
-      text: effectiveText.trim(),
+      text: (effectiveText ?? '').trim(),
       translatedText: effectiveTranslatedText?.trim() || undefined,
-      overrideText: overrideCue.overrideText,
-      overrideTranslatedText: overrideCue.overrideTranslatedText,
+      overrideText: keepTextOverride ? overrideCue.overrideText : null,
+      overrideTranslatedText: keepTranslatedOverride ? overrideCue.overrideTranslatedText : null,
       offset,
       duration,
       sortOrder: 0,

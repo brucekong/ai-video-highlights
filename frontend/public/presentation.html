@@ -1,380 +1,1229 @@
 <!doctype html>
-<html lang="zh">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-
-    <title>AI Video Highlights - Premium Presentation</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    >
+    <title>AI Video Highlights - Presentation</title>
 
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reset.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/theme/black.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/monokai.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    >
 
     <style>
-      :root {
-        --accent: #6366f1;
-        --accent-glow: rgba(99, 102, 241, 0.4);
-        --glass: rgba(255, 255, 255, 0.03);
-        --glass-border: rgba(255, 255, 255, 0.08);
-        --sidebar-w: 240px;
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
       }
 
+      :root {
+        --page-bg: #071019;
+        --page-bg-2: #0d1723;
+        --ink: #edf2f7;
+        --muted: #9cabbc;
+        --line: rgba(237, 242, 247, 0.1);
+        --panel: rgba(12, 22, 33, 0.86);
+        --panel-strong: #101c29;
+        --deep: #131c27;
+        --deep-2: #1b2938;
+        --accent: #ff8b5e;
+        --accent-soft: rgba(255, 139, 94, 0.12);
+        --gold: #e7b95b;
+        --teal: #63d2c6;
+        --shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+        --radius-xl: 30px;
+        --radius-lg: 22px;
+        --radius-md: 16px;
+      }
+
+      html,
       body {
-        font-family: 'Outfit', sans-serif !important;
-        background: #020617;
+        margin: 0;
+        background:
+          radial-gradient(circle at top left, rgba(255, 139, 94, 0.12), transparent 28%),
+          radial-gradient(circle at 90% 10%, rgba(99, 210, 198, 0.1), transparent 24%),
+          linear-gradient(180deg, var(--page-bg) 0%, var(--page-bg-2) 100%);
+        color: var(--ink);
+        font-family: "Manrope", "Noto Sans SC", sans-serif;
       }
 
       .reveal {
-        background: radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
-                    radial-gradient(circle at 20% 80%, rgba(192, 132, 252, 0.15) 0%, transparent 40%),
-                    #020617;
+        color: var(--ink);
+        font-family: "Manrope", "Noto Sans SC", sans-serif;
       }
 
-      /* Sidebar Index */
-      #slide-index {
-        position: fixed;
-        left: 20px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: var(--sidebar-w);
-        z-index: 1000;
-        background: rgba(255, 255, 255, 0.02);
-        backdrop-filter: blur(10px);
-        border: 1px solid var(--glass-border);
-        border-radius: 16px;
-        padding: 24px 0;
-        pointer-events: auto;
-        opacity: 0.8;
-        transition: opacity 0.3s;
-      }
-      #slide-index:hover { opacity: 1; }
-
-      .index-item {
-        padding: 10px 24px;
-        font-size: 0.8rem;
-        color: rgba(255,255,255,0.4);
-        cursor: pointer;
-        transition: all 0.3s;
-        border-left: 3px solid transparent;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-      }
-      .index-item:hover { color: white; background: rgba(255,255,255,0.05); }
-      .index-item.active {
-        color: white;
-        border-left-color: var(--accent);
-        background: linear-gradient(to right, rgba(99, 102, 241, 0.1), transparent);
-      }
-      .index-num { font-size: 0.7rem; font-weight: 700; opacity: 0.5; font-family: monospace; }
-
-      /* Slide Content Adjustments */
-      .slide-image {
-        width: 100%;
-        max-height: 350px;
-        object-fit: cover;
-        border-radius: 20px;
-        border: 1px solid var(--glass-border);
-        margin-bottom: 24px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-      }
-
-      .reveal section {
-        font-size: 0.85em; /* Smaller font as requested */
-      }
-
-      .slide-container {
-        max-width: 900px;
-        margin: 0 auto;
-        padding: 40px;
-        background: rgba(255, 255, 255, 0.02);
-        border: 1px solid var(--glass-border);
-        border-radius: 32px;
-        backdrop-filter: blur(20px);
-        box-shadow: 0 30px 60px rgba(0,0,0,0.4);
+      .reveal .slides {
         text-align: left;
       }
 
-      h1, h2, h3 {
-        text-transform: none !important;
-        letter-spacing: -1px !important;
+      .reveal section {
+        font-size: 0.8em;
       }
 
-      .text-gradient {
-        background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+      .reveal h1,
+      .reveal h2,
+      .reveal h3,
+      .reveal h4,
+      .reveal p,
+      .reveal li {
+        overflow-wrap: anywhere;
+        font-size:2rem;
       }
 
-      .grid-2 {
+      .deck {
+        width: min(100%, 1040px);
+        margin: 0 auto;
+        padding: 30px 32px;
+        border-radius: var(--radius-xl);
+        border: 1px solid rgba(237, 242, 247, 0.08);
+        background:
+          linear-gradient(180deg, rgba(15, 27, 40, 0.94), rgba(10, 20, 31, 0.92)),
+          var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(16px);
+      }
+
+      .hero-deck {
+        position: relative;
+        overflow: hidden;
+        min-height: 580px;
+        background:
+          linear-gradient(90deg, rgba(10, 19, 29, 0.96) 0%, rgba(10, 19, 29, 0.92) 44%, rgba(10, 19, 29, 0.74) 60%, rgba(10, 19, 29, 0.4) 100%),
+          linear-gradient(180deg, rgba(10, 19, 29, 0.32), rgba(10, 19, 29, 0.4));
+      }
+
+      .hero-art {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      .hero-art::before {
+        content: "";
+        position: absolute;
+        inset: -10%;
+        background: url("/images/hero.png") center center / cover no-repeat;
+        filter: blur(26px) saturate(0.88);
+        transform: scale(1.08);
+        opacity: 0.42;
+      }
+
+      .hero-art::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 16% 18%, rgba(191, 91, 54, 0.14), transparent 22%),
+          radial-gradient(circle at 64% 76%, rgba(42, 125, 116, 0.1), transparent 24%);
+      }
+
+      .hero-layout {
+        position: relative;
+        z-index: 2;
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 24px;
-        margin-top: 20px;
+        grid-template-columns: minmax(0, 0.96fr) minmax(320px, 0.92fr);
+        gap: 28px;
+        align-items: center;
       }
 
-      .card {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid var(--glass-border);
-        border-radius: 16px;
-        padding: 24px;
-        transition: transform 0.3s, border-color 0.3s;
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 13px;
+        border-radius: 999px;
+        border: 1px solid rgba(237, 242, 247, 0.1);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--muted);
+        font-size: 0.66rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
       }
-      .card:hover {
-        transform: translateY(-5px);
-        border-color: var(--accent);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-      }
-      .card h4 { color: var(--accent) !important; margin: 0 0 12px 0 !important; font-size: 1.1em !important; }
-      .card p { font-size: 0.85em; opacity: 0.7; margin: 0; line-height: 1.6; }
 
-      ul { font-size: 0.9em; opacity: 0.8; line-height: 1.8; }
-      li::marker { color: var(--accent); }
-
-      /* Visual Eye Candy */
-      .accent-dot {
-        display: inline-block;
+      .eyebrow::before {
+        content: "";
         width: 8px;
         height: 8px;
+        border-radius: 999px;
         background: var(--accent);
-        border-radius: 50%;
-        margin-right: 12px;
-        box-shadow: 0 0 10px var(--accent);
       }
 
-      /* Transitions override */
-      .reveal .slides section { transition: all 0.5s ease-in-out; }
+      .hero-title {
+        margin: 20px 0 0;
+        font-family: "Instrument Serif", "Noto Sans SC", serif;
+        font-size: 2rem;
+        line-height: 0.96;
+        letter-spacing: -0.03em;
+        color: var(--ink);
+      }
+
+      .hero-title .brand {
+        display: block;
+        font-family: "Manrope", "Noto Sans SC", sans-serif;
+        font-size: 0.34em;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-top: 10px;
+        margin-bottom: 10px;
+      }
+
+      .hero-copy {
+        margin-top: 24px;
+        max-width: 510px;
+        color: var(--muted);
+        font-size: 0.94rem;
+        line-height: 1.78;
+      }
+
+      .hero-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 9px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(237, 242, 247, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+        color: #d6e0ea;
+        font-size: 0.7rem;
+        font-weight: 700;
+      }
+
+      .tag::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: var(--teal);
+      }
+
+      .hero-notes {
+        display: grid;
+        gap: 12px;
+        margin-top: 24px;
+        max-width: 500px;
+      }
+
+      .note {
+        padding: 14px 16px;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(237, 242, 247, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .note strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 0.84rem;
+        color: var(--ink);
+      }
+
+      .note span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.74rem;
+        line-height: 1.58;
+      }
+
+      .hero-visual {
+        position: relative;
+        display: grid;
+        gap: 14px;
+      }
+
+      .hero-frame {
+        position: relative;
+        overflow: hidden;
+        border-radius: 28px;
+        border: 1px solid rgba(237, 242, 247, 0.08);
+        background: rgba(255, 255, 255, 0.03);
+        box-shadow: 0 24px 50px rgba(0, 0, 0, 0.24);
+      }
+
+      .hero-frame img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .hero-frame::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(7, 12, 18, 0.18));
+        pointer-events: none;
+      }
+
+      .hero-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .stat {
+        padding: 14px 14px 16px;
+        border-radius: 18px;
+        background: var(--deep);
+        color: #eef2f6;
+      }
+
+      .stat-label {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: rgba(238, 242, 246, 0.62);
+      }
+
+      .stat-value {
+        margin-top: 10px;
+        font-size: 1.28rem;
+        font-weight: 800;
+      }
+
+      .stat-copy {
+        margin-top: 8px;
+        font-size: 0.68rem;
+        line-height: 1.48;
+        color: rgba(238, 242, 246, 0.7);
+      }
+
+      .section-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 18px;
+      }
+
+      .section-title {
+        margin: 20px 0 0!important;
+        font-family: "Instrument Serif", "Noto Sans SC", serif;
+        font-size: 2.18rem;
+        line-height: 1;
+        letter-spacing: -0.03em;
+      }
+
+      .section-copy {
+        margin-top: 14px;
+        max-width: 760px;
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.72;
+      }
+
+      .kicker {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 0.66rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .two-col,
+      .timeline,
+      .matrix-grid,
+      .stack-grid,
+      .mock-content {
+        display: grid;
+        gap: 16px;
+      }
+
+      .two-col,
+      .matrix-grid,
+      .stack-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .timeline {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .card,
+      .feature-card,
+      .panel-card,
+      .stage-card,
+      .matrix-card,
+      .stack-card,
+      .quote-card,
+      .mock-browser {
+        border-radius: 22px;
+        border: 1px solid rgba(237, 242, 247, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .feature-card,
+      .panel-card,
+      .stage-card,
+      .matrix-card,
+      .stack-card,
+      .quote-card {
+        padding: 16px;
+      }
+
+      .feature-card h4,
+      .panel-card h4,
+      .stage-card h4,
+      .matrix-card h4,
+      .stack-card h4 {
+        margin: 0 0 10px;
+        font-size: 1rem;
+        color: var(--ink);
+      }
+
+      .feature-card p,
+      .panel-card p,
+      .stage-card p,
+      .matrix-card p,
+      .stack-card p,
+      .quote-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.58;
+      }
+
+      .feature-list,
+      .bullet-list {
+        list-style: none;
+        padding: 0;
+        margin: 14px 0 0;
+      }
+
+      .feature-list li,
+      .bullet-list li {
+        position: relative;
+        margin-top: 10px;
+        padding-left: 16px;
+        color: var(--muted);
+        font-size: 0.76rem;
+        line-height: 1.56;
+      }
+
+      .feature-list li::before,
+      .bullet-list li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 11px;
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+      }
+
+      .feature-list li::before {
+        background: var(--accent);
+      }
+
+      .bullet-list li::before {
+        background: var(--teal);
+      }
+
+      .stage-card {
+        position: relative;
+        padding-top: 38px;
+      }
+
+      .stage-number {
+        position: absolute;
+        top: 18px;
+        left: 20px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        color: rgba(237, 242, 247, 0.28);
+      }
+
+      .mock-browser {
+        margin-top: 18px;
+        padding: 14px;
+      }
+
+      .mock-browser-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .mock-browser-dots {
+        display: flex;
+        gap: 8px;
+      }
+
+      .mock-browser-dots span {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: rgba(237, 242, 247, 0.18);
+      }
+
+      .mock-url {
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.05);
+        font-size: 0.68rem;
+        color: var(--muted);
+      }
+
+      .mock-content {
+        grid-template-columns: 1.04fr 0.96fr;
+      }
+
+      .mock-image {
+        width: 100%;
+        object-fit: cover;
+        border-radius: 16px;
+        border: 1px solid rgba(237, 242, 247, 0.08);
+      }
+
+      .mock-sidebar {
+        display: grid;
+        gap: 12px;
+      }
+
+      .mock-box {
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(237, 242, 247, 0.06);
+      }
+
+      .mock-box strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 0.78rem;
+        color: var(--ink);
+      }
+
+      .mock-box span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.72rem;
+        line-height: 1.58;
+      }
+
+      .matrix-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 6px;
+      }
+
+      .matrix-badge,
+      .stack-tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 0.64rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .matrix-badge {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--muted);
+      }
+
+      .stack-tag {
+        margin-bottom: 10px;
+        background: rgba(42, 125, 116, 0.1);
+        color: var(--teal);
+      }
+
+      .stack-tag.warm {
+        background: rgba(191, 91, 54, 0.12);
+        color: var(--accent);
+      }
+
+      .stack-tag.green {
+        background: rgba(184, 137, 45, 0.12);
+        color: var(--gold);
+      }
+
+      .quote-card {
+        margin-top: 18px;
+        padding: 22px 22px;
+        text-align: center;
+        background:
+          radial-gradient(circle at top center, rgba(255, 139, 94, 0.1), transparent 38%),
+          rgba(255, 255, 255, 0.04);
+      }
+
+      .quote-card h2 {
+        margin: 0;
+        font-family: "Instrument Serif", "Noto Sans SC", serif;
+        font-size: 1.78rem;
+        line-height: 1.22;
+      }
+
+      .quote-card p {
+        margin-top: 10px;
+        font-size: 0.8rem;
+      }
+
+      #slide-index {
+        position: fixed;
+        left: 18px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 150px;
+        padding: 10px 0;
+        border-radius: 18px;
+        border: 1px solid rgba(237, 242, 247, 0.08);
+        background: rgba(12, 22, 33, 0.82);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+        z-index: 1000;
+      }
+
+      .index-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        color: #99aabc;
+        font-size: 0.7rem;
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease;
+        border-left: 3px solid transparent;
+      }
+
+      .index-item:hover {
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ink);
+      }
+
+      .index-item.active {
+        color: var(--ink);
+        border-left-color: var(--accent);
+        background: rgba(255, 139, 94, 0.12);
+      }
+
+      .index-num {
+        font-size: 0.62rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: rgba(237, 242, 247, 0.38);
+      }
+
+      @media (max-width: 1500px) {
+        #slide-index {
+          /* display: none; */
+        }
+      }
+
+      @media (max-width: 1200px) {
+
+        .deck {
+          width: min(100%, 940px);
+          padding: 26px 24px;
+        }
+
+        .section-title {
+          font-size: 1.96rem;
+        }
+
+        .quote-card h2 {
+          font-size: 1.66rem;
+        }
+
+        .timeline {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 900px) {
+        .reveal section {
+          font-size: 0.76em;
+        }
+
+        .deck {
+          padding: 24px 20px;
+          border-radius: 24px;
+        }
+
+        .hero-deck {
+          min-height: auto;
+        }
+
+        .hero-layout,
+        .two-col,
+        .matrix-grid,
+        .stack-grid,
+        .timeline,
+        .mock-content,
+        .hero-stats {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-title {
+          font-size: 2.25rem;
+          max-width: none;
+        }
+
+        .hero-copy,
+        .hero-notes,
+        .hero-copy-area,
+        .hero-shell .hero-stats {
+          max-width: none;
+        }
+
+        .section-title {
+          font-size: 1.58rem;
+        }
+
+        .section-copy {
+          font-size: 0.86rem;
+          line-height: 1.62;
+        }
+
+        .feature-card,
+        .panel-card,
+        .stage-card,
+        .matrix-card,
+        .stack-card,
+        .quote-card {
+          padding: 16px;
+        }
+
+        .quote-card h2 {
+          font-size: 1.34rem;
+        }
+
+        .mock-browser {
+          padding: 14px;
+        }
+
+        .mock-browser-bar {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .mock-url {
+          max-width: 100%;
+          word-break: break-all;
+        }
+
+        .mock-image {
+          height: 180px;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .deck {
+          width: min(100%, calc(100vw - 18px));
+          padding: 18px 14px;
+          border-radius: 18px;
+        }
+
+        .hero-deck {
+          padding: 22px 16px;
+        }
+
+        .eyebrow,
+        .kicker {
+          font-size: 0.58rem;
+          letter-spacing: 0.1em;
+        }
+
+        .hero-title {
+          margin-top: 16px;
+          font-size: 1.6rem;
+        }
+
+        .hero-copy {
+          margin-top: 16px;
+          font-size: 0.78rem;
+          line-height: 1.62;
+        }
+
+        .hero-tags {
+          gap: 8px;
+          margin-top: 18px;
+        }
+
+        .tag {
+          width: 100%;
+          justify-content: center;
+          font-size: 0.62rem;
+        }
+
+        .hero-notes {
+          margin-top: 18px;
+          gap: 8px;
+        }
+
+        .note {
+          padding: 12px;
+          border-radius: 14px;
+        }
+
+        .note strong {
+          font-size: 0.76rem;
+        }
+
+        .note span {
+          font-size: 0.68rem;
+        }
+
+        .hero-stats {
+          gap: 10px;
+          margin-top: 18px;
+        }
+
+        .stat {
+          padding: 12px;
+        }
+
+        .stat-value {
+          font-size: 1.06rem;
+        }
+
+        .stat-copy,
+        .section-copy,
+        .feature-card p,
+        .panel-card p,
+        .stage-card p,
+        .matrix-card p,
+        .stack-card p,
+        .quote-card p,
+        .feature-list li,
+        .bullet-list li,
+        .mock-box span {
+          font-size: 0.72rem;
+          line-height: 1.56;
+        }
+
+        .section-title {
+          margin-top: 14px;
+          font-size: 1.26rem;
+        }
+
+        .feature-card h4,
+        .panel-card h4,
+        .stage-card h4,
+        .matrix-card h4,
+        .stack-card h4 {
+          font-size: 0.9rem;
+        }
+
+        .matrix-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .mock-browser {
+          margin-top: 18px;
+          padding: 12px;
+        }
+
+        .mock-image {
+          height: 180px;
+          border-radius: 12px;
+        }
+
+        .quote-card {
+          margin-top: 18px;
+          padding: 22px 16px;
+        }
+
+        .quote-card h2 {
+          font-size: 1.1rem;
+        }
+      }
+
+      @media (max-width: 420px) {
+        .deck {
+          width: min(100%, calc(100vw - 12px));
+          padding: 14px 10px;
+        }
+
+        .hero-deck {
+          padding: 18px 12px;
+        }
+
+        .hero-title {
+          font-size: 1.72rem;
+        }
+
+        .section-title {
+          font-size: 1.22rem;
+        }
+
+        .mock-image {
+          height: 150px;
+        }
+      }
     </style>
   </head>
   <body>
-
-    <!-- Navigation Sidebar -->
     <div id="slide-index">
-      <div class="index-item" onclick="Reveal.slide(0)"><span class="index-num">01</span> 项目概览</div>
-      <div class="index-item" onclick="Reveal.slide(1)"><span class="index-num">02</span> 行业痛点</div>
-      <div class="index-item" onclick="Reveal.slide(2)"><span class="index-num">03</span> 核心功能</div>
-      <div class="index-item" onclick="Reveal.slide(3)"><span class="index-num">04</span> 工程架构</div>
-      <div class="index-item" onclick="Reveal.slide(4)"><span class="index-num">05</span> 业务逻辑</div>
-      <div class="index-item" onclick="Reveal.slide(5)"><span class="index-num">06</span> 时代结语</div>
+      <div class="index-item" onclick="Reveal.slide(0)"><span class="index-num">01</span> 当前工具定位</div>
+      <div class="index-item" onclick="Reveal.slide(1)"><span class="index-num">02</span> 解决的问题</div>
+      <div class="index-item" onclick="Reveal.slide(2)"><span class="index-num">03</span> 真实使用路径</div>
+      <div class="index-item" onclick="Reveal.slide(3)"><span class="index-num">04</span> 能力矩阵</div>
+      <div class="index-item" onclick="Reveal.slide(4)"><span class="index-num">05</span> 工程落地</div>
+      <div class="index-item" onclick="Reveal.slide(5)"><span class="index-num">06</span> Vibe Coding 思考</div>
     </div>
 
     <div class="reveal">
       <div class="slides">
-
-        <!-- Slide 1: Welcome -->
         <section>
-          <div class="slide-container" style="text-align: center;">
-            <img src="/images/ppt_hero.png" class="slide-image" alt="AI Video Hero">
-            <p style="text-transform: uppercase; letter-spacing: 4px; font-size: 0.7rem; color: var(--accent); font-weight: 700;">Development Sharing</p>
-            <h1 class="text-gradient" style="font-size: 3.5rem; margin: 20px 0;">AI Video Highlights</h1>
-            <p style="font-size: 1.1rem; opacity: 0.6; font-weight: 300;">基于深度协作的智能视频分析与交互平台</p>
-            <div style="margin-top: 60px; height: 1px; background: var(--glass-border);"></div>
-            <div style="display: flex; justify-content: space-around; margin-top: 30px; font-size: 0.8rem; opacity: 0.5;">
-              <span>PRESENTED BY <strong>XUELEI KONG</strong></span>
-              <span>MARCH 2026</span>
+          <div class="deck hero-deck">
+            <div class="hero-art"></div>
+            <div class="hero-layout">
+              <div class="hero-copy-area">
+                <div class="eyebrow">Product Demo / March 2026</div>
+                <h1 class="hero-title">
+                  <span class="brand">AI Video Highlights</span>
+                  把长视频重写成<br>可以检索、理解与复用的知识界面
+                </h1>
+                <p class="hero-copy">
+                  从分析、搜索、字幕、脑图到问答、剪辑和导出，把原本线性的观看过程，重构成一条更适合学习与创作的知识流。
+                </p>
+                <div class="hero-tags">
+                  <span class="tag">Vue 3 + TypeScript</span>
+                  <span class="tag">Fastify + Prisma</span>
+                  <span class="tag">DeepSeek + whisper + Embedding Search</span>
+                </div>
+                <div class="hero-notes">
+                  <div class="note">
+                    <strong>一站式视频工作台</strong>
+                    <span>首页负责分析和全库搜索，视频页负责精读、检索、问答与二次创作。</span>
+                  </div>
+                  <div class="note">
+                    <strong>从观看到复用</strong>
+                    <span>不是停留在“看懂视频”，而是继续沉淀成字幕、脑图、知识库素材和剪辑脚本。</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="hero-visual">
+                <div class="hero-frame">
+                  <img src="/images/hero.png" alt="AI Video Highlights hero">
+                </div>
+                <div class="hero-stats">
+                  <div class="stat">
+                    <div class="stat-label">Analyze</div>
+                    <div class="stat-value">2 个主入口</div>
+                    <div class="stat-copy">首页覆盖 AI 分析和全库语义搜索。</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">Workspace</div>
+                    <div class="stat-value">1 个工作台</div>
+                    <div class="stat-copy">播放器、字幕、摘要、搜索、导出和剪辑集中在同页。</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-label">Output</div>
+                    <div class="stat-value">多模态产物</div>
+                    <div class="stat-copy">要点、脑图、双语字幕、问答与导出结果同步沉淀。</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <!-- Slide 2: The Problem -->
         <section>
-          <div class="slide-container">
-            <h2 class="text-gradient">WHY WE BUILD THIS?</h2>
-            <div class="grid-2">
-              <div class="card">
-                <h4>效率鸿沟</h4>
-                <p>面对动辄 1 小时的长视频，用户难以在数分钟内提取核心干货。</p>
-              </div>
-              <div class="card">
-                <h4>认知壁垒</h4>
-                <p>外语教育及技术类视频在 YouTube/Bilibili 间存在严重的转录翻译断层。</p>
-              </div>
-            </div>
-            <div class="highlight-box fragment" style="margin-top: 40px;">
-              <p style="font-size: 1.2rem; font-weight: 300;">我们通过 <span style="color:var(--accent)">Whisper + DeepSeek</span> 打造全自动的“认知放大镜”。</p>
-            </div>
-          </div>
-        </section>
-
-        <!-- Slide 3: Combined Core Features -->
-        <section>
-          <div class="slide-container">
-            <h2 class="text-gradient">全方位智能交互功能</h2>
-            <div class="grid-2">
-              <div class="card">
-                <h4>智能摘要与定位</h4>
-                <p>实时分析视频转录，提取核心要点。支持点击瞬间跳转与页面智能归位。</p>
-              </div>
-              <div class="card">
-                <h4>SVG 动态脑图</h4>
-                <p>将视频结构可视化，支持 Markmap 交互，实现知识点的骨骼化呈现。</p>
-              </div>
-              <div class="card">
-                <h4>流式 AI 对话</h4>
-                <p>基于视频上下文的精准问答，支持时间戳锚点定位。</p>
-              </div>
-            </div>
-            <img src="/images/ppt_summary.png" class="slide-image" style="max-height: 200px; margin-top: 24px; margin-bottom: 0;" alt="Features Visualization">
-          </div>
-        </section>
-
-        <!-- Slide 5: Tech Stack -->
-        <section>
-          <div class="slide-container">
-            <h2 class="text-gradient">工程架构与部署方案</h2>
-            <div class="grid-2" style="grid-template-columns: repeat(3, 1fr);">
+          <div class="deck">
+            <div class="section-top">
               <div>
-                <h4 style="color: var(--accent); font-size: 0.9em; margin-bottom: 20px;">前端交互</h4>
-                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot"></span> Vue 3 + TS + Vite</p>
-                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot"></span> 玻璃拟态 UI 系统</p>
-                <p style="font-size: 0.8rem;"><span class="accent-dot"></span> Lucide 图标库</p>
+                <div class="eyebrow">Problem Fit</div>
+                <h2 class="section-title">它解决的，不只是“看视频太慢”</h2>
+                <p class="section-copy">
+                  真正的问题是长视频的信息密度高，但消费路径是割裂的。用户得在播放器、字幕、笔记软件、
+                  搜索框和剪辑工具之间反复切换，结果是知道内容有价值，却很难快速吸收、引用和复用。
+                </p>
               </div>
-              <div>
-                <h4 style="color: #c084fc; font-size: 0.9em; margin-bottom: 20px;">后端服务</h4>
-                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot" style="background:#c084fc; box-shadow: 0 0 10px #c084fc;"></span> Fastify + Prisma</p>
-                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot" style="background:#c084fc; box-shadow: 0 0 10px #c084fc;"></span> DeepSeek R1 AI</p>
-                <p style="font-size: 0.8rem;"><span class="accent-dot" style="background:#c084fc; box-shadow: 0 0 10px #c084fc;"></span> PostgreSQL 存储</p>
+              <div class="kicker">Why This Matters</div>
+            </div>
+
+            <div class="two-col" style="margin-top: 24px;">
+              <div class="feature-card">
+                <h4>信息获取的断裂</h4>
+                <ul class="feature-list">
+                  <li>长视频通常只能顺序播放，无法像文档一样直接定位到某个知识点。</li>
+                  <li>字幕和摘要是分离的，用户难以判断“这一段为什么重要”。</li>
+                  <li>外语视频的价值常常卡在听力门槛，不能稳定沉淀为中文知识材料。</li>
+                </ul>
               </div>
-              <div>
-                <h4 style="color: #10b981; font-size: 0.9em; margin-bottom: 20px;">云端部署</h4>
-                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot" style="background:#10b981; box-shadow: 0 0 10px #10b981;"></span> Vercel (前端)</p>
-                <p style="font-size: 0.8rem; margin-bottom: 10px;"><span class="accent-dot" style="background:#10b981; box-shadow: 0 0 10px #10b981;"></span> Railway (后端)</p>
-                <p style="font-size: 0.8rem;"><span class="accent-dot" style="background:#10b981; box-shadow: 0 0 10px #10b981;"></span> GitHub CI/CD</p>
+
+              <div class="feature-card">
+                <h4>内容复用的断裂</h4>
+                <ul class="feature-list">
+                  <li>看完视频以后，知识点无法自然进入 Notion、Obsidian 或二创流程。</li>
+                  <li>剪视频的人需要重新找时间点、重写脚本、重复整理摘要。</li>
+                  <li>历史分析结果缺少统一检索入口，之前处理过的视频价值会被再次埋没。</li>
+                </ul>
               </div>
             </div>
-            <div class="card fragment" style="margin-top: 30px; border-left: 4px solid #10b981;">
-              <h4 style="color: #10b981 !important; font-size: 0.9em !important;">部署方案优势</h4>
-              <p>全自动化 CI/CD 流，支持环境变量动态注入与前后端自动联动，确保系统的高可用性与快速迭代。</p>
+
+            <div class="quote-card">
+              <h2>目标不是“帮用户看完视频”，而是把视频重构成一个可交互的知识界面。</h2>
+              <p>从播放器时代进入知识工作台时代，才是这个项目现在更准确的定位。</p>
             </div>
           </div>
         </section>
 
-
-         <!-- Slide 6: Business Logic -->
         <section>
-          <div class="slide-container">
-            <h2 class="text-gradient" style="margin-bottom: 20px;">核心业务逻辑与稳定性兜底</h2>
-            <div class="card" style="margin-bottom: 12px; background: rgba(0,0,0,0.2); overflow: hidden; padding: 12px 24px;">
-              <h4 style="font-size: 0.9em !important; margin-bottom: 10px !important;">转录解析流水线 (Enhanced Pipeline)</h4>
-
-              <svg viewBox="0 0 800 160" style="width: 100%; height: auto;">
-                <defs>
-                  <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
-                    <polygon points="0 0, 10 3.5, 0 7" fill="rgba(255,255,255,0.3)" />
-                  </marker>
-                </defs>
-
-                <!-- Nodes -->
-                <rect x="10" y="55" width="80" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
-                <text x="50" y="85" fill="white" font-size="11" text-anchor="middle">URL 提交</text>
-
-                <rect x="120" y="55" width="100" height="50" rx="8" fill="var(--glass)" stroke="var(--glass-border)" />
-                <text x="170" y="85" fill="white" font-size="11" text-anchor="middle">API 解析 (无Cookie)</text>
-
-                <path d="M250 80 L280 50 L310 80 L280 110 Z" fill="rgba(99, 102, 241, 0.1)" stroke="var(--accent)" />
-                <text x="280" y="84" fill="white" font-size="9" text-anchor="middle">解析成功?</text>
-
-                <rect x="350" y="10" width="120" height="40" rx="8" fill="rgba(16, 185, 129, 0.1)" stroke="rgba(16, 185, 129, 0.3)" />
-                <text x="410" y="35" fill="#10b981" font-size="11" text-anchor="middle">AI 内容聚类</text>
-
-                <rect x="350" y="110" width="120" height="40" rx="8" fill="rgba(239, 68, 68, 0.1)" stroke="rgba(239, 68, 68, 0.3)" />
-                <text x="410" y="135" fill="#ef4444" font-size="11" text-anchor="middle">MWEB 手动回退</text>
-
-                <rect x="520" y="110" width="100" height="40" rx="8" fill="rgba(239, 68, 68, 0.1)" stroke="rgba(239, 68, 68, 0.3)" />
-                <text x="570" y="135" fill="#ef4444" font-size="11" text-anchor="middle">Whisper ASR</text>
-
-                <rect x="680" y="55" width="110" height="50" rx="8" fill="rgba(99, 102, 241, 0.2)" stroke="var(--accent)" />
-                <text x="735" y="80" fill="white" font-size="11" text-anchor="middle" font-weight="bold">多维输出</text>
-                <text x="735" y="95" fill="white" font-size="9" text-anchor="middle" opacity="0.6">摘要/脑图/异步翻译</text>
-
-                <!-- Lines -->
-                <line x1="90" y1="80" x2="120" y2="80" stroke="white" opacity="0.2" marker-end="url(#arrowhead)" />
-                <line x1="220" y1="80" x2="250" y2="80" stroke="white" opacity="0.2" marker-end="url(#arrowhead)" />
-
-                <path d="M310 80 C 330 80, 330 30, 350 30" fill="none" stroke="#10b981" stroke-width="2" opacity="0.4" />
-                <text x="330" y="45" fill="#10b981" font-size="9">YES</text>
-
-                <path d="M310 80 C 330 80, 330 130, 350 130" fill="none" stroke="#ef4444" stroke-width="2" opacity="0.4" />
-                <text x="330" y="115" fill="#ef4444" font-size="9">NO</text>
-
-                <line x1="470" y1="130" x2="520" y2="130" stroke="#ef4444" opacity="0.3" marker-end="url(#arrowhead)" />
-                <line x1="620" y1="130" x2="680" y2="80" stroke="white" opacity="0.2" />
-                <line x1="470" y1="30" x2="680" y2="80" stroke="white" opacity="0.2" />
-              </svg>
-            </div>
-            <div class="grid-2" style="gap: 16px;">
-              <div class="card" style="padding: 12px 20px;">
-                <h4 style="font-size: 0.9em !important; margin-bottom: 6px !important;">对抗式反爬策略</h4>
-                <p style="font-size: 0.75rem;">“裸跑优先”+“手动MWEB模拟”+“Cookie自动回退”，彻底解决 YouTube Bot 检测导致的解析失败。</p>
+          <div class="deck">
+            <div class="section-top">
+              <div>
+                <div class="eyebrow">Workflow</div>
+                <h2 class="section-title">当前版本的真实使用路径</h2>
+                <p class="section-copy">
+                  从提交链接，到先展示视频与字幕，再异步补全 AI 摘要、脑图、翻译和索引，
+                  最后进入搜索、问答、导出和剪辑的复用阶段。
+                </p>
               </div>
-              <div class="card" style="padding: 12px 20px;">
-                <h4 style="font-size: 0.9em !important; margin-bottom: 6px !important;">异步后台任务</h4>
-                <p style="font-size: 0.75rem;">主线分析秒开，<strong>翻译与向量生成</strong>转入后台异步处理，前端通过长轮询平滑展示对照字幕。</p>
+            </div>
+            <div class="timeline" style="margin-top: 24px;">
+              <div class="stage-card">
+                <div class="stage-number">01</div>
+                <h4>提交视频</h4>
+                <p>支持 YouTube 链接。首页除了分析入口，也提供全库语义搜索入口。</p>
+              </div>
+              <div class="stage-card">
+                <div class="stage-number">02</div>
+                <h4>先可看，再补全</h4>
+                <p>视频页优先把播放器和字幕展示出来，减少等待成本，AI 结果在后台逐步补全。</p>
+              </div>
+              <div class="stage-card">
+                <div class="stage-number">03</div>
+                <h4>进入交互</h4>
+                <p>摘要可定位时间点，字幕可双语浏览与编辑，脑图可展开，视频内搜索和 AI 对话可继续深挖内容。</p>
+              </div>
+              <div class="stage-card">
+                <div class="stage-number">04</div>
+                <h4>产出资产</h4>
+                <p>导出 Markdown / Notion，生成剪辑脚本，打开片段剪辑抽屉，让分析结果直接进入复用链路。</p>
               </div>
             </div>
           </div>
         </section>
 
-        <!-- Slide 7: Closing Thought -->
-        <section data-background-gradient="linear-gradient(135deg, #1e1b4b 0%, #4338ca 50%, #7e22ce 100%)">
-          <div class="slide-container" style="border: none; background: rgba(0,0,0,0.2); text-align: center;">
-            <p style="text-transform: uppercase; letter-spacing: 6px; font-size: 0.8rem; color: #a5b4fc; font-weight: 700; margin-bottom: 40px;">Final Thought</p>
-            <h2 style="font-size: 2.2rem; line-height: 1.6; color: white;">
-              在 AI 浪潮中，<br>
-              <span class="text-gradient" style="background: linear-gradient(to right, #fff, #a5b4fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">代码已不再是创新的瓶颈</span><br>
-              唯有跨越边界的创意，<br>
-              才是定义未来的唯一标准。
-            </h2>
-            <div style="margin: 40px auto; width: 60px; height: 2px; background: white; opacity: 0.3;"></div>
-            <p style="font-style: italic; opacity: 0.8; font-size: 1.1rem; font-weight: 300;">“ 技术正归于平凡，而灵魂终将闪耀 ”</p>
-            <div style="margin-top: 50px; color: var(--accent); font-weight: 600; font-size: 1.2rem;">THANKS & Q/A</div>
+        <section>
+          <div class="deck">
+            <div class="section-top">
+              <div>
+                <div class="eyebrow">Capability Matrix</div>
+                <h2 class="section-title">它已经具备的能力矩阵</h2>
+                <p class="section-copy">
+                  如果按用户任务拆分，它已经覆盖了“发现内容、理解内容、修正内容、复用内容”四个阶段。
+                </p>
+              </div>
+              <div class="kicker">Discover to Reuse</div>
+            </div>
+
+            <div class="matrix-grid" style="margin-top: 24px;">
+              <div class="matrix-card">
+                <div class="matrix-head">
+                  <h4>发现内容</h4>
+                  <span class="matrix-badge">Discover</span>
+                </div>
+                <ul class="bullet-list">
+                  <li>首页全库语义搜索，支持自然语言描述命中历史分析结果。</li>
+                  <li>视频页内搜索，帮助用户快速锁定单个视频中的目标内容。</li>
+                  <li>历史记录抽屉保留标题、标签、分类和摘要数量，降低二次进入成本。</li>
+                </ul>
+              </div>
+
+              <div class="matrix-card">
+                <div class="matrix-head">
+                  <h4>理解内容</h4>
+                  <span class="matrix-badge">Understand</span>
+                </div>
+                <ul class="bullet-list">
+                  <li>AI 自动生成 takeaways、脑图、标签、分类、视频描述与 hashtags。</li>
+                  <li>字幕支持双语展示，英语视频可以逐步补齐中文翻译。</li>
+                  <li>AI 对话流式返回，围绕当前视频上下文继续深挖问题。</li>
+                </ul>
+              </div>
+
+              <div class="matrix-card">
+                <div class="matrix-head">
+                  <h4>修正内容</h4>
+                  <span class="matrix-badge">Refine</span>
+                </div>
+                <ul class="bullet-list">
+                  <li>字幕支持手动编辑，避免自动切分和翻译结果影响最终可读性。</li>
+                  <li>支持重建 subtitle cues，让字幕分段规则可以迭代优化。</li>
+                  <li>关键词词表支持补充与维护，让学习型视频的知识点更可沉淀。</li>
+                </ul>
+              </div>
+
+              <div class="matrix-card">
+                <div class="matrix-head">
+                  <h4>复用内容</h4>
+                  <span class="matrix-badge">Reuse</span>
+                </div>
+                <ul class="bullet-list">
+                  <li>支持导出 Markdown、Notion 与脑图，分析结果可以进入知识库。</li>
+                  <li>自动生成剪辑脚本，并提供片段剪辑抽屉，把 takeaways 直接转成素材。</li>
+                  <li>内容不再只停留在播放器里，而是继续服务于学习、写作和二次创作。</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </section>
 
+        <section>
+          <div class="deck">
+            <div class="section-top">
+              <div>
+                <div class="eyebrow">Engineering</div>
+                <h2 class="section-title">工程上，它已经具备产品化雏形</h2>
+                <p class="section-copy">
+                  前后端边界已经比较清晰，服务端也有 API 文档、
+                  数据模型与多条业务路由，为后续继续扩展留下了比较好的空间。
+                </p>
+              </div>
+              <div class="kicker">Product Foundation</div>
+            </div>
 
+            <div class="stack-grid" style="margin-top: 24px;">
+              <div class="stack-card">
+                <span class="stack-tag">Frontend</span>
+                <h4>Vue 3 工作台式前端</h4>
+                <ul class="bullet-list">
+                  <li>首页负责分析与搜索双入口，视频页负责高密度交互工作台。</li>
+                  <li>播放器、脑图、搜索弹窗、历史抽屉、字幕编辑、剪辑抽屉都已组件化。</li>
+                  <li>Vite + TypeScript 让页面迭代速度和可维护性保持在舒适区间。</li>
+                </ul>
+              </div>
+
+              <div class="stack-card">
+                <span class="stack-tag warm">Backend</span>
+                <h4>Fastify 服务与结构化 API</h4>
+                <ul class="bullet-list">
+                  <li>分析、聊天、搜索、视频详情、转录等路由已拆开，边界清晰。</li>
+                  <li>集成 OpenAPI / Scalar 文档，接口已经进入可被外部理解和维护的阶段。</li>
+                  <li>支持认证、跨域、健康检查，具备基本线上服务意识。</li>
+                </ul>
+              </div>
+
+              <div class="stack-card">
+                <span class="stack-tag green">Data</span>
+                <h4>Prisma 数据层承接沉淀</h4>
+                <ul class="bullet-list">
+                  <li>视频、takeaways、chat、subtitles、subtitle cues 等数据都已有模型支撑。</li>
+                  <li>历史记录和搜索并不是临时内存态，而是在往长期积累方向走。</li>
+                  <li>这意味着“分析一次，多次复用”的产品逻辑成立。</li>
+                </ul>
+              </div>
+
+              <div class="stack-card">
+                <span class="stack-tag">AI Layer</span>
+                <h4>AI 不只做摘要，还承担索引与交互</h4>
+                <ul class="bullet-list">
+                  <li>DeepSeek 负责摘要、脑图、翻译、问答等核心分析任务。</li>
+                  <li>语义搜索侧引入 embedding 能力，把历史内容变成可检索资产。</li>
+                  <li>设计上优先“先展示可用内容，再补全 AI 结果”，体验比一次性阻塞更成熟。</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <div class="deck">
+            <div class="section-top">
+              <div>
+                <div class="eyebrow">Vibe Coding</div>
+                <h2 class="section-title">关于 vibe coding，我更在意的不是“快”，而是“把人放回创造的中心”</h2>
+                <p class="section-copy">
+                  AI 让原型、交互和功能拼装的门槛大幅下降，
+                  但真正决定产出质量的，依然是你有没有清晰的问题意识、判断力和审美。
+                </p>
+              </div>
+              <div class="kicker">Human + AI</div>
+            </div>
+
+            <div class="two-col" style="margin-top: 24px;">
+              <div class="panel-card">
+                <h4>vibe coding 真正擅长的事</h4>
+                <ul class="feature-list">
+                  <li>快速把模糊想法变成一个可看、可点、可验证的产品雏形。</li>
+                  <li>降低尝试成本，让开发者更敢于探索交互、流程和表达方式。</li>
+                  <li>把很多原来“懒得做”的小优化，变成可以顺手实现的事情。</li>
+                </ul>
+              </div>
+
+              <div class="panel-card">
+                <h4>但它不能替代的能力</h4>
+                <ul class="feature-list">
+                  <li>你得知道什么问题值得解决，什么功能只是“看起来很炫”。</li>
+                  <li>你得能判断生成结果是否靠谱，是否真正提升了用户体验。</li>
+                  <li>你得对产品气质负责，因为 AI 只能放大方向，不能替你定义方向。</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="quote-card">
+              <h2>代码正在变得更便宜，<br>但好问题、好判断和好审美，反而变得更贵。</h2>
+              <p>所以我理解的 vibe coding，不是“让 AI 替我做产品”，而是“让我把更多精力放回真正值得做的决定”。</p>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/reveal.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/notes/notes.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/markdown/markdown.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.5.0/plugin/highlight/highlight.js"></script>
     <script>
       Reveal.initialize({
         hash: true,
-        plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ],
-        controls: false, // 隐藏默认控件，使用我们自定义的索引
+        controls: false,
         progress: true,
         center: true,
-        transition: 'slide',
-        backgroundTransition: 'fade',
-        mouseWheel: true, // 开启鼠标滑轮支持
-        viewDistance: 3,
-        mobileViewDistance: 2,
-        // 自定义字体大小
-        width: 1200,
-        height: 700,
-        margin: 0.1,
+        transition: "slide",
+        backgroundTransition: "fade",
+        mouseWheel: true,
+        width: 1280,
+        height: 720,
+        margin: 0.06,
         minScale: 0.2,
-        maxScale: 2.0
+        maxScale: 1.8,
+        plugins: [RevealNotes]
       });
 
-      // 同步侧边栏索引状态
-      Reveal.on('slidechanged', event => {
-        const indexItems = document.querySelectorAll('.index-item');
+      Reveal.on("slidechanged", (event) => {
+        const indexItems = document.querySelectorAll(".index-item");
         indexItems.forEach((item, i) => {
           if (i === event.indexh) {
-            item.classList.add('active');
+            item.classList.add("active");
           } else {
-            item.classList.remove('active');
+            item.classList.remove("active");
           }
         });
       });
 
-      // 初始化第一个索引激活
-      document.querySelector('.index-item').classList.add('active');
+      const firstItem = document.querySelector(".index-item");
+      if (firstItem) firstItem.classList.add("active");
     </script>
   </body>
 </html>

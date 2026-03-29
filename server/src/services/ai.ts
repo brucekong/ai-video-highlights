@@ -11,6 +11,7 @@ export interface AIKeywordGlossaryItem {
   english: string;
   chinese: string;
   type: 'word' | 'phrase';
+  phonetic?: string;
 }
 
 export interface AISummaryResult {
@@ -29,6 +30,8 @@ export interface AIPublishAssistResult {
 export interface AIMindmapResult {
   mindmap: string;
 }
+
+const FIXED_VIDEO_HASHTAGS = ['#慢速英语动画', '#慢速英语', '#慢速口语'] as const;
 
 const SUMMARY_SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任务是分析视频的转录文本，提取出最重要的核心观点和关键要点。
 
@@ -72,6 +75,7 @@ const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。
   "keyword_glossary": [
     {
       "english": "water bottle",
+      "phonetic": "/ˈwɔːtər ˌbɑːtəl/",
       "chinese": "水瓶",
       "type": "phrase"
     }
@@ -82,7 +86,8 @@ const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。
 1. video_description 要自然、适合发布，不要空泛套话
 2. video_hashtags 提取 3-5 个最相关的话题，使用空格分隔
 3. keyword_glossary 提炼 8-15 个最值得学习的关键单词和短语
-4. english 保留原文，chinese 给出自然中文释义，type 只能是 word 或 phrase
+4. english 保留原文，phonetic 提供自然、常见的美式音标，建议使用 /.../ 格式；如果实在不适合可返回空字符串
+5. chinese 给出自然中文释义，type 只能是 word 或 phrase
 5. 优先选择视频里高频、核心、场景相关的表达，避免过于基础的虚词
 6. 如果视频主要是中文，keyword_glossary 可以返回空数组
 7. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
@@ -111,6 +116,28 @@ const BASE_DELAY_MS = 3000; // 基础等待时间 3 秒
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeVideoHashtags(rawHashtags: unknown): string {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  const pushTag = (value: string) => {
+    const normalized = value.trim().replace(/^#+/, '#');
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    tags.push(normalized);
+  };
+
+  FIXED_VIDEO_HASHTAGS.forEach(pushTag);
+
+  String(rawHashtags || '')
+    .split(/\s+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .forEach(pushTag);
+
+  return tags.join(' ');
 }
 
 function createDeepSeekClient(): OpenAI {
@@ -230,11 +257,12 @@ export async function generatePublishAssist(
 
   return {
     videoDescription: parsed.video_description || '',
-    videoHashtags: parsed.video_hashtags || '',
+    videoHashtags: normalizeVideoHashtags(parsed.video_hashtags),
     keywordGlossary: Array.isArray(parsed.keyword_glossary)
       ? parsed.keyword_glossary
         .map((item: any) => ({
           english: String(item?.english || '').trim(),
+          phonetic: String(item?.phonetic || '').trim(),
           chinese: String(item?.chinese || '').trim(),
           type: item?.type === 'word' ? 'word' : 'phrase',
         }))

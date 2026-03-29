@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2 } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2, Volume2 } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
@@ -27,6 +27,7 @@ interface Takeaway {
 
 interface KeywordGlossaryItem {
   english: string;
+  phonetic?: string;
   chinese: string;
   type: 'word' | 'phrase';
 }
@@ -76,9 +77,11 @@ const showKeywordGlossaryForm = ref(false);
 const isSavingKeywordGlossary = ref(false);
 const keywordGlossaryForm = ref<KeywordGlossaryItem>({
   english: '',
+  phonetic: '',
   chinese: '',
   type: 'word',
 });
+const speakingGlossaryKey = ref('');
 const activeTakeawayIndex = ref<number | null>(null);
 const activeTranscriptIndex = ref<number | null>(null);
 const currentVideoTime = ref(0);
@@ -293,6 +296,7 @@ const normalizeKeywordGlossary = (items: any[]): KeywordGlossaryItem[] => {
   return items
     .map((item) => ({
       english: decodeHtml(String(item?.english || '')).trim(),
+      phonetic: decodeHtml(String(item?.phonetic || '')).trim(),
       chinese: decodeHtml(String(item?.chinese || '')).trim(),
       type: item?.type === 'word' ? 'word' as const : 'phrase' as const,
     }))
@@ -302,6 +306,7 @@ const normalizeKeywordGlossary = (items: any[]): KeywordGlossaryItem[] => {
 const resetKeywordGlossaryForm = () => {
   keywordGlossaryForm.value = {
     english: '',
+    phonetic: '',
     chinese: '',
     type: 'word',
   };
@@ -311,9 +316,40 @@ const keywordGlossaryCopyText = computed(() => {
   if (!keywordGlossary.value.length) return '';
 
   return keywordGlossary.value
-    .map((item, index) => `${index + 1}. ${item.english} - ${item.chinese}`)
+    .map((item, index) => `${index + 1}. ${item.english}${item.phonetic ? ` ${item.phonetic}` : ''} - ${item.chinese}`)
     .join('\n');
 });
+
+const speakGlossaryItem = (item: KeywordGlossaryItem, index: number) => {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    showActionNotice({
+      title: '当前设备不支持点读',
+      message: '请在支持语音合成的浏览器中使用该功能。',
+      type: 'error',
+    });
+    return;
+  }
+
+  const text = item.english.trim();
+  if (!text) return;
+
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'en-US';
+  utterance.rate = 0.92;
+  utterance.pitch = 1;
+
+  const key = `${item.english}-${index}`;
+  speakingGlossaryKey.value = key;
+  utterance.onend = () => {
+    if (speakingGlossaryKey.value === key) speakingGlossaryKey.value = '';
+  };
+  utterance.onerror = () => {
+    if (speakingGlossaryKey.value === key) speakingGlossaryKey.value = '';
+  };
+
+  window.speechSynthesis.speak(utterance);
+};
 
 const openKeywordGlossaryForm = () => {
   showKeywordGlossaryForm.value = true;
@@ -329,6 +365,7 @@ const saveKeywordGlossaryItem = async () => {
   if (!videoId.value) return;
 
   const english = keywordGlossaryForm.value.english.trim();
+  const phonetic = keywordGlossaryForm.value.phonetic?.trim() || '';
   const chinese = keywordGlossaryForm.value.chinese.trim();
   const type = keywordGlossaryForm.value.type === 'phrase' ? 'phrase' : 'word';
 
@@ -349,7 +386,7 @@ const saveKeywordGlossaryItem = async () => {
         'Content-Type': 'application/json',
         ...getAuthHeaders(),
       },
-      body: JSON.stringify({ english, chinese, type }),
+      body: JSON.stringify({ english, phonetic, chinese, type }),
     });
 
     if (!response.ok) {
@@ -1033,6 +1070,12 @@ const pollAnalysisStatus = async () => {
     console.error('Polling analysis status failed:', e);
   }
 };
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+});
 
 
 // 调用后端 AI 分析接口
@@ -1844,9 +1887,19 @@ const takeawayMap = computed(() => {
                       class="glossary-card"
                     >
                       <div class="glossary-card-header">
+                        <button
+                          class="glossary-speak-btn"
+                          :class="{ active: speakingGlossaryKey === `${item.english}-${index}` }"
+                          @click="speakGlossaryItem(item, index)"
+                          :title="`点读 ${item.english}`"
+                        >
+                          <Volume2 :size="14" />
+                          <span>{{ speakingGlossaryKey === `${item.english}-${index}` ? '朗读中' : '点读' }}</span>
+                        </button>
                         <span class="glossary-type">{{ item.type === 'word' ? '单词' : '短语' }}</span>
                       </div>
                       <div class="glossary-english">{{ item.english }}</div>
+                      <div v-if="item.phonetic" class="glossary-phonetic">{{ item.phonetic }}</div>
                       <div class="glossary-chinese">{{ item.chinese }}</div>
                     </div>
                   </div>
@@ -1867,6 +1920,14 @@ const takeawayMap = computed(() => {
                         class="glossary-input"
                         placeholder="英文单词或短语"
                       />
+                      <input
+                        v-model="keywordGlossaryForm.phonetic"
+                        type="text"
+                        class="glossary-input"
+                        placeholder="音标，可选，例如 /ˈwɔːtər/"
+                      />
+                    </div>
+                    <div class="glossary-form-row single">
                       <input
                         v-model="keywordGlossaryForm.chinese"
                         type="text"
@@ -1912,6 +1973,14 @@ const takeawayMap = computed(() => {
                         class="glossary-input"
                         placeholder="英文单词或短语"
                       />
+                      <input
+                        v-model="keywordGlossaryForm.phonetic"
+                        type="text"
+                        class="glossary-input"
+                        placeholder="音标，可选，例如 /ˈwɔːtər/"
+                      />
+                    </div>
+                    <div class="glossary-form-row single">
                       <input
                         v-model="keywordGlossaryForm.chinese"
                         type="text"
@@ -3909,7 +3978,9 @@ input::placeholder {
 
 .glossary-card-header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
 }
 
 .glossary-type {
@@ -3923,11 +3994,45 @@ input::placeholder {
   border: 1px solid rgba(99, 102, 241, 0.24);
 }
 
+.glossary-speak-btn {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 4px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.glossary-speak-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.glossary-speak-btn.active {
+  color: #0ea5e9;
+  border-color: rgba(14, 165, 233, 0.35);
+  background: rgba(14, 165, 233, 0.12);
+}
+
 .glossary-english {
   font-size: 1rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.35;
+  word-break: break-word;
+}
+
+.glossary-phonetic {
+  font-size: 0.82rem;
+  color: #7dd3fc;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.4;
   word-break: break-word;
 }
 
@@ -3992,6 +4097,10 @@ input::placeholder {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.glossary-form-row.single {
+  grid-template-columns: 1fr;
 }
 
 .glossary-input,

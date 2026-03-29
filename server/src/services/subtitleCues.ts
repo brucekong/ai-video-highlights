@@ -253,9 +253,18 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
     return true;
   }
 
+  const isSameSource = seg.sortOrder === current.sourceEndSortOrder;
+  if (
+    isSameSource
+    && isShortStandaloneLeadSentence(currentText)
+    && gapDuration <= LONG_PAUSE_MS
+    && combinedDuration <= SOFT_MAX_DURATION_MS
+  ) {
+    return true;
+  }
+
   if (current.lockedAfterCompletion) return false;
 
-  const isSameSource = seg.sortOrder === current.sourceEndSortOrder;
   if (isSameSource) {
     if (hasContinuationSignal) {
       return combinedDuration <= CONTINUATION_MAX_DURATION_MS;
@@ -417,6 +426,20 @@ function expandSubtitleSources(subtitles: SubtitleCueSource[]): SubtitleCueSourc
       return part;
     });
   });
+}
+
+function isShortStandaloneLeadSentence(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || !hasSentenceEnding(trimmed)) return false;
+
+  const normalized = trimmed
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .trim()
+    .toLowerCase();
+  if (!normalized) return false;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return words.length > 0 && words.length <= 3 && normalized.length <= 12;
 }
 
 interface SubtitleCueDraft {

@@ -5,6 +5,7 @@ export const Schemas = {
     type: 'object',
     properties: {
       english: { type: 'string', description: '英文单词或短语' },
+      phonetic: { type: 'string', description: '音标，可选' },
       chinese: { type: 'string', description: '对应中文释义' },
       type: { type: 'string', enum: ['word', 'phrase'], description: '词条类型' },
     },

@@ -27,6 +27,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
         required: ['english', 'chinese', 'type'],
         properties: {
           english: { type: 'string' },
+          phonetic: { type: 'string' },
           chinese: { type: 'string' },
           type: { type: 'string', enum: ['word', 'phrase'] },
         },
@@ -47,11 +48,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
       },
     },
   }, async (
-    request: FastifyRequest<{ Params: { videoId: string }; Body: { english: string; chinese: string; type: 'word' | 'phrase' } }>,
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { english: string; phonetic?: string; chinese: string; type: 'word' | 'phrase' } }>,
     reply: FastifyReply,
   ) => {
     const { videoId } = request.params;
     const english = request.body.english.trim();
+    const phonetic = String(request.body.phonetic || '').trim();
     const chinese = request.body.chinese.trim();
     const type = request.body.type === 'word' ? 'word' : 'phrase';
 
@@ -67,7 +69,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
     const existing = Array.isArray(video.keywordGlossary) ? video.keywordGlossary as any[] : [];
     const nextGlossary = [
       ...existing,
-      { english, chinese, type },
+      { english, phonetic, chinese, type },
     ];
 
     await prisma.video.update({

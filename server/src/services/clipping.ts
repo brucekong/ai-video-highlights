@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { downloadWithYtDlpFallback } from './ytdlp.js';
 
 const execAsync = promisify(exec);
 
@@ -496,14 +497,13 @@ export async function createVideoClip({
         dlFlags.extractAudio = true;
         dlFlags.audioFormat = 'mp3';
       }
-
-      if (platform === 'youtube' && process.env.YOUTUBE_COOKIES) {
-        const cookiePath = path.join(CLIPS_DIR, 'cookies_temp.txt');
-        await fs.writeFile(cookiePath, process.env.YOUTUBE_COOKIES.replace(/\\n/g, '\n'));
-        dlFlags.cookies = cookiePath;
-      }
-
-      await youtubedl(url, dlFlags);
+      const cookiePath = path.join(CLIPS_DIR, 'cookies_temp.txt');
+      await downloadWithYtDlpFallback(youtubedl, url, dlFlags, {
+        cookieContents: process.env.YOUTUBE_COOKIES,
+        cookieFile: cookiePath,
+        context: `clip download for ${videoId}`,
+        isYoutube: platform === 'youtube',
+      });
 
       // 如果是在线下的 mp3，yt-dlp 就可以直接输出最后的成品了
       if (isMp3) {
@@ -601,17 +601,15 @@ export async function downloadFullVideo({
       format: formatOption,
       mergeOutputFormat: 'mp4',
       noOverwrites: true,
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     };
 
-    if (platform === 'youtube' && process.env.YOUTUBE_COOKIES) {
-      const cookiePath = path.join(CLIPS_DIR, 'cookies_temp.txt');
-      await fs.writeFile(cookiePath, process.env.YOUTUBE_COOKIES.replace(/\\n/g, '\n'));
-      dlFlags.cookies = cookiePath;
-    }
-
     console.log(`[Full Download] Downloading ${url} to ${rawPath}...`);
-    await youtubedl(url, dlFlags);
+    await downloadWithYtDlpFallback(youtubedl, url, dlFlags, {
+      cookieContents: process.env.YOUTUBE_COOKIES,
+      cookieFile: path.join(CLIPS_DIR, 'cookies_temp.txt'),
+      context: `full download for ${videoId}`,
+      isYoutube: platform === 'youtube',
+    });
 
     if (await fs.pathExists(rawPath)) {
       const isHighRes = quality === '1440' || quality === '2160' || quality === 'best';

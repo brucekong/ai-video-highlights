@@ -6,6 +6,7 @@ import OpenAI from 'openai';
 import { TranscriptSegment, cleanSubtitleText } from './transcript.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { downloadWithYtDlpFallback } from './ytdlp.js';
 
 const execAsync = promisify(exec);
 
@@ -84,20 +85,18 @@ export async function fallbackToWhisper(videoId: string, platform: 'youtube' | '
         audioFormat: 'm4a',
         format: 'worstaudio/bestaudio',
         output: tmpFile,
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         addHeader: [
           'referer:https://www.youtube.com/',
           'accept-language:zh-CN,zh;q=0.9,en;q=0.8'
         ]
       };
 
-      if (process.env.YOUTUBE_COOKIES && platform === 'youtube') {
-        const cookieContent = process.env.YOUTUBE_COOKIES.replace(/\\n/g, '\n');
-        await fs.writeFile(cookieFile, cookieContent);
-        dlFlags.cookies = cookieFile;
-      }
-
-      await youtubedl(url, dlFlags);
+      await downloadWithYtDlpFallback(youtubedl, url, dlFlags, {
+        cookieContents: process.env.YOUTUBE_COOKIES,
+        cookieFile,
+        context: `audio fallback for ${videoId}`,
+        isYoutube: platform === 'youtube',
+      });
 
       if (IS_DEV && await fs.pathExists(tmpFile)) {
         await fs.copy(tmpFile, cacheFile);

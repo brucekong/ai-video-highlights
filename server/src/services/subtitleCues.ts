@@ -1,6 +1,6 @@
 import type { PrismaClient, Prisma, SubtitleCue } from '@prisma/client';
 
-const LAYOUT_VERSION = 31;
+const LAYOUT_VERSION = 32;
 
 const HARD_MAX_DURATION_MS = 12000;
 const SOFT_MAX_DURATION_MS = 8000;
@@ -17,6 +17,8 @@ const STRONG_CONTINUATION_MAX_DURATION_MS = 12000;
 const SAME_SECOND_MERGE_MAX_GAP_MS = 1000;
 const SAME_SECOND_MERGE_MAX_DURATION_MS = 6000;
 const SAME_SECOND_MERGE_MAX_CHARS = 80;
+const OVERLAP_COMPLETION_MAX_WORDS = 2;
+const OVERLAP_COMPLETION_MAX_CHARS = 18;
 
 const DANGLING_LEAD_PATTERNS: Record<string, RegExp> = {
   here: /^(are|is)\b/i,
@@ -79,6 +81,29 @@ function isShortCompletionText(text: string): boolean {
   const words = trimmed.split(/\s+/).filter(Boolean);
   const normalized = trimmed.replace(/\s+/g, ' ').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
   return words.length <= 4 || normalized.length <= 24;
+}
+
+function isShortOverlapCompletionText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+
+  const normalized = trimmed
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .trim();
+  if (!normalized) return false;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return words.length > 0
+    && words.length <= OVERLAP_COMPLETION_MAX_WORDS
+    && normalized.length <= OVERLAP_COMPLETION_MAX_CHARS;
+}
+
+function getTrailingClause(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+
+  const parts = trimmed.split(/(?<=[.?!。？！…])\s+/).filter(Boolean);
+  return parts[parts.length - 1]?.trim() || trimmed;
 }
 
 function endsWithAdjectivePhrase(text: string): boolean {
@@ -212,8 +237,11 @@ function shouldSplitSourceSubtitle(subtitle: SubtitleCueSource, textParts: strin
 function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): boolean {
   const currentText = current.text.trim();
   const nextText = (seg.text || '').trim();
+  const trailingClause = getTrailingClause(currentText);
   const combinedDuration = (seg.offset + seg.duration) - current.offset;
   const gapDuration = seg.offset - (current.offset + current.duration);
+  const currentEnd = current.offset + current.duration;
+  const nextEnd = seg.offset + seg.duration;
   const combinedText = `${currentText}${nextText}`;
   const maxChars = getMaxChars(combinedText);
   const combinedChars = combinedText.replace(/\s+/g, '').length;
@@ -225,9 +253,18 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
   const nextLooksLikeCompletion = isShortCompletionText(nextText) || /^[a-z]/.test(nextText);
   const nextLooksLikeNounCompletion = isShortNounCompletion(nextText);
   const closeDisplayedTime = Math.abs((seg.anchorOffset ?? seg.offset) - current.offset) < 1000;
+  const overlapTailCompletion =
+    !hasSentenceEnding(trailingClause)
+    && isShortOverlapCompletionText(nextText)
+    && seg.offset < currentEnd
+    && Math.abs(nextEnd - currentEnd) <= 400;
 
   if (combinedDuration > HARD_MAX_DURATION_MS) return false;
   if (combinedChars > maxChars) return false;
+
+  if (overlapTailCompletion) {
+    return combinedDuration <= INCOMPLETE_TAIL_MAX_DURATION_MS;
+  }
 
   if (hasStrongContinuationTail && nextLooksLikeCompletion) {
     return gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
@@ -723,7 +760,10 @@ export async function rebuildSubtitleCuesForVideo(
     orderBy: { sortOrder: 'asc' },
   });
 
-  const cues = applyCueOverrides(buildSubtitleCues(subtitles), existingCues, subtitles);
+  const reusableCues = existingCues.every((cue) => cue.layoutVersion === LAYOUT_VERSION)
+    ? existingCues
+    : [];
+  const cues = applyCueOverrides(buildSubtitleCues(subtitles), reusableCues, subtitles);
 
   await prisma.subtitleCue.deleteMany({ where: { videoId } });
 

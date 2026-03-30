@@ -40,3 +40,43 @@ test('keeps short lead sentence pairs intact to avoid orphaned recovery cues', (
   assert.equal(cues[2]?.text, 'Sorry sir, the road is under construction.');
   assert.equal(cues.length, 3);
 });
+
+test('merges short overlapping completion tails back into the previous cue', () => {
+  const cues = buildSubtitleCues([
+    {
+      sortOrder: 33,
+      text: 'Dad,',
+      translatedText: undefined,
+      offset: 67680,
+      duration: 4000,
+    },
+    {
+      sortOrder: 34,
+      text: 'I wish you would look at me sometimes.',
+      translatedText: undefined,
+      offset: 68799,
+      duration: 5441,
+    },
+    {
+      sortOrder: 35,
+      text: "Sometimes I feel like I'm growing up",
+      translatedText: undefined,
+      offset: 71680,
+      duration: 5560,
+    },
+    {
+      sortOrder: 36,
+      text: 'alone.',
+      translatedText: '独自长大。',
+      offset: 74240,
+      duration: 3000,
+    },
+  ]);
+
+  assert.equal(
+    cues[0]?.text,
+    "Dad, I wish you would look at me sometimes. Sometimes I feel like I'm growing up alone.",
+  );
+  assert.equal(cues[0]?.translatedText, '独自长大。');
+  assert.equal(cues.length, 1);
+});

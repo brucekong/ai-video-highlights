@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import { spawnSync } from 'node:child_process';
 
 type YtDlpFlags = Record<string, any>;
 
@@ -12,8 +13,48 @@ interface DownloadWithFallbackOptions {
 const DEFAULT_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
 
+function resolveBinary(binaryName: string): string | undefined {
+  const result = spawnSync('which', [binaryName], { encoding: 'utf8' });
+  const resolved = result.status === 0 ? result.stdout.trim() : '';
+  return resolved || undefined;
+}
+
+function resolveJsRuntime(): string | undefined {
+  const configured = (process.env.YTDLP_JS_RUNTIMES || '').trim();
+  const configuredCandidates = configured
+    ? configured.split(/[,\s]+/).filter(Boolean)
+    : [];
+
+  const candidates = configuredCandidates.length > 0
+    ? configuredCandidates
+    : ['deno', 'node', 'bun', 'quickjs'];
+
+  for (const candidate of candidates) {
+    const [name, explicitPath] = candidate.split(':', 2);
+    if (explicitPath) {
+      return `${name}:${explicitPath}`;
+    }
+
+    const binaryPath = resolveBinary(name);
+    if (binaryPath) {
+      return `${name}:${binaryPath}`;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveFfmpegLocation(): string | undefined {
+  const configured = (process.env.FFMPEG_PATH || process.env.FFMPEG_BINARY || '').trim();
+  if (configured) return configured;
+
+  return resolveBinary('ffmpeg');
+}
+
 export function buildYtDlpBaseFlags(flags: YtDlpFlags = {}): YtDlpFlags {
   const headers = Array.isArray(flags.addHeader) ? [...flags.addHeader] : [];
+  const jsRuntimes = resolveJsRuntime();
+  const ffmpegLocation = resolveFfmpegLocation();
 
   if (!headers.some((header) => String(header).toLowerCase().startsWith('accept-language:'))) {
     headers.push('accept-language:zh-CN,zh;q=0.9,en;q=0.8');
@@ -26,12 +67,15 @@ export function buildYtDlpBaseFlags(flags: YtDlpFlags = {}): YtDlpFlags {
     fragmentRetries: 3,
     fileAccessRetries: 3,
     socketTimeout: 30,
-    jsRuntimes: process.env.YTDLP_JS_RUNTIMES || 'node,deno',
+    ...(jsRuntimes ? { jsRuntimes } : {}),
+    ...(ffmpegLocation ? { ffmpegLocation } : {}),
     userAgent: flags.userAgent || process.env.YTDLP_USER_AGENT || DEFAULT_USER_AGENT,
     addHeader: headers,
     ...flags,
   };
 }
+
+export { resolveFfmpegLocation };
 
 export async function downloadWithYtDlpFallback(
   youtubedl: (url: string, flags: YtDlpFlags) => Promise<any>,

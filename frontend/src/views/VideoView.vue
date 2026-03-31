@@ -734,9 +734,15 @@ const mergedTranscript = computed(() => {
     sortOrder: seg.sortOrder ?? i,
     sourceIndices: seg.sourceIndices && seg.sourceIndices.length > 0 ? seg.sourceIndices : [i],
   }));
-  const expandedTranscript = transcriptSource.value === 'cue'
-    ? baseTranscript
-    : expandTranscriptSegments(baseTranscript);
+  if (transcriptSource.value === 'cue') {
+    return baseTranscript.map((seg) => ({
+      ...seg,
+      offset: seg.anchorOffset ?? seg.offset,
+      sourceIndices: seg.sourceIndices && seg.sourceIndices.length > 0 ? [...seg.sourceIndices] : [seg.sortOrder ?? 0],
+    }));
+  }
+
+  const expandedTranscript = expandTranscriptSegments(baseTranscript);
   let current: TranscriptSegment | null = null;
 
   for (let i = 0; i < expandedTranscript.length; i++) {

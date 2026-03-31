@@ -4,7 +4,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { downloadWithYtDlpFallback } from './ytdlp.js';
+import { downloadWithYtDlpFallback, resolveFfmpegLocation } from './ytdlp.js';
 
 const execAsync = promisify(exec);
 
@@ -132,15 +132,18 @@ function findBestMixedBreakIndex(tokens: string[], targetWidth: number): number 
 }
 
 function getBurnSubtitleMaxWidth(text: string): number {
-  const referenceUsableWidth = BURN_SUBTITLE_REFERENCE_WIDTH - BURN_SUBTITLE_SIDE_MARGIN * 2;
   const hasLatin = /[A-Za-z]/.test(text);
-  const estimatedUnitWidth = hasLatin
-    ? BURN_SUBTITLE_FONT_SIZE * 1.25
-    : BURN_SUBTITLE_FONT_SIZE * 1.7;
+  if (!hasLatin) {
+    // Chinese characters are measured as width 2 in `measureBurnTextWidth`,
+    // so a wider single-line target of ~24 Han chars needs about 48 units.
+    return 48;
+  }
 
-  // Calibrated against a typical 1080px mobile export with 90px side margins.
-  // This intentionally allows longer single lines than before, but still keeps
-  // the subtitle within a comfortable central reading area.
+  const referenceUsableWidth = BURN_SUBTITLE_REFERENCE_WIDTH - BURN_SUBTITLE_SIDE_MARGIN * 2;
+  const estimatedUnitWidth = BURN_SUBTITLE_FONT_SIZE * 1.25;
+
+  // Keep mixed/Latin subtitles slightly more conservative, while allowing
+  // mostly-Chinese lines to stay on one row up to about 20 chars.
   return Math.max(22, Math.min(30, Math.round(referenceUsableWidth / estimatedUnitWidth)));
 }
 
@@ -474,6 +477,11 @@ export async function createVideoClip({
       console.log(`[Clipping] Local video not found, downloading segment online using extreme fast mode...`);
 
       // ==== 优化 2/方案 3：使用极限线上截取策略 ====
+      const ffmpegLocation = resolveFfmpegLocation();
+      if (!ffmpegLocation) {
+        throw new Error('当前运行环境未安装 ffmpeg，无法执行在线视频分段下载。请先安装 ffmpeg 或配置 FFMPEG_PATH。');
+      }
+
       const dlFlags: Record<string, any> = {
         output: tempRawPath,
         // 提升画质至 1080p（大多数 1080p 只有分离流，因此分离流合并也是刚需，在保证不过度重压且有 copy 加持下，速度依然很快）
@@ -484,8 +492,9 @@ export async function createVideoClip({
             ? 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best'
             : `bestvideo[height<=${quality}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best`,
         downloadSections: `*${formatTime(start)}-${formatTime(end)}`,
-        downloader: 'ffmpeg',
-        downloaderArgs: 'ffmpeg:-c:v libx264 -c:a aac', // 下载时即尝试标准化
+        externalDownloader: 'ffmpeg',
+        externalDownloaderArgs: 'ffmpeg:-c:v libx264 -c:a aac', // 下载时即尝试标准化
+        ffmpegLocation,
         noPlaylist: true,
         noCheckCertificates: true,
         noOverwrites: true,

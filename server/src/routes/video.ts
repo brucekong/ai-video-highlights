@@ -9,6 +9,70 @@ import { exportToNotion } from '../services/notion.js';
 import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
 import { getEmbedding, translateTranscriptSegments } from '../services/ai.js';
 
+async function retranslateCueSegmentsForVideo(videoId: string) {
+  const cueSegments = await prisma.subtitleCue.findMany({
+    where: { videoId },
+    orderBy: { sortOrder: 'asc' },
+    select: {
+      sortOrder: true,
+      text: true,
+      translatedText: true,
+      sourceStartSortOrder: true,
+      sourceEndSortOrder: true,
+    },
+  });
+
+  const translatableCues = cueSegments.filter((cue) => (
+    !/[\u4e00-\u9fa5]/.test(cue.text || '')
+    && !/[\u4e00-\u9fa5]/.test(cue.translatedText || '')
+  ));
+
+  if (translatableCues.length === 0) {
+    return 0;
+  }
+
+  const BATCH_SIZE = 50;
+  let translatedCount = 0;
+
+  for (let i = 0; i < translatableCues.length; i += BATCH_SIZE) {
+    const batch = translatableCues.slice(i, i + BATCH_SIZE);
+    const translatedBatch = await translateTranscriptSegments(batch.map((cue) => cue.text));
+
+    for (let j = 0; j < translatedBatch.length; j++) {
+      const cue = batch[j];
+      const translatedText = translatedBatch[j];
+      if (!cue || !translatedText) continue;
+
+      await prisma.subtitleCue.updateMany({
+        where: { videoId, sortOrder: cue.sortOrder },
+        data: {
+          translatedText,
+          overrideTranslatedText: translatedText,
+        },
+      });
+
+      if (cue.sourceStartSortOrder === cue.sourceEndSortOrder) {
+        await prisma.subtitle.updateMany({
+          where: { videoId, sortOrder: cue.sourceStartSortOrder },
+          data: { translatedText },
+        });
+
+        const vec = await getEmbedding(translatedText);
+        await prisma.$executeRawUnsafe(
+          `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
+          `[${vec.join(',')}]`,
+          videoId,
+          cue.sourceStartSortOrder
+        );
+      }
+
+      translatedCount += 1;
+    }
+  }
+
+  return translatedCount;
+}
+
 export async function videoRoutes(fastify: FastifyInstance) {
   fastify.post('/api/videos/:videoId/keyword-glossary', {
     schema: {
@@ -1088,7 +1152,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Videos'],
       summary: '重建视频字幕 cues',
-      description: '仅根据当前原始字幕和已有 override 重建展示/烧录使用的 cues。',
+      description: '根据当前原始字幕重建展示/烧录使用的 cues，并自动补齐缺失的展示翻译。',
       params: {
         type: 'object',
         required: ['videoId'],
@@ -1119,7 +1183,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
       }
 
       await rebuildSubtitleCuesForVideo(prisma, videoId);
-      return reply.send({ success: true, message: '字幕 cues 已重建' });
+      const translatedCount = await retranslateCueSegmentsForVideo(videoId);
+      return reply.send({
+        success: true,
+        message: translatedCount > 0
+          ? `字幕 cues 已重建，并补齐了 ${translatedCount} 条展示翻译`
+          : '字幕 cues 已重建',
+      });
     } catch (error: any) {
       fastify.log.error(error);
       return reply.status(500).send({ error: '重建失败', message: error.message });
@@ -1161,56 +1231,11 @@ export async function videoRoutes(fastify: FastifyInstance) {
       }
 
       await rebuildSubtitleCuesForVideo(prisma, videoId);
-
-      const cueSegments = await prisma.subtitleCue.findMany({
-        where: { videoId },
-        orderBy: { sortOrder: 'asc' },
-        select: {
-          sortOrder: true,
-          text: true,
-          sourceStartSortOrder: true,
-          sourceEndSortOrder: true,
-        },
+      const translatedCount = await retranslateCueSegmentsForVideo(videoId);
+      return reply.send({
+        success: true,
+        message: translatedCount > 0 ? `字幕 cues 已重新翻译 ${translatedCount} 条` : '字幕 cues 已重新翻译',
       });
-
-      const translatableCues = cueSegments.filter((cue) => !/[\u4e00-\u9fa5]/.test(cue.text || ''));
-      const BATCH_SIZE = 50;
-
-      for (let i = 0; i < translatableCues.length; i += BATCH_SIZE) {
-        const batch = translatableCues.slice(i, i + BATCH_SIZE);
-        const translatedBatch = await translateTranscriptSegments(batch.map((cue) => cue.text));
-
-        for (let j = 0; j < translatedBatch.length; j++) {
-          const cue = batch[j];
-          const translatedText = translatedBatch[j];
-          if (!cue || !translatedText) continue;
-
-          await prisma.subtitleCue.updateMany({
-            where: { videoId, sortOrder: cue.sortOrder },
-            data: {
-              translatedText,
-              overrideTranslatedText: translatedText,
-            },
-          });
-
-          if (cue.sourceStartSortOrder === cue.sourceEndSortOrder) {
-            await prisma.subtitle.updateMany({
-              where: { videoId, sortOrder: cue.sourceStartSortOrder },
-              data: { translatedText },
-            });
-
-            const vec = await getEmbedding(translatedText);
-            await prisma.$executeRawUnsafe(
-              `UPDATE subtitles SET "translated_embedding" = $1::vector WHERE video_id = $2 AND "sort_order" = $3`,
-              `[${vec.join(',')}]`,
-              videoId,
-              cue.sourceStartSortOrder
-            );
-          }
-        }
-      }
-
-      return reply.send({ success: true, message: '字幕 cues 已重新翻译' });
     } catch (error: any) {
       fastify.log.error(error);
       return reply.status(500).send({ error: '重翻译失败', message: error.message });

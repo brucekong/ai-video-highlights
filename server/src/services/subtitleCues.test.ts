@@ -80,3 +80,109 @@ test('merges short overlapping completion tails back into the previous cue', () 
   assert.equal(cues[0]?.translatedText, '独自长大。');
   assert.equal(cues.length, 1);
 });
+
+test('merges adjective tails like new with the following noun completion', () => {
+  const cues = buildSubtitleCues([
+    {
+      sortOrder: 11,
+      text: 'Look at Leo in his beautiful new',
+      translatedText: '看看利奥穿着他漂亮的新',
+      offset: 32320,
+      duration: 5280,
+    },
+    {
+      sortOrder: 12,
+      text: 'uniform.',
+      translatedText: '制服。',
+      offset: 35280,
+      duration: 6640,
+    },
+  ]);
+
+  assert.equal(cues[0]?.text, 'Look at Leo in his beautiful new uniform.');
+  assert.equal(cues[0]?.translatedText, '看看利奥穿着他漂亮的新制服。');
+  assert.equal(cues.length, 1);
+});
+
+test('keeps the previous sentence separate while merging question plus very hard together', () => {
+  const cues = buildSubtitleCues([
+    {
+      sortOrder: 55,
+      text: 'Come on, Leo. You can do it today.',
+      translatedText: undefined,
+      offset: 197760,
+      duration: 7280,
+    },
+    {
+      sortOrder: 56,
+      text: 'How can I hit this ball? Very',
+      translatedText: undefined,
+      offset: 202720,
+      duration: 4080,
+    },
+    {
+      sortOrder: 57,
+      text: 'hard.',
+      translatedText: '用力。',
+      offset: 205040,
+      duration: 6839,
+    },
+  ]);
+
+  assert.equal(cues[0]?.text, 'Come on, Leo. You can do it today.');
+  assert.equal(cues[1]?.text, 'How can I hit this ball? Very hard.');
+  assert.equal(cues.length, 2);
+});
+
+test('keeps question plus very fragment together before merging with the next subtitle', () => {
+  const cues = buildSubtitleCues([
+    {
+      sortOrder: 56,
+      text: 'How can I hit this ball? Very',
+      translatedText: '我怎么能击中这个球？',
+      offset: 202720,
+      duration: 4080,
+    },
+    {
+      sortOrder: 57,
+      text: 'hard.',
+      translatedText: '用力。',
+      offset: 205040,
+      duration: 6839,
+    },
+  ]);
+
+  assert.equal(cues[0]?.text, 'How can I hit this ball? Very hard.');
+  assert.equal(cues[0]?.translatedText, '我怎么能击中这个球？ 用力。');
+  assert.equal(cues.length, 1);
+});
+
+test('keeps because-clauses after a question as a new cue while still finishing the clause', () => {
+  const cues = buildSubtitleCues([
+    {
+      sortOrder: 72,
+      text: 'Why must we never give up in life?',
+      translatedText: undefined,
+      offset: 262479,
+      duration: 6401,
+    },
+    {
+      sortOrder: 73,
+      text: 'Because trying your best makes you very',
+      translatedText: undefined,
+      offset: 266080,
+      duration: 5800,
+    },
+    {
+      sortOrder: 74,
+      text: 'proud.',
+      translatedText: undefined,
+      offset: 268880,
+      duration: 3000,
+    },
+  ]);
+
+  assert.equal(cues[0]?.text, 'Why must we never give up in life?');
+  assert.equal(cues[1]?.text, 'Because trying your best makes you very proud.');
+  assert.equal(cues.length, 2);
+});

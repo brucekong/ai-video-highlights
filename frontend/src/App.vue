@@ -236,7 +236,7 @@ onUnmounted(() => {
           </button>
           <div class="logo-area" @click="router.push('/')" style="cursor: pointer;">
             <Sparkles class="logo-icon animate-pulse-glow" :size="28" />
-            <h1 class="text-gradient">AI Highlight</h1>
+            <h1 class="text-gradient">AI Video Highlight</h1>
           </div>
         </div>
 

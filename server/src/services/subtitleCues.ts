@@ -1,6 +1,6 @@
 import type { PrismaClient, Prisma, SubtitleCue } from '@prisma/client';
 
-const LAYOUT_VERSION = 32;
+const LAYOUT_VERSION = 35;
 
 const HARD_MAX_DURATION_MS = 12000;
 const SOFT_MAX_DURATION_MS = 8000;
@@ -60,7 +60,33 @@ function looksIncompleteTail(text: string): boolean {
 function endsWithStrongContinuationWord(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const lastWord = words[words.length - 1]?.replace(/[.,?!;:，。？！；：…]+$/g, '').toLowerCase() || '';
-  return /^(to|be|on|in|at|for|with|of|from|into|onto|about|after|before|under|over|need|needs|needed|want|wants|wanted|like|likes|liked|have|has|had|get|gets|got|make|makes|made|take|takes|took|put|puts|keep|keeps|kept|sit|sits|sat|stand|stands|stood|lie|lies|lay|the|a|an|my|your|his|her|our|their|this|that|these|those|most|more|less|another|other|only|same|next|first|last|such|each|every|any|some|no)$/.test(lastWord);
+  return /^(to|be|on|in|at|for|with|of|from|into|onto|about|after|before|under|over|need|needs|needed|want|wants|wanted|like|likes|liked|have|has|had|get|gets|got|make|makes|made|take|takes|took|put|puts|keep|keeps|kept|sit|sits|sat|stand|stands|stood|lie|lies|lay|the|a|an|my|your|his|her|our|their|this|that|these|those|most|more|less|another|other|only|same|next|first|last|such|each|every|any|some|no|very|too|quite|really|so)$/.test(lastWord);
+}
+
+function shouldMergeSentenceFragmentBack(prevPart: string, nextPart: string): boolean {
+  const trimmedPrev = prevPart.trim();
+  const trimmedNext = nextPart.trim();
+  if (!trimmedPrev || !trimmedNext) return false;
+  if (!/[?？!]$/.test(trimmedPrev)) return false;
+  if (hasSentenceEnding(trimmedNext)) return false;
+
+  const normalizedNext = trimmedNext
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .trim();
+  if (!normalizedNext) return false;
+
+  const words = normalizedNext.split(/\s+/).filter(Boolean);
+  if (words.length > 2 || normalizedNext.length > 18) return false;
+
+  return endsWithStrongContinuationWord(trimmedNext);
+}
+
+function containsInternalSentenceBoundary(text: string): boolean {
+  return /[.?!。？！…]\s+\S/.test(text.trim());
+}
+
+function startsWithReasonClause(text: string): boolean {
+  return /^(because|since|as)\b/i.test(text.trim());
 }
 
 function endsWithCountLead(text: string): boolean {
@@ -120,15 +146,19 @@ function endsWithAdjectivePhrase(text: string): boolean {
 
   const lastWord = words[words.length - 1] || '';
   const prevWord = words[words.length - 2] || '';
+  const prevPrevWord = words[words.length - 3] || '';
   const prevTwo = words.slice(-2).join(' ');
   const prevThree = words.slice(-3).join(' ');
+  const isDeterminer = (word: string) => /^(the|a|an|this|that|these|those|my|your|his|her|our|their)$/.test(word);
+  const isAdjectiveOrModifier = (word: string) => /^(perfect|good|great|nice|best|better|important|beautiful|lovely|little|big|small|right|wrong|same|next|first|last|special|fresh|clean|ready|safe|happy|sad|hungry|blue|red|green|young|old|new)$/.test(word);
 
-  const adjectiveOrModifier = /^(perfect|good|great|nice|best|better|important|beautiful|lovely|little|big|small|right|wrong|same|next|first|last|special|fresh|clean|ready|safe|happy|sad|hungry|blue|red|green|young|old)$/.test(lastWord);
-  const articlePlusAdjective = /^(the|a|an|this|that|these|those|my|your|his|her|our|their)$/.test(prevWord) && adjectiveOrModifier;
+  const adjectiveOrModifier = isAdjectiveOrModifier(lastWord);
+  const articlePlusAdjective = isDeterminer(prevWord) && adjectiveOrModifier;
   const degreePlusAdjective = /^(very|so|too|quite|really)$/.test(prevWord) && adjectiveOrModifier;
+  const determinerPlusDoubleAdjective = isDeterminer(prevPrevWord) && isAdjectiveOrModifier(prevWord) && adjectiveOrModifier;
   const fixedLeadPhrase = /^(the most|the best|such a|such an)$/.test(prevTwo) || /^(one of the)$/.test(prevThree);
 
-  return articlePlusAdjective || degreePlusAdjective || fixedLeadPhrase;
+  return articlePlusAdjective || degreePlusAdjective || determinerPlusDoubleAdjective || fixedLeadPhrase;
 }
 
 function isShortNounCompletion(text: string): boolean {
@@ -145,7 +175,7 @@ function isShortNounCompletion(text: string): boolean {
   if (words.length === 0 || words.length > 4) return false;
 
   const lastWord = words[words.length - 1] || '';
-  const nounLike = /^(spot|place|home|house|tree|time|day|way|idea|one|thing|door|doors|station|line|ticket|barrier|soil|sun|water|bottle|backpack|uniform|goggles|chicken|car|weekend|weekends)$/.test(lastWord);
+  const nounLike = /^(spot|place|home|house|tree|time|day|way|idea|one|thing|door|doors|station|line|ticket|barrier|soil|sun|water|bottle|backpack|uniform|uniforms|goggles|chicken|car|weekend|weekends)$/.test(lastWord);
 
   return nounLike || words.length <= 2;
 }
@@ -220,6 +250,7 @@ function shouldSplitSourceSubtitle(subtitle: SubtitleCueSource, textParts: strin
     textParts.length === 2
     && hasStrongSentenceBoundary
     && subtitle.duration <= 6000
+    && textParts.every((part) => hasSentenceEnding(part))
     && totalChars <= Math.max(34, Math.floor(maxChars * 0.55));
 
   // 对非常短、非常紧凑的双句字幕保留原块，避免 "Good morning. Time for..."
@@ -261,6 +292,18 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
 
   if (combinedDuration > HARD_MAX_DURATION_MS) return false;
   if (combinedChars > maxChars) return false;
+
+  if (/[?？]$/.test(currentText) && startsWithReasonClause(nextText)) {
+    return false;
+  }
+
+  if (hasSentenceEnding(currentText) && containsInternalSentenceBoundary(nextText)) {
+    return false;
+  }
+
+  if (seg.offset < currentEnd && hasSentenceEnding(currentText) && hasSentenceEnding(nextText)) {
+    return false;
+  }
 
   if (overlapTailCompletion) {
     return combinedDuration <= INCOMPLETE_TAIL_MAX_DURATION_MS;
@@ -365,9 +408,21 @@ function splitTextIntoSentences(text: string): string[] {
     .replace(/\b(Mr|Mrs|Ms|Dr|Prof|St|Jr|Sr)\./gi, '$1<prd>')
     .replace(/(\d)\.(\d)/g, '$1<prd>$2');
   const parts = protectedText.match(/[^.?!。？！…]+[.?!。？！…]?/g) || [protectedText];
-  return parts
+  const normalizedParts = parts
     .map((part) => part.replace(/<prd>/g, '.').trim())
     .filter(Boolean);
+
+  const mergedParts: string[] = [];
+  normalizedParts.forEach((part) => {
+    const lastPart = mergedParts[mergedParts.length - 1];
+    if (lastPart && shouldMergeSentenceFragmentBack(lastPart, part)) {
+      mergedParts[mergedParts.length - 1] = `${lastPart} ${part}`.trim();
+      return;
+    }
+    mergedParts.push(part);
+  });
+
+  return mergedParts;
 }
 
 function distributeDuration(totalDuration: number, parts: string[]): number[] {

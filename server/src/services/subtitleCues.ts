@@ -503,12 +503,13 @@ function expandSubtitleSources(subtitles: SubtitleCueSource[]): SubtitleCueSourc
     return textParts.map((textPart, index) => {
       const duration = partDurations[index] ?? 0;
       const anchorDuration = partAnchorDurations[index] ?? duration;
+      const translatedText = translatedParts.length === textParts.length
+        ? translatedParts[index]
+        : undefined;
       const part: SubtitleCueSource = {
         ...subtitle,
         text: textPart,
-        translatedText: translatedParts.length === textParts.length
-          ? translatedParts[index]
-          : (index === 0 ? subtitle.translatedText : undefined),
+        translatedText,
         offset: runningOffset,
         duration,
         anchorOffset: runningAnchorOffset,

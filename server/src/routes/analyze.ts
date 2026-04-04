@@ -336,7 +336,6 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                        where: { videoId, sortOrder: cue.sortOrder },
                        data: {
                          translatedText,
-                         overrideTranslatedText: translatedText,
                        },
                      });
 

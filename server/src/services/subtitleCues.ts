@@ -5,7 +5,7 @@ const LAYOUT_VERSION = 35;
 const HARD_MAX_DURATION_MS = 12000;
 const SOFT_MAX_DURATION_MS = 8000;
 const INCOMPLETE_TAIL_MAX_DURATION_MS = 10000;
-const CONTINUATION_MAX_DURATION_MS = 10000;
+const CONTINUATION_MAX_DURATION_MS = 10500;
 const LONG_PAUSE_MS = 650;
 const MAX_CHINESE_CHARS = 56;
 const MAX_LATIN_CHARS = 90;
@@ -19,6 +19,10 @@ const SAME_SECOND_MERGE_MAX_DURATION_MS = 6000;
 const SAME_SECOND_MERGE_MAX_CHARS = 80;
 const OVERLAP_COMPLETION_MAX_WORDS = 2;
 const OVERLAP_COMPLETION_MAX_CHARS = 18;
+const VOCATIVE_MERGE_MAX_GAP_MS = 1600;
+const VOCATIVE_MERGE_MAX_DURATION_MS = 14000;
+const EXTENDED_CONTINUATION_MAX_DURATION_MS = 14500;
+const EXTENDED_CONTINUATION_EXTRA_CHARS = 80;
 
 const DANGLING_LEAD_PATTERNS: Record<string, RegExp> = {
   here: /^(are|is)\b/i,
@@ -45,22 +49,38 @@ function hasWeakContinuationEnding(text: string): boolean {
   return /[,，、;；:]$/.test(text.trim());
 }
 
+function normalizeTrailingWord(word: string): string {
+  return word
+    .toLowerCase()
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/[“”"‘’]/g, "'")
+    .replace(/^[^a-z0-9']+|[^a-z0-9']+$/g, '');
+}
+
+function stripNonSpeechMarkers(text: string): string {
+  return text
+    .replace(/&gt;&gt;|>>/gi, ' ')
+    .replace(/\[(music|applause|laughter|laughing|sighs?|clapping)\]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function looksIncompleteTail(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return false;
   if (hasSentenceEnding(trimmed)) return false;
 
   const words = trimmed.split(/\s+/).filter(Boolean);
-  const lastWord = words[words.length - 1]?.toLowerCase() || '';
+  const lastWord = normalizeTrailingWord(words[words.length - 1] || '');
 
   return /[\u4e00-\u9fa5]$/.test(trimmed)
-    || /^(i|you|he|she|we|they|it|my|your|his|her|our|their|its|this|that|these|those|the|a|an|some|any|another|to|of|for|with|on|in|at|from|into|onto|and|or|but|so|because|what|which|who|when|where|why|how|is|are|am|was|were|do|does|did|can|could|should|would|will|shall|have|has|had)$/.test(lastWord);
+    || /^(i|you|he|she|we|they|it|my|your|his|her|our|their|its|this|that|these|those|the|a|an|some|any|another|to|of|for|with|on|in|at|from|into|onto|and|or|but|so|because|what|which|who|when|where|why|how|is|are|am|was|were|do|does|did|can|could|should|would|will|shall|have|has|had|not|don't|doesn't|didn't|can't|couldn't|won't|wouldn't|shouldn't|isn't|aren't|wasn't|weren't|haven't|hasn't|hadn't|there)$/.test(lastWord);
 }
 
 function endsWithStrongContinuationWord(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
-  const lastWord = words[words.length - 1]?.replace(/[.,?!;:，。？！；：…]+$/g, '').toLowerCase() || '';
-  return /^(to|be|on|in|at|for|with|of|from|into|onto|about|after|before|under|over|need|needs|needed|want|wants|wanted|like|likes|liked|have|has|had|get|gets|got|make|makes|made|take|takes|took|put|puts|keep|keeps|kept|sit|sits|sat|stand|stands|stood|lie|lies|lay|the|a|an|my|your|his|her|our|their|this|that|these|those|most|more|less|another|other|only|same|next|first|last|such|each|every|any|some|no|very|too|quite|really|so)$/.test(lastWord);
+  const lastWord = normalizeTrailingWord(words[words.length - 1] || '');
+  return /^(to|be|on|in|at|for|with|of|from|into|onto|about|after|before|under|over|need|needs|needed|want|wants|wanted|like|likes|liked|have|has|had|get|gets|got|make|makes|made|take|takes|took|put|puts|keep|keeps|kept|sit|sits|sat|stand|stands|stood|lie|lies|lay|the|a|an|my|your|his|her|our|their|this|that|these|those|most|more|less|another|other|only|same|next|first|last|such|each|every|any|some|no|not|very|too|quite|really|so|don't|doesn't|didn't|can't|couldn't|won't|wouldn't|shouldn't|isn't|aren't|wasn't|weren't)$/.test(lastWord);
 }
 
 function shouldMergeSentenceFragmentBack(prevPart: string, nextPart: string): boolean {
@@ -150,7 +170,7 @@ function endsWithAdjectivePhrase(text: string): boolean {
   const prevTwo = words.slice(-2).join(' ');
   const prevThree = words.slice(-3).join(' ');
   const isDeterminer = (word: string) => /^(the|a|an|this|that|these|those|my|your|his|her|our|their)$/.test(word);
-  const isAdjectiveOrModifier = (word: string) => /^(perfect|good|great|nice|best|better|important|beautiful|lovely|little|big|small|right|wrong|same|next|first|last|special|fresh|clean|ready|safe|happy|sad|hungry|blue|red|green|young|old|new)$/.test(word);
+  const isAdjectiveOrModifier = (word: string) => /^(perfect|good|great|nice|best|better|important|interesting|beautiful|lovely|little|big|small|right|wrong|same|next|first|last|special|fresh|clean|ready|safe|happy|sad|hungry|blue|red|green|young|old|new)$/.test(word);
 
   const adjectiveOrModifier = isAdjectiveOrModifier(lastWord);
   const articlePlusAdjective = isDeterminer(prevWord) && adjectiveOrModifier;
@@ -159,6 +179,26 @@ function endsWithAdjectivePhrase(text: string): boolean {
   const fixedLeadPhrase = /^(the most|the best|such a|such an)$/.test(prevTwo) || /^(one of the)$/.test(prevThree);
 
   return articlePlusAdjective || degreePlusAdjective || determinerPlusDoubleAdjective || fixedLeadPhrase;
+}
+
+function endsWithCopularAdjectivePhrase(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || hasSentenceEnding(trimmed)) return false;
+
+  const words = trimmed
+    .replace(/[.,?!;:，。？！；：…]+$/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.toLowerCase());
+
+  if (words.length < 2) return false;
+
+  const lastWord = words[words.length - 1] || '';
+  const prevWord = words[words.length - 2] || '';
+  const isCopularVerb = /^(am|is|are|was|were|be|been|being)$/.test(prevWord);
+  const isAdjectiveOrModifier = /^(perfect|good|great|nice|best|better|important|beautiful|lovely|little|big|small|right|wrong|same|next|first|last|special|fresh|clean|ready|safe|happy|sad|hungry|blue|red|green|young|old|new|bad|hard|easy|simple|different|strong|weak|real|main|full|short|long|early|late)$/.test(lastWord);
+
+  return isCopularVerb && isAdjectiveOrModifier;
 }
 
 function isShortNounCompletion(text: string): boolean {
@@ -178,6 +218,25 @@ function isShortNounCompletion(text: string): boolean {
   const nounLike = /^(spot|place|home|house|tree|time|day|way|idea|one|thing|door|doors|station|line|ticket|barrier|soil|sun|water|bottle|backpack|uniform|uniforms|goggles|chicken|car|weekend|weekends)$/.test(lastWord);
 
   return nounLike || words.length <= 2;
+}
+
+function isShortVocativeName(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || !hasSentenceEnding(trimmed)) return false;
+
+  const normalized = trimmed
+    .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+    .trim();
+  if (!normalized) return false;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 2) return false;
+
+  return words.every((word) => /^[A-Z][a-z]+(?:[-'][A-Z]?[a-z]+)?$/.test(word));
+}
+
+function startsWithLowercaseContinuation(text: string): boolean {
+  return /^[a-z]/.test(text.trim());
 }
 
 function startsWithContinuation(text: string): boolean {
@@ -268,41 +327,71 @@ function shouldSplitSourceSubtitle(subtitle: SubtitleCueSource, textParts: strin
 function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): boolean {
   const currentText = current.text.trim();
   const nextText = (seg.text || '').trim();
-  const trailingClause = getTrailingClause(currentText);
+  const normalizedCurrentText = stripNonSpeechMarkers(currentText);
+  const normalizedNextText = stripNonSpeechMarkers(nextText);
+  const isSameSource = seg.sortOrder === current.sourceEndSortOrder;
+  const trailingClause = getTrailingClause(normalizedCurrentText);
   const combinedDuration = (seg.offset + seg.duration) - current.offset;
   const gapDuration = seg.offset - (current.offset + current.duration);
   const currentEnd = current.offset + current.duration;
   const nextEnd = seg.offset + seg.duration;
-  const combinedText = `${currentText}${nextText}`;
+  const combinedText = `${normalizedCurrentText}${normalizedNextText}`;
   const maxChars = getMaxChars(combinedText);
   const combinedChars = combinedText.replace(/\s+/g, '').length;
-  const currentLooksIncomplete = looksIncompleteTail(currentText);
-  const hasContinuationSignal = hasWeakContinuationEnding(currentText) || startsWithContinuation(nextText);
-  const hasStrongContinuationTail = endsWithStrongContinuationWord(currentText);
-  const hasCountLeadTail = endsWithCountLead(currentText);
-  const hasAdjectivePhraseTail = endsWithAdjectivePhrase(currentText);
-  const nextLooksLikeCompletion = isShortCompletionText(nextText) || /^[a-z]/.test(nextText);
-  const nextLooksLikeNounCompletion = isShortNounCompletion(nextText);
+  const currentLooksIncomplete = looksIncompleteTail(normalizedCurrentText);
+  const hasContinuationSignal = hasWeakContinuationEnding(normalizedCurrentText) || startsWithContinuation(normalizedNextText);
+  const hasStrongContinuationTail = endsWithStrongContinuationWord(normalizedCurrentText);
+  const hasCountLeadTail = endsWithCountLead(normalizedCurrentText);
+  const hasAdjectivePhraseTail = endsWithAdjectivePhrase(normalizedCurrentText);
+  const hasCopularAdjectiveTail = endsWithCopularAdjectivePhrase(normalizedCurrentText);
+  const nextLooksLikeCompletion = isShortCompletionText(normalizedNextText) || /^[a-z]/.test(normalizedNextText);
+  const nextLooksLikeNounCompletion = isShortNounCompletion(normalizedNextText);
+  const nextStartsLowercase = startsWithLowercaseContinuation(normalizedNextText);
   const closeDisplayedTime = Math.abs((seg.anchorOffset ?? seg.offset) - current.offset) < 1000;
+  const isShortVocative = isShortVocativeName(normalizedNextText);
+  const extendedNaturalContinuation =
+    !hasSentenceEnding(normalizedCurrentText)
+    && (nextStartsLowercase || hasContinuationSignal || nextLooksLikeNounCompletion);
   const overlapTailCompletion =
     !hasSentenceEnding(trailingClause)
-    && isShortOverlapCompletionText(nextText)
+    && isShortOverlapCompletionText(normalizedNextText)
     && seg.offset < currentEnd
     && Math.abs(nextEnd - currentEnd) <= 400;
 
-  if (combinedDuration > HARD_MAX_DURATION_MS) return false;
-  if (combinedChars > maxChars) return false;
+  if (combinedChars > maxChars) {
+    if (!(extendedNaturalContinuation && combinedChars <= maxChars + EXTENDED_CONTINUATION_EXTRA_CHARS)) {
+      return false;
+    }
+  }
 
-  if (/[?？]$/.test(currentText) && startsWithReasonClause(nextText)) {
+  if (/[?？]$/.test(normalizedCurrentText) && startsWithReasonClause(normalizedNextText)) {
     return false;
   }
 
-  if (hasSentenceEnding(currentText) && containsInternalSentenceBoundary(nextText)) {
+  if (hasSentenceEnding(normalizedCurrentText) && containsInternalSentenceBoundary(normalizedNextText)) {
     return false;
   }
 
-  if (seg.offset < currentEnd && hasSentenceEnding(currentText) && hasSentenceEnding(nextText)) {
+  if (seg.offset < currentEnd && hasSentenceEnding(normalizedCurrentText) && hasSentenceEnding(normalizedNextText)) {
     return false;
+  }
+
+  if (
+    !isSameSource
+    && 
+    hasSentenceEnding(normalizedCurrentText)
+    && /^[A-Z]/.test(normalizedNextText)
+  ) {
+    return false;
+  }
+
+  if (
+    hasWeakContinuationEnding(currentText)
+    && isShortVocative
+    && gapDuration <= VOCATIVE_MERGE_MAX_GAP_MS
+    && combinedDuration <= VOCATIVE_MERGE_MAX_DURATION_MS
+  ) {
+    return true;
   }
 
   if (overlapTailCompletion) {
@@ -311,18 +400,34 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
 
   if (hasStrongContinuationTail && nextLooksLikeCompletion) {
     return gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
-      && combinedDuration <= STRONG_CONTINUATION_MAX_DURATION_MS;
+      && combinedDuration <= EXTENDED_CONTINUATION_MAX_DURATION_MS;
   }
 
   if (hasCountLeadTail && nextLooksLikeCompletion) {
     return gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
-      && combinedDuration <= STRONG_CONTINUATION_MAX_DURATION_MS;
+      && combinedDuration <= EXTENDED_CONTINUATION_MAX_DURATION_MS;
   }
 
   if (hasAdjectivePhraseTail && nextLooksLikeNounCompletion) {
     return gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
       && combinedDuration <= STRONG_CONTINUATION_MAX_DURATION_MS;
   }
+
+  if (hasCopularAdjectiveTail && startsWithContinuation(nextText)) {
+    return gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
+      && combinedDuration <= STRONG_CONTINUATION_MAX_DURATION_MS;
+  }
+
+  if (
+    !hasSentenceEnding(normalizedCurrentText)
+    && nextStartsLowercase
+    && gapDuration <= STRONG_CONTINUATION_MAX_GAP_MS
+    && combinedDuration <= EXTENDED_CONTINUATION_MAX_DURATION_MS
+  ) {
+    return true;
+  }
+
+  if (combinedDuration > HARD_MAX_DURATION_MS) return false;
 
   if (
     closeDisplayedTime
@@ -333,10 +438,9 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
     return true;
   }
 
-  const isSameSource = seg.sortOrder === current.sourceEndSortOrder;
   if (
     isSameSource
-    && isShortStandaloneLeadSentence(currentText)
+    && isShortStandaloneLeadSentence(normalizedCurrentText)
     && gapDuration <= LONG_PAUSE_MS
     && combinedDuration <= SOFT_MAX_DURATION_MS
   ) {
@@ -354,7 +458,7 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
       return combinedDuration <= INCOMPLETE_TAIL_MAX_DURATION_MS;
     }
 
-    return !hasSentenceEnding(currentText) && combinedDuration <= SOFT_MAX_DURATION_MS;
+    return !hasSentenceEnding(normalizedCurrentText) && combinedDuration <= SOFT_MAX_DURATION_MS;
   }
 
   if (gapDuration > LONG_PAUSE_MS) return false;
@@ -367,7 +471,7 @@ function shouldMergeCue(current: SubtitleCueDraft, seg: SubtitleCueSource): bool
     return combinedDuration <= INCOMPLETE_TAIL_MAX_DURATION_MS;
   }
 
-  if (!hasSentenceEnding(currentText)) {
+  if (!hasSentenceEnding(normalizedCurrentText)) {
     return combinedDuration <= SOFT_MAX_DURATION_MS;
   }
 
@@ -617,7 +721,20 @@ export function buildSubtitleCues(subtitles: SubtitleCueSource[]): SubtitleCueDr
   return merged.map((cue, index) => ({
     ...cue,
     text: cue.text.trim(),
-    translatedText: cue.translatedText?.trim() || cue.translatedText,
+    translatedText: (
+      cue.translatedText?.trim()
+      || cue.translatedText
+      || (
+        cue.sourceStartSortOrder !== cue.sourceEndSortOrder
+          ? getTranslatedTextForSourceRange(
+              subtitles,
+              cue.sourceStartSortOrder,
+              cue.sourceEndSortOrder,
+              { punctuateChinese },
+            )
+          : undefined
+      )
+    ),
     sortOrder: index,
   }));
 }
@@ -665,11 +782,93 @@ function joinCueTexts(
   return current || undefined;
 }
 
+function getTranslatedTextForSourceRange(
+  subtitles: SubtitleCueSource[],
+  sourceStartSortOrder: number,
+  sourceEndSortOrder: number,
+  options?: { punctuateChinese?: boolean },
+): string | undefined {
+  return joinCueTexts(
+    subtitles
+      .filter((subtitle) =>
+        subtitle.sortOrder >= sourceStartSortOrder
+        && subtitle.sortOrder <= sourceEndSortOrder
+      )
+      .map((subtitle) => subtitle.translatedText),
+    options,
+  );
+}
+
 function normalizeOverrideComparisonText(text: string | null | undefined): string {
   return (text || '')
+    .replace(/&#39;|&apos;/gi, "'")
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+}
+
+function normalizeCueTextForCarryover(text: string | null | undefined): string {
+  return normalizeOverrideComparisonText(text)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shouldPreferCarryoverTranslation(
+  currentTranslation: string | null | undefined,
+  carryoverTranslation: string | null | undefined,
+): boolean {
+  const normalizedCurrent = normalizeOverrideComparisonText(currentTranslation);
+  const normalizedCarryover = normalizeOverrideComparisonText(carryoverTranslation);
+
+  if (!normalizedCarryover) return false;
+  if (!normalizedCurrent) return true;
+  if (normalizedCarryover === normalizedCurrent) return false;
+
+  return normalizedCarryover.includes(normalizedCurrent)
+    && normalizedCarryover.length > normalizedCurrent.length;
+}
+
+export function carryOverTranslationsFromExistingCues(
+  generatedCues: SubtitleCueDraft[],
+  existingCues: SubtitleCue[],
+  subtitles: SubtitleCueSource[],
+): SubtitleCueDraft[] {
+  if (existingCues.length === 0) return generatedCues;
+
+  const punctuateChinese = isChineseDominantTranscript(subtitles);
+
+  return generatedCues.map((cue) => {
+    const normalizedCueText = normalizeCueTextForCarryover(cue.text);
+    if (!normalizedCueText) return cue;
+
+    const matchingExistingTranslations = existingCues
+      .filter((existingCue) =>
+        rangesOverlap(
+          cue.sourceStartSortOrder,
+          cue.sourceEndSortOrder,
+          existingCue.sourceStartSortOrder,
+          existingCue.sourceEndSortOrder,
+        )
+      )
+      .filter((existingCue) => {
+        const existingText = normalizeCueTextForCarryover(getEffectiveCueText(existingCue).text);
+        if (!existingText) return false;
+        return normalizedCueText.includes(existingText) || existingText.includes(normalizedCueText);
+      })
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((existingCue) => getEffectiveCueText(existingCue).translatedText);
+
+    const carryoverTranslation = joinCueTexts(matchingExistingTranslations, { punctuateChinese });
+    if (!shouldPreferCarryoverTranslation(cue.translatedText, carryoverTranslation)) {
+      return cue;
+    }
+
+    return {
+      ...cue,
+      translatedText: carryoverTranslation,
+    };
+  });
 }
 
 function looksLikeStaleSubstringOverride(
@@ -750,7 +949,13 @@ function applyCueOverrides(
     const startSubtitle = subtitleBySortOrder.get(overrideCue.sourceStartSortOrder);
     const endSubtitle = subtitleBySortOrder.get(overrideCue.sourceEndSortOrder);
     const generatedText = joinCueTexts(overlapping.map((cue) => cue.text), { punctuateChinese });
-    const generatedTranslatedText = joinCueTexts(overlapping.map((cue) => cue.translatedText));
+    const generatedTranslatedText = joinCueTexts(overlapping.map((cue) => cue.translatedText))
+      ?? getTranslatedTextForSourceRange(
+        subtitles,
+        overrideCue.sourceStartSortOrder,
+        overrideCue.sourceEndSortOrder,
+        { punctuateChinese },
+      );
     const keepTextOverride = overrideCue.overrideText !== null
       && !looksLikeStaleSubstringOverride(overrideCue.overrideText, generatedText);
     const keepTranslatedOverride = overrideCue.overrideTranslatedText !== null
@@ -819,7 +1024,8 @@ export async function rebuildSubtitleCuesForVideo(
   const reusableCues = existingCues.every((cue) => cue.layoutVersion === LAYOUT_VERSION)
     ? existingCues
     : [];
-  const cues = applyCueOverrides(buildSubtitleCues(subtitles), reusableCues, subtitles);
+  const generatedCues = carryOverTranslationsFromExistingCues(buildSubtitleCues(subtitles), existingCues, subtitles);
+  const cues = applyCueOverrides(generatedCues, reusableCues, subtitles);
 
   await prisma.subtitleCue.deleteMany({ where: { videoId } });
 

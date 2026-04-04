@@ -47,7 +47,6 @@ async function retranslateCueSegmentsForVideo(videoId: string) {
         where: { videoId, sortOrder: cue.sortOrder },
         data: {
           translatedText,
-          overrideTranslatedText: translatedText,
         },
       });
 

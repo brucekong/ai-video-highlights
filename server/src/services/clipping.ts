@@ -231,10 +231,18 @@ interface FullDownloadOptions {
   title?: string;
   url: string;
   platform: string;
-  quality?: string;
+  quality?: '1080' | '1440' | '2160' | 'best';
   subtitles?: SubtitleItem[];
   subtitlesAreCues?: boolean;
   language?: string;
+}
+
+interface SourceVideoOptions {
+  videoId: string;
+  title?: string;
+  url: string;
+  platform: string;
+  quality?: '1080' | '1440' | '2160' | 'best';
 }
 
 /**
@@ -320,6 +328,7 @@ const DEFAULT_WATERMARK_TEXT = '@慢速英语动画';
 const DEFAULT_WATERMARK_ALPHA = 0.5;
 const DEFAULT_WATERMARK_MARGIN = 28;
 const WATERMARK_VERSION = 'wm_v1';
+const CLIP_PIPELINE_VERSION = 'clip_v2';
 
 function buildWatermarkFilter(): string {
   const fontFile = escapeDrawtextPath(getSubtitleFontFile());
@@ -393,16 +402,64 @@ async function findCachedFullVideoPath(
   return match ? path.join(CLIPS_DIR, match) : null;
 }
 
-/**
- * 格式化秒数为 HH:MM:SS.ms (用于 yt-dlp)
- */
-function formatTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const ms = Math.floor((seconds % 1) * 1000);
+function buildPreferredVideoFormat(quality: '1080' | '1440' | '2160' | 'best' = '1080'): string {
+  if (quality === 'best') {
+    return 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best';
+  }
 
-  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+  return `bestvideo[height<=${quality}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best`;
+}
+
+async function ensureClipSourceVideo({
+  videoId,
+  title = 'video',
+  url,
+  platform,
+  quality = '1080',
+}: SourceVideoOptions): Promise<string> {
+  const cachedFullVideoPath = await findCachedFullVideoPath(videoId, quality);
+  if (cachedFullVideoPath) {
+    return cachedFullVideoPath;
+  }
+
+  const safeTitle = sanitizeFilename(title);
+  const sourcePath = path.join(CLIPS_DIR, `${safeTitle}_${videoId}_source_${quality}.mp4`);
+  if (await fs.pathExists(sourcePath)) {
+    return sourcePath;
+  }
+
+  const rawPath = path.join(CLIPS_DIR, `${videoId}_source_${quality}_raw.mp4`);
+
+  try {
+    const dlFlags: Record<string, any> = {
+      output: rawPath,
+      format: buildPreferredVideoFormat(quality),
+      mergeOutputFormat: 'mp4',
+      noPlaylist: true,
+      noCheckCertificates: true,
+      noOverwrites: true,
+    };
+
+    console.log(`[Clipping] No cached full/source video found, downloading full source for ${videoId}...`);
+    await downloadWithYtDlpFallback(youtubedl, url, dlFlags, {
+      cookieContents: process.env.YOUTUBE_COOKIES,
+      cookieFile: path.join(CLIPS_DIR, 'cookies_temp.txt'),
+      context: `clip source download for ${videoId}`,
+      isYoutube: platform === 'youtube',
+    });
+
+    // Normalize audio timestamps once on the reusable source asset. We keep the
+    // video bitstream as-is to avoid a full transcode, but rebuild the audio
+    // track so later local trims do not inherit broken/short audio indexes.
+    await execAsync(`ffmpeg -y -fflags +genpts -i "${rawPath}" -map 0:v:0 -map 0:a:0? -c:v copy -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${sourcePath}"`);
+
+    return sourcePath;
+  } catch (error) {
+    await fs.remove(sourcePath).catch(() => {});
+    throw error;
+  } finally {
+    await fs.remove(rawPath).catch(() => {});
+  }
 }
 
 /**
@@ -424,8 +481,6 @@ export async function createVideoClip({
 }: ClipOptions): Promise<string> {
   await fs.ensureDir(CLIPS_DIR);
 
-  const end = start + duration;
-  const hasSubs = subtitles && subtitles.length > 0;
   const mergedSubtitles = subtitlesAreCues
     ? (subtitles || []).filter((s) => (s.text || '').trim() || (s.translatedText || '').trim())
     : mergeSubtitlesForExport(subtitles || []);
@@ -436,7 +491,7 @@ export async function createVideoClip({
 
   // 生成更友好的缓存文件名
   const safeTitle = sanitizeFilename(title);
-  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}_${quality}${shouldBurnTranslatedSubtitles ? '_burned_zh_v21' : ''}${burnSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}_${WATERMARK_VERSION}`;
+  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}_${quality}${shouldBurnTranslatedSubtitles ? '_burned_zh_v21' : ''}${burnSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}_${CLIP_PIPELINE_VERSION}_${WATERMARK_VERSION}`;
   const ext = isMp3 ? 'mp3' : 'mp4';
   const outputPath = path.join(CLIPS_DIR, `${clipId}.${ext}`);
 
@@ -444,111 +499,47 @@ export async function createVideoClip({
     return outputPath;
   }
 
-  // ==== 优化 1：尝试寻找本地是否存在完整版视频文件 ====
-  const fullVideoPath = await findCachedFullVideoPath(videoId, quality);
-  const hasLocalFullVideo = Boolean(fullVideoPath);
-
   const tempRawPath = path.join(os.tmpdir(), `raw_${clipId}.mp4`);
-  const tempPreparedPath = path.join(os.tmpdir(), `prepared_${clipId}.mp4`);
   const srtPath = path.join(os.tmpdir(), `${clipId}.srt`);
   const subtitleWorkdir = path.join(os.tmpdir(), `subtitle_drawtext_${clipId}`);
 
   try {
     await fs.ensureDir(subtitleWorkdir);
-    if (hasLocalFullVideo) {
-      console.log(`[Clipping] Found local full video, fast seeking...`);
-      if (isMp3) {
-        await execAsync(`ffmpeg -y -ss ${start} -i "${fullVideoPath}" -t ${duration} -vn -c:a libmp3lame -q:a 2 "${outputPath}"`);
-        return outputPath;
-      }
-
-      if (shouldBurnTranslatedSubtitles) {
-        const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
-        await fs.writeFile(srtPath, srtContent);
-        const vfFilter = appendWatermarkFilter(buildHardSubtitleFilter(srtPath));
-        await execAsync(`ffmpeg -y -i "${fullVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
-        return outputPath;
-      }
-
-      // Avoid stream-copy cutting here. Copy-based trimming around non-keyframes
-      // can produce clips with damaged/misaligned audio tracks on some sources.
-      await execAsync(`ffmpeg -y -i "${fullVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${tempRawPath}"`);
-    } else {
-      console.log(`[Clipping] Local video not found, downloading segment online using extreme fast mode...`);
-
-      // ==== 优化 2/方案 3：使用极限线上截取策略 ====
-      const ffmpegLocation = resolveFfmpegLocation();
-      if (!ffmpegLocation) {
-        throw new Error('当前运行环境未安装 ffmpeg，无法执行在线视频分段下载。请先安装 ffmpeg 或配置 FFMPEG_PATH。');
-      }
-
-      const dlFlags: Record<string, any> = {
-        output: tempRawPath,
-        // 提升画质至 1080p（大多数 1080p 只有分离流，因此分离流合并也是刚需，在保证不过度重压且有 copy 加持下，速度依然很快）
-        // 修正：强制要求 vcodec 为 avc1 (H.264)，音频为 m4a (AAC)，这是兼容性的黄金组合
-        format: isMp3
-          ? 'bestaudio/best'
-          : quality === 'best'
-            ? 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best'
-            : `bestvideo[height<=${quality}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best`,
-        downloadSections: `*${formatTime(start)}-${formatTime(end)}`,
-        externalDownloader: 'ffmpeg',
-        externalDownloaderArgs: 'ffmpeg:-c:v libx264 -c:a aac', // 下载时即尝试标准化
-        ffmpegLocation,
-        noPlaylist: true,
-        noCheckCertificates: true,
-        noOverwrites: true,
-      };
-
-      if (!isMp3) {
-        dlFlags.mergeOutputFormat = 'mp4';
-      } else {
-        dlFlags.extractAudio = true;
-        dlFlags.audioFormat = 'mp3';
-      }
-      const cookiePath = path.join(CLIPS_DIR, 'cookies_temp.txt');
-      await downloadWithYtDlpFallback(youtubedl, url, dlFlags, {
-        cookieContents: process.env.YOUTUBE_COOKIES,
-        cookieFile: cookiePath,
-        context: `clip download for ${videoId}`,
-        isYoutube: platform === 'youtube',
-      });
-
-      // 如果是在线下的 mp3，yt-dlp 就可以直接输出最后的成品了
-      if (isMp3) {
-        // 如果 extractAudio 成功，文件可能直接在 tempRawPath (.mp3). 如果是mp4需转一遍
-        if (await fs.pathExists(tempRawPath.replace('.mp4', '.mp3'))) {
-            await fs.move(tempRawPath.replace('.mp4', '.mp3'), outputPath);
-            return outputPath;
-        } else {
-            await execAsync(`ffmpeg -y -i "${tempRawPath}" -vn -c:a libmp3lame -q:a 2 "${outputPath}"`);
-            return outputPath;
-        }
-      }
-
-      // Rebuild timestamps and normalize audio before any final burn/remux step.
-      // This helps avoid intermittent silent spans caused by section downloads
-      // with uneven/non-monotonic audio timestamps.
-      await execAsync(`ffmpeg -y -fflags +genpts -i "${tempRawPath}" -map 0:v:0 -map 0:a:0? -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${tempPreparedPath}"`);
-
-      // 在线提取下处理硬字幕
-      if (shouldBurnTranslatedSubtitles) {
-        console.log(`[Clipping] Burning translated subtitles...`);
-        const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
-        await fs.writeFile(srtPath, srtContent);
-        const vfFilter = appendWatermarkFilter(buildHardSubtitleFilter(srtPath));
-        await execAsync(`ffmpeg -y -i "${tempPreparedPath}" -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
-        return outputPath;
-      }
+    const ffmpegLocation = resolveFfmpegLocation();
+    if (!ffmpegLocation) {
+      throw new Error('当前运行环境未安装 ffmpeg，无法执行视频切片。请先安装 ffmpeg 或配置 FFMPEG_PATH。');
     }
 
-    if (!isMp3 && !shouldBurnTranslatedSubtitles) {
-      // 最终封装阶段：强制重编码为兼容性最高的 H.264 + YUV420P
-      console.log(`[Clipping] Finalizing video with high-compatibility settings...`);
-      const vfFilter = appendWatermarkFilter();
-      const finalInputPath = await fs.pathExists(tempPreparedPath) ? tempPreparedPath : tempRawPath;
-      await execAsync(`ffmpeg -y -i "${finalInputPath}" -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
+    const sourceVideoPath = await ensureClipSourceVideo({
+      videoId,
+      title,
+      url,
+      platform,
+      quality,
+    });
+
+    console.log(`[Clipping] Cutting locally from source video: ${sourceVideoPath}`);
+    if (isMp3) {
+      await execAsync(`ffmpeg -y -ss ${start} -i "${sourceVideoPath}" -t ${duration} -vn -c:a libmp3lame -q:a 2 "${outputPath}"`);
+      return outputPath;
     }
+
+    if (shouldBurnTranslatedSubtitles) {
+      const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
+      await fs.writeFile(srtPath, srtContent);
+      const vfFilter = appendWatermarkFilter(buildHardSubtitleFilter(srtPath));
+      await execAsync(`ffmpeg -y -i "${sourceVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
+      return outputPath;
+    }
+
+    // Avoid stream-copy cutting here. Copy-based trimming around non-keyframes
+    // can produce clips with damaged/misaligned audio tracks on some sources.
+    await execAsync(`ffmpeg -y -i "${sourceVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${tempRawPath}"`);
+
+    // 最终封装阶段：强制重编码为兼容性最高的 H.264 + YUV420P
+    console.log(`[Clipping] Finalizing video with high-compatibility settings...`);
+    const vfFilter = appendWatermarkFilter();
+    await execAsync(`ffmpeg -y -i "${tempRawPath}" -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
 
     return outputPath;
   } catch (error: any) {
@@ -556,7 +547,6 @@ export async function createVideoClip({
     throw error;
   } finally {
     await fs.remove(tempRawPath).catch(() => {});
-    await fs.remove(tempPreparedPath).catch(() => {});
     await fs.remove(tempRawPath.replace('.mp4', '.mp3')).catch(() => {});
     await fs.remove(srtPath).catch(() => {});
     await fs.remove(subtitleWorkdir).catch(() => {});
@@ -600,14 +590,9 @@ export async function downloadFullVideo({
   const srtPath = path.join(os.tmpdir(), `${videoId}_full_${quality}.srt`);
 
   try {
-    let formatOption = 'bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best'; // 优先 H.264
-    if (quality && quality !== 'best') {
-      formatOption = `bestvideo[height<=${quality}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best`;
-    }
-
     const dlFlags: any = {
       output: rawPath,
-      format: formatOption,
+      format: buildPreferredVideoFormat(quality),
       mergeOutputFormat: 'mp4',
       noOverwrites: true,
     };

@@ -7,7 +7,13 @@ import { getUserId } from '../utils/auth.js';
 import { downloadFullVideo } from '../services/clipping.js';
 import { exportToNotion } from '../services/notion.js';
 import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
-import { getEmbedding, translateTranscriptSegments } from '../services/ai.js';
+import {
+  enrichKeywordGlossaryItem,
+  getEmbedding,
+  isValidKeywordGlossaryEnglish,
+  normalizeKeywordGlossaryEnglish,
+  translateTranscriptSegments,
+} from '../services/ai.js';
 
 async function retranslateCueSegmentsForVideo(videoId: string) {
   const cueSegments = await prisma.subtitleCue.findMany({
@@ -77,7 +83,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
     schema: {
       tags: ['Videos'],
       summary: '新增关键词词条',
-      description: '为当前视频手动追加一个关键单词或短语词条。',
+      description: '为当前视频追加一个关键单词或短语词条；若缺少中文、音标或类型，会自动补全。',
       params: {
         type: 'object',
         required: ['videoId'],
@@ -87,12 +93,13 @@ export async function videoRoutes(fastify: FastifyInstance) {
       },
       body: {
         type: 'object',
-        required: ['english', 'chinese', 'type'],
+        required: ['english'],
         properties: {
           english: { type: 'string' },
           phonetic: { type: 'string' },
           chinese: { type: 'string' },
           type: { type: 'string', enum: ['word', 'phrase'] },
+          sourceText: { type: 'string', description: '该词条所在的原始字幕，用于辅助生成更准确的释义和音标' },
         },
       },
       response: {
@@ -100,25 +107,153 @@ export async function videoRoutes(fastify: FastifyInstance) {
           type: 'object',
           properties: {
             success: { type: 'boolean' },
+            added: { type: 'boolean' },
+            item: Schemas.KeywordGlossaryItem,
+            message: { type: 'string' },
             data: {
               type: 'array',
               items: Schemas.KeywordGlossaryItem,
             },
           },
         },
+        400: Schemas.ErrorResponse,
         404: Schemas.ErrorResponse,
         500: Schemas.ErrorResponse,
       },
     },
   }, async (
-    request: FastifyRequest<{ Params: { videoId: string }; Body: { english: string; phonetic?: string; chinese: string; type: 'word' | 'phrase' } }>,
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { english: string; phonetic?: string; chinese?: string; type?: 'word' | 'phrase'; sourceText?: string } }>,
     reply: FastifyReply,
   ) => {
     const { videoId } = request.params;
-    const english = request.body.english.trim();
+    const english = normalizeKeywordGlossaryEnglish(request.body.english);
     const phonetic = String(request.body.phonetic || '').trim();
-    const chinese = request.body.chinese.trim();
-    const type = request.body.type === 'word' ? 'word' : 'phrase';
+    const chinese = String(request.body.chinese || '').trim();
+    const type = request.body.type === 'word' || request.body.type === 'phrase'
+      ? request.body.type
+      : undefined;
+    const sourceText = String(request.body.sourceText || '').trim();
+
+    if (!english) {
+      return reply.status(400).send({ error: '英文单词或短语不能为空' });
+    }
+
+    if (!isValidKeywordGlossaryEnglish(english)) {
+      return reply.status(400).send({ error: '请选择一个英文单词或短语，长度不要太长，也不要包含整句字幕。' });
+    }
+
+    const video = await prisma.video.findUnique({
+      where: { videoId },
+      select: { videoId: true, keywordGlossary: true },
+    });
+
+    if (!video) {
+      return reply.status(404).send({ error: '视频不存在' });
+    }
+
+    const normalizedItem = await enrichKeywordGlossaryItem({
+      english,
+      phonetic,
+      chinese,
+      type,
+      sourceText,
+    });
+
+    if (!normalizedItem.chinese) {
+      return reply.status(400).send({ error: '无法为当前词条生成中文释义，请换一个更短的单词或短语再试。' });
+    }
+
+    const existing = Array.isArray(video.keywordGlossary) ? video.keywordGlossary as any[] : [];
+    const existingIndex = existing.findIndex((item) => (
+      normalizeKeywordGlossaryEnglish(String(item?.english || '')).toLowerCase() === english.toLowerCase()
+    ));
+
+    let added = false;
+    let nextItem = normalizedItem;
+    let nextGlossary = existing;
+
+    if (existingIndex >= 0) {
+      const existingItem = existing[existingIndex] || {};
+      nextItem = {
+        english,
+        phonetic: String(existingItem?.phonetic || '').trim() || normalizedItem.phonetic || '',
+        chinese: String(existingItem?.chinese || '').trim() || normalizedItem.chinese,
+        type: existingItem?.type === 'word' || existingItem?.type === 'phrase'
+          ? existingItem.type
+          : normalizedItem.type,
+      };
+
+      nextGlossary = existing.map((item, index) => (
+        index === existingIndex ? nextItem : item
+      ));
+    } else {
+      added = true;
+      nextGlossary = [...existing, normalizedItem];
+    }
+
+    await prisma.video.update({
+      where: { videoId },
+      data: {
+        keywordGlossary: nextGlossary as unknown as Prisma.InputJsonValue,
+      },
+    });
+
+    return reply.send({
+      success: true,
+      added,
+      item: nextItem,
+      message: added ? '关键词词条已加入当前视频。' : '该词条已存在，已自动补全缺失信息。',
+      data: nextGlossary,
+    });
+  });
+
+  fastify.delete('/api/videos/:videoId/keyword-glossary', {
+    schema: {
+      tags: ['Videos'],
+      summary: '删除关键词词条',
+      description: '从当前视频的关键词词表中删除一个单词或短语。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      body: {
+        type: 'object',
+        required: ['english'],
+        properties: {
+          english: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            removed: { type: 'boolean' },
+            message: { type: 'string' },
+            data: {
+              type: 'array',
+              items: Schemas.KeywordGlossaryItem,
+            },
+          },
+        },
+        400: Schemas.ErrorResponse,
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { english: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+    const english = normalizeKeywordGlossaryEnglish(request.body.english);
+
+    if (!english) {
+      return reply.status(400).send({ error: '要删除的关键词不能为空' });
+    }
 
     const video = await prisma.video.findUnique({
       where: { videoId },
@@ -130,10 +265,14 @@ export async function videoRoutes(fastify: FastifyInstance) {
     }
 
     const existing = Array.isArray(video.keywordGlossary) ? video.keywordGlossary as any[] : [];
-    const nextGlossary = [
-      ...existing,
-      { english, phonetic, chinese, type },
-    ];
+    const nextGlossary = existing.filter((item) => (
+      normalizeKeywordGlossaryEnglish(String(item?.english || '')).toLowerCase() !== english.toLowerCase()
+    ));
+
+    const removed = nextGlossary.length !== existing.length;
+    if (!removed) {
+      return reply.status(404).send({ error: '未找到要删除的关键词词条' });
+    }
 
     await prisma.video.update({
       where: { videoId },
@@ -144,6 +283,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
     return reply.send({
       success: true,
+      removed: true,
+      message: '关键词词条已删除。',
       data: nextGlossary,
     });
   });

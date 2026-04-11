@@ -32,6 +32,8 @@ export interface AIMindmapResult {
 }
 
 const FIXED_VIDEO_HASHTAGS = ['#慢速英语动画', '#慢速英语', '#慢速口语'] as const;
+const KEYWORD_GLOSSARY_MAX_WORDS = 8;
+const KEYWORD_GLOSSARY_MAX_CHARS = 80;
 
 const SUMMARY_SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。你的任务是分析视频的转录文本，提取出最重要的核心观点和关键要点。
 
@@ -107,6 +109,25 @@ const MINDMAP_SYSTEM_PROMPT = `你是一个视频结构化分析助手。你的�
 4. 确保结果可被 Markmap 渲染
 5. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
 
+const KEYWORD_GLOSSARY_ITEM_SYSTEM_PROMPT = `你是一个英语学习词汇助手。你的任务是基于用户给出的英文单词或短语，以及可选的字幕上下文，生成一个适合英语学习卡片的 JSON。
+
+请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
+
+{
+  "english": "原始英文",
+  "phonetic": "/美式音标/",
+  "chinese": "简洁自然的中文释义",
+  "type": "word"
+}
+
+要求：
+1. english 必须保持用户给出的原文，不要改写，不要扩写。
+2. phonetic 提供自然、常见的美式音标，建议使用 /.../ 格式；如果实在不适合可以返回空字符串。
+3. chinese 结合字幕上下文给出最贴切、最简洁的中文释义，避免整句翻译。
+4. type 只能是 word 或 phrase。单个单词或其屈折变化返回 word；多个词组成的固定表达、短语动词、搭配返回 phrase。
+5. 如果上下文不足，也要给出最常见、最自然的学习释义。
+6. 只返回 JSON，不要有任何其他文字或 markdown 标记。`;
+
 // 重试配置
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 3000; // 基础等待时间 3 秒
@@ -156,6 +177,39 @@ function buildDurationConstraint(maxDurationSeconds?: number): string {
   return maxDurationSeconds
     ? `注意：视频总时长约为 ${Math.floor(maxDurationSeconds / 60)} 分 ${maxDurationSeconds % 60} 秒，提取的时间戳绝对不能超过这个范围。`
     : '';
+}
+
+export function normalizeKeywordGlossaryEnglish(text: string): string {
+  return String(text || '')
+    .replace(/[‘’]/g, '\'')
+    .replace(/[“”]/g, '"')
+    .replace(/[‐‑‒–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[`"'“”‘’.,!?;:，。？！；：（）()[\]{}<>]+/, '')
+    .replace(/[`"'“”‘’.,!?;:，。？！；：（）()[\]{}<>]+$/, '')
+    .trim();
+}
+
+export function inferKeywordGlossaryType(english: string): 'word' | 'phrase' {
+  return normalizeKeywordGlossaryEnglish(english)
+    .split(/\s+/)
+    .filter(Boolean).length > 1
+    ? 'phrase'
+    : 'word';
+}
+
+export function isValidKeywordGlossaryEnglish(text: string): boolean {
+  const normalized = normalizeKeywordGlossaryEnglish(text);
+  if (!normalized) return false;
+  if (!/[A-Za-z]/.test(normalized)) return false;
+  if (/[\u4e00-\u9fa5]/.test(normalized)) return false;
+  if (normalized.length > KEYWORD_GLOSSARY_MAX_CHARS) return false;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > KEYWORD_GLOSSARY_MAX_WORDS) return false;
+
+  return /^[A-Za-z0-9][A-Za-z0-9'"()/%&+,\-./\s]*[A-Za-z0-9)]$/.test(normalized);
 }
 
 async function requestJsonFromDeepSeek(params: {
@@ -282,6 +336,49 @@ export async function generateMindmap(
 
   return {
     mindmap: parsed.mindmap || '',
+  };
+}
+
+export async function enrichKeywordGlossaryItem(params: {
+  english: string;
+  chinese?: string;
+  phonetic?: string;
+  type?: 'word' | 'phrase';
+  sourceText?: string;
+}): Promise<AIKeywordGlossaryItem> {
+  const english = normalizeKeywordGlossaryEnglish(params.english);
+  if (!english) {
+    throw new Error('Keyword glossary english is empty');
+  }
+
+  const chinese = String(params.chinese || '').trim();
+  const phonetic = String(params.phonetic || '').trim();
+  const type = params.type === 'phrase' || params.type === 'word'
+    ? params.type
+    : undefined;
+
+  if (chinese && phonetic && type) {
+    return { english, chinese, phonetic, type };
+  }
+
+  const parsed = await requestJsonFromDeepSeek({
+    systemPrompt: KEYWORD_GLOSSARY_ITEM_SYSTEM_PROMPT,
+    userContent: JSON.stringify({
+      english,
+      chinese: chinese || undefined,
+      phonetic: phonetic || undefined,
+      type,
+      source_text: String(params.sourceText || '').trim() || undefined,
+    }),
+    maxTokens: 320,
+    temperature: 0.2,
+  });
+
+  return {
+    english,
+    phonetic: phonetic || String(parsed?.phonetic || '').trim(),
+    chinese: chinese || String(parsed?.chinese || '').trim(),
+    type: type || (parsed?.type === 'phrase' ? 'phrase' : inferKeywordGlossaryType(english)),
   };
 }
 /**

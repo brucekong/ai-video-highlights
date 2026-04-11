@@ -6,6 +6,7 @@ import scalarReference from '@scalar/fastify-api-reference';
 import { analyzeRoutes } from './routes/analyze.js';
 import { authRoutes } from './routes/auth.js';
 import { chatRoutes } from './routes/chat.js';
+import { storybookRoutes } from './routes/storybook.js';
 import { videoRoutes } from './routes/video.js';
 import { searchRoutes } from './routes/search.js';
 import { transcriptRoutes } from './routes/transcript.js';
@@ -89,6 +90,7 @@ async function main() {
   await fastify.register(analyzeRoutes);
   await fastify.register(authRoutes);
   await fastify.register(chatRoutes);
+  await fastify.register(storybookRoutes);
   await fastify.register(videoRoutes);
   await fastify.register(searchRoutes);
   await fastify.register(transcriptRoutes);
@@ -163,4 +165,3 @@ async function main() {
 }
 
 main();
-

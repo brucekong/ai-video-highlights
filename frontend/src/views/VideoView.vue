@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
-import { useRoute } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2, Volume2 } from 'lucide-vue-next';
+import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch, nextTick } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2, Volume2, Trash2, BookOpen } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
@@ -15,6 +15,7 @@ import { useAuth } from '../services/auth';
 
 const API_BASE = import.meta.env.VITE_API_URL;
 const { checkLogin, waitForAuth, getAuthHeaders } = useAuth();
+const router = useRouter();
 
 console.log('API_BASE====', API_BASE)
 interface Takeaway {
@@ -29,6 +30,12 @@ interface KeywordGlossaryItem {
   english: string;
   phonetic?: string;
   chinese: string;
+  type: 'word' | 'phrase';
+}
+
+interface SelectedGlossaryCandidate {
+  english: string;
+  sourceText: string;
   type: 'word' | 'phrase';
 }
 
@@ -75,6 +82,7 @@ const videoHashtags = ref('');
 const keywordGlossary = ref<KeywordGlossaryItem[]>([]);
 const showKeywordGlossaryForm = ref(false);
 const isSavingKeywordGlossary = ref(false);
+const isAddingSelectedGlossary = ref(false);
 const keywordGlossaryForm = ref<KeywordGlossaryItem>({
   english: '',
   phonetic: '',
@@ -111,7 +119,9 @@ const selectedLoop = ref<{ start: number, end: number, id: string } | null>(null
 const isClippingId = ref<string | null>(null); // 正在剪辑的 ID
 const isRebuildingCues = ref(false);
 const isRetranslatingCues = ref(false);
-const pendingAction = ref<null | 'rebuild-cues' | 'retranslate-cues' | 'force-analyze'>(null);
+const isDeletingKeywordGlossary = ref(false);
+const pendingAction = ref<null | 'rebuild-cues' | 'retranslate-cues' | 'force-analyze' | 'delete-keyword'>(null);
+const pendingKeywordDelete = ref<KeywordGlossaryItem | null>(null);
 const actionNotice = ref<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
 // 字幕滚动自动归中行为控制变量
@@ -119,6 +129,9 @@ const isHoveringTranscript = ref(false);
 const autoScrollPaused = ref(false);
 const isTranslating = ref(false);
 const expandedTranscriptKeys = ref<Record<string, boolean>>({});
+const glossaryPickerSegIndex = ref<number | null>(null);
+const glossaryPickerSegment = ref<TranscriptSegment | null>(null);
+const selectedGlossaryCandidates = ref<SelectedGlossaryCandidate[]>([]);
 
 // 手动修复相关状态 / Manual fix states
 const editingSegIndex = ref<number | null>(null);
@@ -126,6 +139,7 @@ const editForm = ref({ text: '', translatedText: '' });
 const isSavingEdit = ref(false);
 
 const startEdit = (seg: TranscriptSegment, index: number) => {
+  closeGlossaryPicker(true);
   editingSegIndex.value = index;
   editingSegment.value = seg;
   editForm.value = {
@@ -269,9 +283,15 @@ const openConfirmModal = (action: 'rebuild-cues' | 'retranslate-cues' | 'force-a
   pendingAction.value = action;
 };
 
+const openDeleteKeywordConfirm = (item: KeywordGlossaryItem) => {
+  pendingKeywordDelete.value = item;
+  pendingAction.value = 'delete-keyword';
+};
+
 const closeConfirmModal = () => {
-  if (isRebuildingCues.value || isRetranslatingCues.value || isLoading.value) return;
+  if (isRebuildingCues.value || isRetranslatingCues.value || isLoading.value || isDeletingKeywordGlossary.value) return;
   pendingAction.value = null;
+  pendingKeywordDelete.value = null;
 };
 
 const closeActionNotice = () => {
@@ -302,6 +322,203 @@ const normalizeKeywordGlossary = (items: any[]): KeywordGlossaryItem[] => {
     }))
     .filter((item) => item.english && item.chinese);
 };
+
+const normalizeSelectedGlossaryText = (text: string) => {
+  return String(text || '')
+    .replace(/[‘’]/g, '\'')
+    .replace(/[“”]/g, '"')
+    .replace(/[‐‑‒–—]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[`"'“”‘’.,!?;:，。？！；：（）()[\]{}<>]+/, '')
+    .replace(/[`"'“”‘’.,!?;:，。？！；：（）()[\]{}<>]+$/, '')
+    .trim();
+};
+
+const normalizeGlossaryLookupKey = (text: string) => normalizeSelectedGlossaryText(text).toLowerCase();
+
+const GLOSSARY_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'but', 'by', 'can', 'did', 'do', 'does', 'for',
+  'from', 'had', 'has', 'have', 'he', 'her', 'him', 'his', 'i', 'if', 'in', 'into', 'is', 'it', 'its',
+  'just', 'me', 'my', 'of', 'on', 'or', 'our', 'she', 'so', 'that', 'the', 'their', 'them', 'there',
+  'they', 'this', 'to', 'too', 'up', 'us', 'was', 'we', 'were', 'what', 'when', 'where', 'who', 'why',
+  'will', 'with', 'would', 'you', 'your'
+]);
+
+const inferGlossaryItemType = (text: string): 'word' | 'phrase' => {
+  return text.split(/\s+/).filter(Boolean).length > 1 ? 'phrase' : 'word';
+};
+
+const isSelectableGlossaryText = (text: string) => {
+  if (!text) return false;
+  if (!/[A-Za-z]/.test(text)) return false;
+  if (/[\u4e00-\u9fa5]/.test(text)) return false;
+  if (text.length > 80) return false;
+
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 8) return false;
+
+  return /^[A-Za-z0-9][A-Za-z0-9'"()/%&+,\-./\s]*[A-Za-z0-9)]$/.test(text);
+};
+
+const clearSelectedGlossaryCandidate = (clearBrowserSelection: boolean = false) => {
+  selectedGlossaryCandidates.value = [];
+
+  if (clearBrowserSelection) {
+    window.getSelection()?.removeAllRanges();
+  }
+};
+
+const existingGlossaryLookup = computed(() => {
+  const lookup = new Set<string>();
+  keywordGlossary.value.forEach((item) => {
+    const key = normalizeGlossaryLookupKey(item.english);
+    if (key) lookup.add(key);
+  });
+  return lookup;
+});
+
+const isExistingGlossaryCandidate = (text: string) => {
+  const key = normalizeGlossaryLookupKey(text);
+  if (!key) return false;
+  return existingGlossaryLookup.value.has(key);
+};
+
+const selectedGlossaryLookup = computed(() => {
+  const lookup = new Set<string>();
+  selectedGlossaryCandidates.value.forEach((item) => {
+    const key = normalizeGlossaryLookupKey(item.english);
+    if (key) lookup.add(key);
+  });
+  return lookup;
+});
+
+const isSelectedGlossaryCandidate = (text: string) => {
+  const key = normalizeGlossaryLookupKey(text);
+  if (!key) return false;
+  return selectedGlossaryLookup.value.has(key);
+};
+
+const closeGlossaryPicker = (clearBrowserSelection: boolean = false) => {
+  glossaryPickerSegIndex.value = null;
+  glossaryPickerSegment.value = null;
+  clearSelectedGlossaryCandidate(clearBrowserSelection);
+};
+
+const openGlossaryPicker = (seg: TranscriptSegment, index: number) => {
+  if (glossaryPickerSegIndex.value === index) {
+    closeGlossaryPicker(true);
+    return;
+  }
+
+  editingSegIndex.value = null;
+  editingSegment.value = null;
+  glossaryPickerSegIndex.value = index;
+  glossaryPickerSegment.value = seg;
+  clearSelectedGlossaryCandidate(true);
+};
+
+const addGlossaryCandidateToSelection = (english: string, sourceText: string) => {
+  const normalized = normalizeSelectedGlossaryText(english);
+  if (!isSelectableGlossaryText(normalized)) return;
+  if (isExistingGlossaryCandidate(normalized)) return;
+  if (isSelectedGlossaryCandidate(normalized)) return;
+
+  selectedGlossaryCandidates.value = [
+    ...selectedGlossaryCandidates.value,
+    {
+      english: normalized,
+      sourceText,
+      type: inferGlossaryItemType(normalized),
+    },
+  ];
+};
+
+const toggleGlossaryCandidateSelection = (english: string, sourceText: string) => {
+  const normalized = normalizeSelectedGlossaryText(english);
+  if (!normalized || isExistingGlossaryCandidate(normalized)) return;
+
+  if (isSelectedGlossaryCandidate(normalized)) {
+    selectedGlossaryCandidates.value = selectedGlossaryCandidates.value.filter((item) => (
+      normalizeGlossaryLookupKey(item.english) !== normalizeGlossaryLookupKey(normalized)
+    ));
+    return;
+  }
+
+  addGlossaryCandidateToSelection(normalized, sourceText);
+};
+
+const removeSelectedGlossaryCandidate = (english: string) => {
+  const targetKey = normalizeGlossaryLookupKey(english);
+  selectedGlossaryCandidates.value = selectedGlossaryCandidates.value.filter((item) => (
+    normalizeGlossaryLookupKey(item.english) !== targetKey
+  ));
+};
+
+const handleGlossaryPickerMouseUp = (seg: TranscriptSegment, event: MouseEvent) => {
+  window.setTimeout(() => {
+    const selection = window.getSelection();
+    const currentTarget = event.currentTarget as HTMLElement | null;
+    if (!selection || selection.isCollapsed || !selection.rangeCount || !currentTarget) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!currentTarget.contains(range.commonAncestorContainer)) {
+      return;
+    }
+
+    const english = normalizeSelectedGlossaryText(selection.toString());
+    if (!isSelectableGlossaryText(english)) {
+      clearSelectedGlossaryCandidate();
+      return;
+    }
+
+    addGlossaryCandidateToSelection(english, seg.text);
+  }, 0);
+};
+
+const glossaryCandidateSuggestions = computed(() => {
+  const sourceText = glossaryPickerSegment.value?.text || '';
+  const normalizedSource = normalizeSelectedGlossaryText(sourceText);
+  if (!normalizedSource) return [];
+
+  const tokens = (normalizedSource.match(/[A-Za-z]+(?:['-][A-Za-z]+)*/g) || [])
+    .map((word) => ({ original: word, lower: word.toLowerCase() }));
+
+  const orderedCandidates: string[] = [];
+  const seen = new Set<string>();
+
+  const pushCandidate = (candidate: string) => {
+    const normalized = normalizeSelectedGlossaryText(candidate);
+    if (!isSelectableGlossaryText(normalized)) return;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    orderedCandidates.push(normalized);
+  };
+
+  for (let size = 3; size >= 2; size -= 1) {
+    for (let index = 0; index <= tokens.length - size; index += 1) {
+      const slice = tokens.slice(index, index + size);
+      if (slice.every((token) => GLOSSARY_STOP_WORDS.has(token.lower))) continue;
+      if (GLOSSARY_STOP_WORDS.has(slice[0]?.lower || '') || GLOSSARY_STOP_WORDS.has(slice[slice.length - 1]?.lower || '')) continue;
+      pushCandidate(slice.map((token) => token.original).join(' '));
+      if (orderedCandidates.length >= 8) break;
+    }
+    if (orderedCandidates.length >= 8) break;
+  }
+
+  for (const token of tokens) {
+    if (GLOSSARY_STOP_WORDS.has(token.lower) || token.original.length < 3) continue;
+    pushCandidate(token.original);
+    if (orderedCandidates.length >= 14) break;
+  }
+
+  return orderedCandidates;
+});
+
+const selectedGlossaryCount = computed(() => selectedGlossaryCandidates.value.length);
 
 const resetKeywordGlossaryForm = () => {
   keywordGlossaryForm.value = {
@@ -369,10 +586,10 @@ const saveKeywordGlossaryItem = async () => {
   const chinese = keywordGlossaryForm.value.chinese.trim();
   const type = keywordGlossaryForm.value.type === 'phrase' ? 'phrase' : 'word';
 
-  if (!english || !chinese) {
+  if (!english) {
     showActionNotice({
       title: '请补全词条',
-      message: '请填写英文和中文释义后再保存。',
+      message: '请至少填写英文单词或短语，中文释义和音标可以自动补齐。',
       type: 'error',
     });
     return;
@@ -399,8 +616,8 @@ const saveKeywordGlossaryItem = async () => {
     showKeywordGlossaryForm.value = false;
     resetKeywordGlossaryForm();
     showActionNotice({
-      title: '保存成功',
-      message: '关键词词条已加入当前视频。',
+      title: result.added ? '保存成功' : '已补全词条',
+      message: result.message || (result.added ? '关键词词条已加入当前视频。' : '该词条已存在，已自动补全缺失信息。'),
       type: 'success',
     });
   } catch (error) {
@@ -415,6 +632,127 @@ const saveKeywordGlossaryItem = async () => {
   }
 };
 
+const addSelectedTranscriptToGlossary = async () => {
+  if (!videoId.value || selectedGlossaryCandidates.value.length === 0 || isAddingSelectedGlossary.value) return;
+
+  isAddingSelectedGlossary.value = true;
+  try {
+    const pendingItems = selectedGlossaryCandidates.value.filter((item) => !isExistingGlossaryCandidate(item.english));
+    if (pendingItems.length === 0) {
+      showActionNotice({
+        title: '无需重复加入',
+        message: '当前选择的词条都已经在关键词列表里了。',
+        type: 'info',
+      });
+      return;
+    }
+
+    let addedCount = 0;
+    let completedCount = 0;
+    let failedCount = 0;
+    let latestGlossary: KeywordGlossaryItem[] | null = null;
+
+    for (const item of pendingItems) {
+      try {
+        const response = await fetch(`${API_BASE}/api/videos/${videoId.value}/keyword-glossary`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify(item),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || '从字幕加入关键词失败');
+        }
+
+        const result = await response.json();
+        latestGlossary = normalizeKeywordGlossary(result.data || []);
+        if (result.added) addedCount += 1;
+        else completedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        console.error('Add selected transcript glossary item failed:', error);
+      }
+    }
+
+    if (latestGlossary) {
+      keywordGlossary.value = latestGlossary;
+    }
+
+    if (addedCount > 0 || completedCount > 0) {
+      clearSelectedGlossaryCandidate(true);
+      showActionNotice({
+        title: addedCount > 0 ? '已加入关键词' : '已补全关键词',
+        message: [
+          addedCount > 0 ? `新增 ${addedCount} 个` : '',
+          completedCount > 0 ? `补全 ${completedCount} 个` : '',
+          failedCount > 0 ? `失败 ${failedCount} 个` : '',
+        ].filter(Boolean).join('，'),
+        type: failedCount > 0 ? 'info' : 'success',
+      });
+      return;
+    }
+
+    showActionNotice({
+      title: '加入失败',
+      message: failedCount > 0 ? `本次有 ${failedCount} 个词条加入失败，请稍后重试。` : '从字幕加入关键词失败，请稍后重试。',
+      type: 'error',
+    });
+  } catch (error) {
+    console.error('Add selected transcript glossary failed:', error);
+    showActionNotice({
+      title: '加入失败',
+      message: '从字幕加入关键词失败，请稍后重试。',
+      type: 'error',
+    });
+  } finally {
+    isAddingSelectedGlossary.value = false;
+  }
+};
+
+const deleteKeywordGlossaryItem = async () => {
+  if (!videoId.value || !pendingKeywordDelete.value || isDeletingKeywordGlossary.value) return;
+
+  isDeletingKeywordGlossary.value = true;
+  try {
+    const response = await fetch(`${API_BASE}/api/videos/${videoId.value}/keyword-glossary`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ english: pendingKeywordDelete.value.english }),
+    });
+
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || '删除关键词失败');
+    }
+
+    const result = await response.json();
+    keywordGlossary.value = normalizeKeywordGlossary(result.data || []);
+    showActionNotice({
+      title: '删除成功',
+      message: result.message || '关键词词条已删除。',
+      type: 'success',
+    });
+    pendingAction.value = null;
+    pendingKeywordDelete.value = null;
+  } catch (error) {
+    console.error('Delete keyword glossary failed:', error);
+    showActionNotice({
+      title: '删除失败',
+      message: '删除关键词词条失败，请稍后重试。',
+      type: 'error',
+    });
+  } finally {
+    isDeletingKeywordGlossary.value = false;
+  }
+};
+
 const confirmPendingAction = async () => {
   if (pendingAction.value === 'rebuild-cues') {
     await handleRebuildCues();
@@ -422,10 +760,15 @@ const confirmPendingAction = async () => {
     await handleRetranslateCues();
   } else if (pendingAction.value === 'force-analyze') {
     await handleForceAnalyze();
+  } else if (pendingAction.value === 'delete-keyword') {
+    await deleteKeywordGlossaryItem();
   }
 
-  if (!isRebuildingCues.value && !isRetranslatingCues.value && !isLoading.value) {
+  if (!isRebuildingCues.value && !isRetranslatingCues.value && !isLoading.value && !isDeletingKeywordGlossary.value) {
     pendingAction.value = null;
+    if (pendingAction.value === null) {
+      pendingKeywordDelete.value = null;
+    }
   }
 };
 
@@ -914,6 +1257,18 @@ const formatTimeFromMs = (ms: number) => {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
+const openStorybookPreview = () => {
+  if (!videoId.value) return;
+
+  router.push({
+    path: '/storybook',
+    query: {
+      videoId: videoId.value,
+      url: videoUrl.value,
+    },
+  });
+};
+
 const formatPreciseTimeFromMs = (ms: number) => {
   const totalTenths = Math.floor(ms / 100);
   const totalSeconds = Math.floor(totalTenths / 10);
@@ -959,7 +1314,6 @@ onMounted(() => {
   }
 });
 
-import { onUnmounted } from 'vue';
 onUnmounted(() => {
   if (pollingInterval) clearInterval(pollingInterval);
   if (actionNoticeTimeout) clearTimeout(actionNoticeTimeout);
@@ -1081,6 +1435,7 @@ onBeforeUnmount(() => {
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     window.speechSynthesis.cancel();
   }
+  closeGlossaryPicker();
 });
 
 
@@ -1105,6 +1460,7 @@ const handleAnalyze = async (force: boolean = false) => {
   videoDescription.value = '';
   videoHashtags.value = '';
   keywordGlossary.value = [];
+  closeGlossaryPicker(true);
   currentVideoTime.value = 0;
 
   try {
@@ -1755,6 +2111,17 @@ const takeawayMap = computed(() => {
                       </button>
                     </AppTooltip>
 
+                    <AppTooltip text="按当前翻译 cues 自动生成只读画册草稿">
+                      <button
+                        v-if="showResult"
+                        class="btn-search-in-video"
+                        @click="openStorybookPreview()"
+                      >
+                        <BookOpen :size="14" />
+                        <span>画册</span>
+                      </button>
+                    </AppTooltip>
+
                     <KnowledgeExportActions
                       :video-id="videoId"
                       :video-title="videoTitle"
@@ -1882,7 +2249,7 @@ const takeawayMap = computed(() => {
                         <span>复制列表</span>
                       </button>
                       <button class="btn-copy-mini" @click="openKeywordGlossaryForm">
-                        <span>手动增加</span>
+                        <span>手动补充</span>
                       </button>
                     </div>
                   </div>
@@ -1893,15 +2260,24 @@ const takeawayMap = computed(() => {
                       class="glossary-card"
                     >
                       <div class="glossary-card-header">
-                        <button
-                          class="glossary-speak-btn"
-                          :class="{ active: speakingGlossaryKey === `${item.english}-${index}` }"
-                          @click="speakGlossaryItem(item, index)"
-                          :title="`点读 ${item.english}`"
-                        >
-                          <Volume2 :size="14" />
-                          <span>{{ speakingGlossaryKey === `${item.english}-${index}` ? '朗读中' : '点读' }}</span>
-                        </button>
+                        <div class="glossary-card-actions">
+                          <button
+                            class="glossary-speak-btn"
+                            :class="{ active: speakingGlossaryKey === `${item.english}-${index}` }"
+                            @click="speakGlossaryItem(item, index)"
+                            :title="`点读 ${item.english}`"
+                          >
+                            <Volume2 :size="14" />
+                            <span>{{ speakingGlossaryKey === `${item.english}-${index}` ? '朗读中' : '点读' }}</span>
+                          </button>
+                          <button
+                            class="glossary-delete-btn"
+                            @click="openDeleteKeywordConfirm(item)"
+                            :title="`删除 ${item.english}`"
+                          >
+                            <Trash2 :size="14" />
+                          </button>
+                        </div>
                         <span class="glossary-type">{{ item.type === 'word' ? '单词' : '短语' }}</span>
                       </div>
                       <div class="glossary-english">{{ item.english }}</div>
@@ -1930,7 +2306,7 @@ const takeawayMap = computed(() => {
                         v-model="keywordGlossaryForm.phonetic"
                         type="text"
                         class="glossary-input"
-                        placeholder="音标，可选，例如 /ˈwɔːtər/"
+                        placeholder="音标可留空，系统会自动生成"
                       />
                     </div>
                     <div class="glossary-form-row single">
@@ -1938,7 +2314,7 @@ const takeawayMap = computed(() => {
                         v-model="keywordGlossaryForm.chinese"
                         type="text"
                         class="glossary-input"
-                        placeholder="中文释义"
+                        placeholder="中文释义可留空，系统会自动补齐"
                       />
                     </div>
                     <div class="glossary-form-actions">
@@ -1968,7 +2344,7 @@ const takeawayMap = computed(() => {
                   <div class="publish-label">
                     <span>关键单词与短语 / Key Vocabulary</span>
                     <button class="btn-copy-mini" @click="openKeywordGlossaryForm">
-                      <span>手动增加</span>
+                      <span>手动补充</span>
                     </button>
                   </div>
                   <div v-if="showKeywordGlossaryForm" class="glossary-form empty">
@@ -1983,7 +2359,7 @@ const takeawayMap = computed(() => {
                         v-model="keywordGlossaryForm.phonetic"
                         type="text"
                         class="glossary-input"
-                        placeholder="音标，可选，例如 /ˈwɔːtər/"
+                        placeholder="音标可留空，系统会自动生成"
                       />
                     </div>
                     <div class="glossary-form-row single">
@@ -1991,7 +2367,7 @@ const takeawayMap = computed(() => {
                         v-model="keywordGlossaryForm.chinese"
                         type="text"
                         class="glossary-input"
-                        placeholder="中文释义"
+                        placeholder="中文释义可留空，系统会自动补齐"
                       />
                     </div>
                     <div class="glossary-form-actions">
@@ -2016,7 +2392,7 @@ const takeawayMap = computed(() => {
                     </div>
                   </div>
                   <div v-else class="publish-content glossary-empty-state">
-                    暂时还没有提炼出的关键词词条，你也可以先手动补充。
+                    暂时还没有提炼出的关键词词条。你可以在右侧字幕里直接选词加入，或手动补充。
                   </div>
                 </div>
               </div>
@@ -2122,7 +2498,6 @@ const takeawayMap = computed(() => {
               @scroll="handleTranscriptScroll"
               @mouseenter="handleTranscriptMouseEnter"
               @mouseleave="handleTranscriptMouseLeave"
-              ref="transcriptListRef"
             >
                 <div
                   v-for="(seg, index) in mergedTranscript"
@@ -2164,6 +2539,14 @@ const takeawayMap = computed(() => {
                   <div class="seg-actions">
                     <button class="btn-loop-action" @click.stop="startEdit(seg, index)" title="修正字幕或翻译">
                       <Edit2 :size="14" />
+                    </button>
+                    <button
+                      class="btn-loop-action"
+                      :class="{ active: glossaryPickerSegIndex === index }"
+                      @click.stop="openGlossaryPicker(seg, index)"
+                      title="从这句里挑关键词"
+                    >
+                      <Sparkles :size="14" />
                     </button>
                     <button
                       class="btn-loop-action"
@@ -2230,7 +2613,96 @@ const takeawayMap = computed(() => {
                         :disabled="isSavingEdit"
                       >
                         <Loader2 v-if="isSavingEdit" :size="14" class="spin" />
-                        <span>{{ isSavingEdit ? '保存中...' : '保存修改' }}</span>
+                      <span>{{ isSavingEdit ? '保存中...' : '保存修改' }}</span>
+                    </button>
+                  </div>
+                </div>
+                  <div
+                    v-if="glossaryPickerSegIndex === index"
+                    class="inline-glossary-panel"
+                    @click.stop
+                  >
+                    <div class="inline-edit-header">
+                      <span class="inline-edit-title">从当前字幕提取关键词</span>
+                      <span class="inline-edit-time">{{ formatTranscriptTime(mergedTranscript, index) }}</span>
+                    </div>
+
+                    <div class="inline-glossary-source">
+                      <div class="inline-edit-label">拖选这句中的单词或短语</div>
+                      <div
+                        class="inline-glossary-source-text"
+                        @mouseup.stop="handleGlossaryPickerMouseUp(seg, $event)"
+                      >
+                        {{ seg.text }}
+                      </div>
+                      <div class="inline-glossary-source-tip">
+                        可以直接拖选英文词/短语，也可以点击下方候选词。
+                      </div>
+                    </div>
+
+                    <div v-if="glossaryCandidateSuggestions.length" class="inline-glossary-suggestions">
+                      <div class="inline-edit-label">推荐候选</div>
+                      <div class="inline-glossary-chip-list">
+                        <button
+                          v-for="candidate in glossaryCandidateSuggestions"
+                          :key="candidate"
+                          class="inline-glossary-chip"
+                          :class="{
+                            active: isSelectedGlossaryCandidate(candidate),
+                            existing: isExistingGlossaryCandidate(candidate)
+                          }"
+                          @click.stop="toggleGlossaryCandidateSelection(candidate, seg.text)"
+                          :disabled="isExistingGlossaryCandidate(candidate)"
+                        >
+                          {{ candidate }}
+                          <span v-if="isExistingGlossaryCandidate(candidate)" class="inline-glossary-chip-badge">已加入</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="inline-glossary-selection-box">
+                      <div class="inline-edit-label">当前选择{{ selectedGlossaryCount ? `（${selectedGlossaryCount}）` : '' }}</div>
+                      <div v-if="selectedGlossaryCandidates.length" class="inline-glossary-selection-list">
+                        <div
+                          v-for="candidate in selectedGlossaryCandidates"
+                          :key="candidate.english"
+                          class="inline-glossary-selection-chip"
+                        >
+                          <div class="inline-glossary-selection-main">
+                            <span class="inline-glossary-selection-text">{{ candidate.english }}</span>
+                            <div class="inline-glossary-selection-note">
+                              {{ candidate.type === 'word' ? '单词' : '短语' }}
+                            </div>
+                          </div>
+                          <button
+                            class="inline-glossary-selection-remove"
+                            @click.stop="removeSelectedGlossaryCandidate(candidate.english)"
+                            :disabled="isAddingSelectedGlossary"
+                          >
+                            移除
+                          </button>
+                        </div>
+                      </div>
+                      <div v-else class="inline-glossary-selection empty">
+                        还没选中内容。你可以连续点多个候选词，或多次拖选不同单词/短语后一起加入。
+                      </div>
+                    </div>
+
+                    <div class="inline-edit-actions">
+                      <button
+                        class="inline-edit-btn ghost"
+                        @click.stop="closeGlossaryPicker(true)"
+                        :disabled="isAddingSelectedGlossary"
+                      >
+                        取消
+                      </button>
+                      <button
+                        class="inline-edit-btn primary"
+                        @click.stop="addSelectedTranscriptToGlossary"
+                        :disabled="isAddingSelectedGlossary || !selectedGlossaryCandidates.length"
+                      >
+                        <Loader2 v-if="isAddingSelectedGlossary" :size="14" class="spin" />
+                        <span>{{ isAddingSelectedGlossary ? '加入中...' : `加入已选${selectedGlossaryCount ? `（${selectedGlossaryCount}）` : ''}` }}</span>
                       </button>
                     </div>
                   </div>
@@ -2329,22 +2801,30 @@ const takeawayMap = computed(() => {
             ? '确认重建字幕分段'
             : pendingAction === 'retranslate-cues'
               ? '确认仅重翻译展示字幕'
-              : '确认重新分析视频'"
+              : pendingAction === 'delete-keyword'
+                ? '确认删除关键词词条'
+                : '确认重新分析视频'"
           :message="pendingAction === 'rebuild-cues'
             ? '这会根据当前原始字幕重新生成 cues 分段，但不会重新抓取字幕，也不会重新跑 AI 分析。'
             : pendingAction === 'retranslate-cues'
               ? '这会仅重建并重翻译展示用的字幕 cues，不重新抓取字幕，也不重新生成摘要、脑图和发布辅助。'
-              : '这会重新抓取字幕、翻译并重跑 AI 分析，适合在字幕错位或翻译异常时使用。'"
+              : pendingAction === 'delete-keyword'
+                ? `这会从当前视频的关键词列表中删除“${pendingKeywordDelete?.english || ''}”，删除后不可恢复。`
+                : '这会重新抓取字幕、翻译并重跑 AI 分析，适合在字幕错位或翻译异常时使用。'"
           :confirm-text="pendingAction === 'rebuild-cues'
             ? '开始重建'
             : pendingAction === 'retranslate-cues'
               ? '开始重翻译'
-              : '重新分析'"
+              : pendingAction === 'delete-keyword'
+                ? '确认删除'
+                : '重新分析'"
           :loading="pendingAction === 'rebuild-cues'
             ? isRebuildingCues
             : pendingAction === 'retranslate-cues'
               ? isRetranslatingCues
-              : isLoading"
+              : pendingAction === 'delete-keyword'
+                ? isDeletingKeywordGlossary
+                : isLoading"
           @close="closeConfirmModal"
           @confirm="confirmPendingAction"
         />
@@ -3473,6 +3953,179 @@ input::placeholder {
   gap: 12px;
 }
 
+.inline-glossary-panel {
+  width: 100%;
+  margin-left: 70px;
+  margin-top: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.09), rgba(255, 255, 255, 0.04));
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inline-glossary-source,
+.inline-glossary-suggestions,
+.inline-glossary-selection-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inline-glossary-source-text {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(10, 14, 24, 0.72);
+  border: 1px dashed rgba(56, 189, 248, 0.28);
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  word-break: break-word;
+  user-select: text;
+  white-space: pre-wrap;
+}
+
+.inline-glossary-source-tip {
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.inline-glossary-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inline-glossary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.inline-glossary-chip:hover {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: var(--text-primary);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.inline-glossary-chip:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.inline-glossary-chip.active {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #d7f2ff;
+}
+
+.inline-glossary-chip.existing {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(148, 163, 184, 0.08));
+  border-color: rgba(16, 185, 129, 0.28);
+  color: #ccfbf1;
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.08);
+}
+
+.inline-glossary-chip-badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.18);
+  color: #d1fae5;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.inline-glossary-selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.inline-glossary-selection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inline-glossary-selection-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.16);
+}
+
+.inline-glossary-selection-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inline-glossary-selection.empty {
+  justify-content: flex-start;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.inline-glossary-selection-text {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.inline-glossary-selection-note {
+  color: rgba(186, 230, 253, 0.76);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.inline-glossary-selection-remove {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.inline-glossary-selection-remove:hover:not(:disabled) {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+}
+
+.inline-glossary-selection-remove:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .inline-edit-header {
   display: flex;
   align-items: center;
@@ -3989,6 +4642,12 @@ input::placeholder {
   gap: 8px;
 }
 
+.glossary-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .glossary-type {
   display: inline-flex;
   align-items: center;
@@ -4024,6 +4683,26 @@ input::placeholder {
   color: #0ea5e9;
   border-color: rgba(14, 165, 233, 0.35);
   background: rgba(14, 165, 233, 0.12);
+}
+
+.glossary-delete-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.glossary-delete-btn:hover {
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.12);
 }
 
 .glossary-english {

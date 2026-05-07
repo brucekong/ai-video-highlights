@@ -79,6 +79,10 @@ const transcriptSource = ref<'raw' | 'cue'>('raw');
 const videoTitle = ref('');
 const videoDescription = ref('');
 const videoHashtags = ref('');
+const redbookTitle = ref('');
+const redbookDescription = ref('');
+const redbookHashtags = ref('');
+const activePublishTab = ref<'channels' | 'redbook'>('channels');
 const keywordGlossary = ref<KeywordGlossaryItem[]>([]);
 const showKeywordGlossaryForm = ref(false);
 const isSavingKeywordGlossary = ref(false);
@@ -1351,11 +1355,14 @@ watch(showBottomSubtitleDock, (value) => {
 const isAnalyzingSummary = ref(false); // 是否正在分析摘要/脑图
 const isGeneratingMindmap = ref(false);
 const isGeneratingPublishAssist = ref(false);
+const isGeneratingRedbookAssist = ref(false);
+const isRegeneratingChannels = ref(false);
+const isRegeneratingRedbook = ref(false);
 const isIndexing = ref(false); // 是否正在进行向量化索引（用于语义搜索）
 
 // 轮询更新摘要、脑图、翻译和索引
 const pollAnalysisStatus = async () => {
-  if (!videoId.value || (!isAnalyzingSummary.value && !isGeneratingMindmap.value && !isGeneratingPublishAssist.value && !isIndexing.value && !isTranslating.value)) {
+  if (!videoId.value || (!isAnalyzingSummary.value && !isGeneratingMindmap.value && !isGeneratingPublishAssist.value && !isGeneratingRedbookAssist.value && !isIndexing.value && !isTranslating.value)) {
     if (pollingInterval) {
       clearInterval(pollingInterval);
       pollingInterval = null;
@@ -1377,6 +1384,9 @@ const pollAnalysisStatus = async () => {
       videoDescription.value = decodeHtml(result.data.videoDescription || '');
       videoHashtags.value = decodeHtml(result.data.videoHashtags || '');
       keywordGlossary.value = normalizeKeywordGlossary(result.data.keywordGlossary || []);
+      redbookTitle.value = decodeHtml(result.data.redbookTitle || '');
+      redbookDescription.value = decodeHtml(result.data.redbookDescription || '');
+      redbookHashtags.value = decodeHtml(result.data.redbookHashtags || '');
 
       // 2. 更新摘要
       if (result.data.takeaways && result.data.takeaways.length > 0) {
@@ -1403,6 +1413,10 @@ const pollAnalysisStatus = async () => {
         isGeneratingPublishAssist.value = false;
       }
 
+      if (result.data.redbookReady) {
+        isGeneratingRedbookAssist.value = false;
+      }
+
       // 4. 更新索引状态 (只要后端返回 true，就释放前端按钮)
       if (result.data.isIndexed !== undefined) {
          if (result.data.isIndexed) {
@@ -1418,7 +1432,7 @@ const pollAnalysisStatus = async () => {
       }
 
       // 如果全部完成，停止轮询
-      if (!isAnalyzingSummary.value && !isGeneratingMindmap.value && !isGeneratingPublishAssist.value && !isIndexing.value && !isTranslating.value) {
+      if (!isAnalyzingSummary.value && !isGeneratingMindmap.value && !isGeneratingPublishAssist.value && !isGeneratingRedbookAssist.value && !isIndexing.value && !isTranslating.value) {
         if (pollingInterval) {
           clearInterval(pollingInterval);
           pollingInterval = null;
@@ -1450,6 +1464,7 @@ const handleAnalyze = async (force: boolean = false) => {
   isAnalyzingSummary.value = false;
   isGeneratingMindmap.value = false;
   isGeneratingPublishAssist.value = false;
+  isGeneratingRedbookAssist.value = false;
   isIndexing.value = false;
 
   if (pollingInterval) clearInterval(pollingInterval);
@@ -1459,6 +1474,9 @@ const handleAnalyze = async (force: boolean = false) => {
   activeTranscriptIndex.value = null;
   videoDescription.value = '';
   videoHashtags.value = '';
+  redbookTitle.value = '';
+  redbookDescription.value = '';
+  redbookHashtags.value = '';
   keywordGlossary.value = [];
   closeGlossaryPicker(true);
   currentVideoTime.value = 0;
@@ -1491,6 +1509,9 @@ const handleAnalyze = async (force: boolean = false) => {
       videoDescription.value = decodeHtml(result.data.videoDescription || '');
       videoHashtags.value = decodeHtml(result.data.videoHashtags || '');
       keywordGlossary.value = normalizeKeywordGlossary(result.data.keywordGlossary || []);
+      redbookTitle.value = decodeHtml(result.data.redbookTitle || '');
+      redbookDescription.value = decodeHtml(result.data.redbookDescription || '');
+      redbookHashtags.value = decodeHtml(result.data.redbookHashtags || '');
       mindmapRaw.value = result.data.mindmap || '';
 
       const rawTranscript = result.data.transcript || [];
@@ -1512,6 +1533,8 @@ const handleAnalyze = async (force: boolean = false) => {
 
       isGeneratingMindmap.value = !result.data.mindmapReady;
       isGeneratingPublishAssist.value = !result.data.publishReady;
+      // Only show redbook generating state for non-cached (actively analyzing) videos
+      isGeneratingRedbookAssist.value = !result.cached && !result.data.redbookReady;
 
       // 索引状态
       if (!result.data.isIndexed) {
@@ -1530,7 +1553,7 @@ const handleAnalyze = async (force: boolean = false) => {
       window.dispatchEvent(new Event('video-analyzed')); // 刷新历史
 
       // 开启轮询 (如果任何一个异步状态处于 active)
-      if (isAnalyzingSummary.value || isGeneratingMindmap.value || isGeneratingPublishAssist.value || isIndexing.value || isTranslating.value) {
+      if (isAnalyzingSummary.value || isGeneratingMindmap.value || isGeneratingPublishAssist.value || isGeneratingRedbookAssist.value || isIndexing.value || isTranslating.value) {
         pollingInterval = setInterval(pollAnalysisStatus, 3000);
       }
 
@@ -1733,6 +1756,51 @@ const copyToClipboard = async (text: string, message: string = '内容已复制�
       message: '复制到剪贴板失败，请稍后重试。',
       type: 'error',
     });
+  }
+};
+
+const regenerateChannelsAssist = async () => {
+  if (!videoId.value || isRegeneratingChannels.value) return;
+  isRegeneratingChannels.value = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/regenerate-channels`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    const result = await res.json();
+    if (result.success && result.data) {
+      videoDescription.value = decodeHtml(result.data.videoDescription || '');
+      videoHashtags.value = decodeHtml(result.data.videoHashtags || '');
+      showActionNotice({ title: '重新生成成功', message: '视频号文案已更新', type: 'success' });
+    }
+  } catch (err) {
+    console.error('Failed to regenerate channels assist:', err);
+    showActionNotice({ title: '生成失败', message: '重新生成视频号文案失败', type: 'error' });
+  } finally {
+    isRegeneratingChannels.value = false;
+  }
+};
+
+const regenerateRedbookAssist = async () => {
+  if (!videoId.value || isRegeneratingRedbook.value) return;
+  isRegeneratingRedbook.value = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/regenerate-redbook`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    const result = await res.json();
+    if (result.success && result.data) {
+      redbookTitle.value = decodeHtml(result.data.redbookTitle || '');
+      redbookDescription.value = decodeHtml(result.data.redbookDescription || '');
+      redbookHashtags.value = decodeHtml(result.data.redbookHashtags || '');
+      showActionNotice({ title: '重新生成成功', message: '小红书文案已更新', type: 'success' });
+    }
+  } catch (err) {
+    console.error('Failed to regenerate redbook assist:', err);
+    showActionNotice({ title: '生成失败', message: '重新生成小红书文案失败', type: 'error' });
+  } finally {
+    isRegeneratingRedbook.value = false;
   }
 };
 
@@ -2204,41 +2272,120 @@ const takeawayMap = computed(() => {
                 </div>
               </div>
 
-              <!-- 新增：视频号发布提示区域 -->
-              <div v-if="videoDescription || videoHashtags || keywordGlossary.length || showKeywordGlossaryForm || isGeneratingPublishAssist" class="channels-publish-section animate-fade-in">
+              <!-- 发布辅助区域（视频号 / 小红书 切换） -->
+              <div v-if="showResult && takeaways.length > 0" class="channels-publish-section animate-fade-in">
                 <div class="divider"></div>
-                <div class="publish-header">
-                  <div class="publish-badge">
+
+                <div class="publish-tabs">
+                  <button
+                    class="publish-tab"
+                    :class="{ active: activePublishTab === 'channels' }"
+                    @click="activePublishTab = 'channels'"
+                  >
                     <Sparkles :size="12" />
-                    <span>视频号发布辅助</span>
+                    <span>视频号</span>
+                  </button>
+                  <button
+                    class="publish-tab"
+                    :class="{ active: activePublishTab === 'redbook' }"
+                    @click="activePublishTab = 'redbook'"
+                  >
+                    <BookOpen :size="12" />
+                    <span>小红书</span>
+                  </button>
+                </div>
+
+                <!-- 视频号 Tab -->
+                <div v-if="activePublishTab === 'channels'">
+                  <div v-if="(isGeneratingPublishAssist || isRegeneratingChannels) && !videoDescription && !videoHashtags" class="publish-item">
+                    <div class="publish-content glossary-empty-state">
+                      <Loader2 :size="16" class="spin" />
+                      <span>正在生成发布文案...</span>
+                    </div>
+                  </div>
+
+                  <div v-else-if="!videoDescription && !videoHashtags" class="publish-item">
+                    <div class="publish-content glossary-empty-state publish-empty-action">
+                      <span>暂无视频号文案</span>
+                      <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels">
+                        <Sparkles :size="12" />
+                        <span>立即生成</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="videoDescription || videoHashtags" class="publish-item">
+                    <div class="publish-label">
+                      <span>发布文案 / Post Copy</span>
+                      <div class="publish-label-actions">
+                        <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels">
+                          <Loader2 v-if="isRegeneratingChannels" :size="12" class="spin" />
+                          <RefreshCw v-else :size="12" />
+                          <span>{{ isRegeneratingChannels ? '生成中...' : '重新生成' }}</span>
+                        </button>
+                        <button class="btn-copy-mini" @click="copyToClipboard([videoDescription, videoHashtags].filter(Boolean).join('\n\n'))">
+                          <span>一键复制</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="publish-content">
+                      <div v-if="videoDescription">{{ videoDescription }}</div>
+                      <div v-if="videoHashtags" class="publish-hashtags-inline">{{ videoHashtags }}</div>
+                    </div>
                   </div>
                 </div>
 
-                <div v-if="isGeneratingPublishAssist && !videoDescription && !videoHashtags && !keywordGlossary.length && !showKeywordGlossaryForm" class="publish-item">
+                <!-- 小红书 Tab -->
+                <div v-if="activePublishTab === 'redbook'">
+                  <div v-if="(isGeneratingRedbookAssist || isRegeneratingRedbook) && !redbookTitle && !redbookDescription && !redbookHashtags" class="publish-item">
+                    <div class="publish-content glossary-empty-state">
+                      <Loader2 :size="16" class="spin" />
+                      <span>正在生成小红书文案...</span>
+                    </div>
+                  </div>
+
+                  <div v-else-if="!redbookTitle && !redbookDescription && !redbookHashtags" class="publish-item">
+                    <div class="publish-content glossary-empty-state publish-empty-action">
+                      <span>暂无小红书文案</span>
+                      <button class="btn-copy-mini" @click="regenerateRedbookAssist" :disabled="isRegeneratingRedbook">
+                        <Sparkles :size="12" />
+                        <span>立即生成</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div v-if="redbookTitle || redbookDescription || redbookHashtags" class="publish-item">
+                    <div class="publish-label">
+                      <span>发布文案 / Post Copy</span>
+                      <div class="publish-label-actions">
+                        <button class="btn-copy-mini" @click="regenerateRedbookAssist" :disabled="isRegeneratingRedbook">
+                          <Loader2 v-if="isRegeneratingRedbook" :size="12" class="spin" />
+                          <RefreshCw v-else :size="12" />
+                          <span>{{ isRegeneratingRedbook ? '生成中...' : '重新生成' }}</span>
+                        </button>
+                        <button class="btn-copy-mini" @click="copyToClipboard([redbookTitle, redbookDescription, redbookHashtags].filter(Boolean).join('\n\n'))">
+                          <span>一键复制</span>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="publish-content redbook-description-content">
+                      <div v-if="redbookTitle" class="redbook-title-content">{{ redbookTitle }}</div>
+                      <div v-if="redbookDescription" class="redbook-body-content">{{ redbookDescription }}</div>
+                      <div v-if="redbookHashtags" class="publish-hashtags-inline">{{ redbookHashtags }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 关键词汇独立区域 -->
+              <div v-if="keywordGlossary.length || showKeywordGlossaryForm || (isGeneratingPublishAssist && !keywordGlossary.length)" class="channels-publish-section animate-fade-in">
+                <div class="divider"></div>
+
+                <div v-if="isGeneratingPublishAssist && !keywordGlossary.length && !showKeywordGlossaryForm" class="publish-item">
                   <div class="publish-content glossary-empty-state">
                     <Loader2 :size="16" class="spin" />
-                    <span>正在生成发布文案、话题和词汇整理...</span>
+                    <span>正在提取关键词汇...</span>
                   </div>
-                </div>
-
-                <div v-if="videoDescription" class="publish-item">
-                  <div class="publish-label">
-                    <span>视频描述 / Description</span>
-                    <button class="btn-copy-mini" @click="copyToClipboard(videoDescription)">
-                      <span>点击复制</span>
-                    </button>
-                  </div>
-                  <div class="publish-content">{{ videoDescription }}</div>
-                </div>
-
-                <div v-if="videoHashtags" class="publish-item">
-                  <div class="publish-label">
-                    <span>话题标签 / Hashtags</span>
-                    <button class="btn-copy-mini" @click="copyToClipboard(videoHashtags)">
-                      <span>点击复制</span>
-                    </button>
-                  </div>
-                  <div class="publish-content hashtags">{{ videoHashtags }}</div>
                 </div>
 
                 <div v-if="keywordGlossary.length" class="publish-item">
@@ -4563,6 +4710,43 @@ input::placeholder {
   margin-top: 12px;
 }
 
+.publish-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.publish-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.publish-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.publish-tab.active {
+  color: #10b981;
+  border-bottom-color: #10b981;
+}
+
+.publish-tab.active:last-child {
+  color: #ff2d55;
+  border-bottom-color: #ff2d55;
+}
+
 .publish-header {
   margin-bottom: 20px;
   display: flex;
@@ -4580,6 +4764,28 @@ input::placeholder {
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.publish-badge.redbook-badge {
+  background: rgba(255, 45, 85, 0.1);
+  color: #ff2d55;
+  border: 1px solid rgba(255, 45, 85, 0.2);
+}
+
+.redbook-title-content {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.redbook-body-content {
+  white-space: pre-wrap;
+  line-height: 1.8;
+}
+
+.redbook-description-content {
+  white-space: pre-wrap;
+  line-height: 1.8;
 }
 
 .publish-item {
@@ -4617,6 +4823,24 @@ input::placeholder {
 .publish-content.hashtags {
   color: var(--accent-color);
   font-weight: 500;
+}
+
+.publish-hashtags-inline {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  color: var(--accent-color);
+  font-weight: 500;
+}
+
+.publish-empty-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px 16px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
 }
 
 .glossary-grid {

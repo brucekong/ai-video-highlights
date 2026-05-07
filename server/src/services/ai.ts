@@ -27,11 +27,18 @@ export interface AIPublishAssistResult {
   keywordGlossary?: AIKeywordGlossaryItem[];
 }
 
+export interface AIRedbookAssistResult {
+  redbookTitle?: string;
+  redbookDescription?: string;
+  redbookHashtags?: string;
+}
+
 export interface AIMindmapResult {
   mindmap: string;
 }
 
 const FIXED_VIDEO_HASHTAGS = ['#慢速英语动画', '#慢速英语', '#慢速口语'] as const;
+const FIXED_REDBOOK_HASHTAGS = ['#慢速英语动画', '#慢速英语'] as const;
 const KEYWORD_GLOSSARY_MAX_WORDS = 8;
 const KEYWORD_GLOSSARY_MAX_CHARS = 80;
 
@@ -94,6 +101,24 @@ const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。
 6. 如果视频主要是中文，keyword_glossary 可以返回空数组
 7. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
 
+const REDBOOK_ASSIST_SYSTEM_PROMPT = `你是一个小红书内容运营专家。你的任务是基于视频转录文本，生成一套适合在小红书发布的文案。
+
+请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
+
+{
+  "redbook_title": "带有 emoji 的吸引人标题，20 字以内",
+  "redbook_description": "小红书风格的正文内容，包含 emoji 和分段",
+  "redbook_hashtags": "#话题1 #话题2 #话题3"
+}
+
+要求：
+1. redbook_title 要吸引眼球，使用 1-2 个贴切的 emoji 开头或穿插，风格活泼，适合小红书信息流
+2. redbook_description 要符合小红书排版风格：使用 emoji 做段落分隔符，每段 1-2 句话，整体 150-300 字，语气自然亲切，有干货感
+3. redbook_hashtags 提取 5-8 个适合小红书的话题标签，包括通用热门话题和垂直领域话题，使用空格分隔
+4. 如果视频是英文内容，文案仍然用中文撰写，但可以保留少量英文关键词增加专业感
+5. 避免空泛套话，要突出视频的核心价值和亮点
+6. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
+
 const MINDMAP_SYSTEM_PROMPT = `你是一个视频结构化分析助手。你的任务是根据视频转录文本生成一份完整、层次清晰的脑图 Markdown。
 
 请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
@@ -151,6 +176,28 @@ function normalizeVideoHashtags(rawHashtags: unknown): string {
   };
 
   FIXED_VIDEO_HASHTAGS.forEach(pushTag);
+
+  String(rawHashtags || '')
+    .split(/\s+/)
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .forEach(pushTag);
+
+  return tags.join(' ');
+}
+
+function normalizeRedbookHashtags(rawHashtags: unknown): string {
+  const seen = new Set<string>();
+  const tags: string[] = [];
+
+  const pushTag = (value: string) => {
+    const normalized = value.trim().replace(/^#+/, '#');
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    tags.push(normalized);
+  };
+
+  FIXED_REDBOOK_HASHTAGS.forEach(pushTag);
 
   String(rawHashtags || '')
     .split(/\s+/)
@@ -322,6 +369,22 @@ export async function generatePublishAssist(
         }))
         .filter((item: AIKeywordGlossaryItem) => item.english && item.chinese)
       : [],
+  };
+}
+
+export async function generateRedbookAssist(
+  formattedTranscript: string,
+): Promise<AIRedbookAssistResult> {
+  const parsed = await requestJsonFromDeepSeek({
+    systemPrompt: REDBOOK_ASSIST_SYSTEM_PROMPT,
+    userContent: `以下是视频转录文本：\n\n${formattedTranscript}`,
+    maxTokens: 1200,
+  });
+
+  return {
+    redbookTitle: String(parsed.redbook_title || '').trim(),
+    redbookDescription: String(parsed.redbook_description || '').trim(),
+    redbookHashtags: normalizeRedbookHashtags(parsed.redbook_hashtags),
   };
 }
 

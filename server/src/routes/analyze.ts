@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { fetchTranscript, formatTranscriptForAI, type TranscriptSegment } from '../services/transcript.js';
 import { fetchBilibiliTranscript } from '../services/bilibili.js';
-import { analyzeTranscriptSummary, generatePublishAssist, generateMindmap, translateTranscriptSegments, getEmbedding, getEmbeddings } from '../services/ai.js';
+import { analyzeTranscriptSummary, generatePublishAssist, generateRedbookAssist, generateMindmap, translateTranscriptSegments, getEmbedding, getEmbeddings } from '../services/ai.js';
 import { fallbackToWhisper } from '../services/whisper.js';
 import { fetchVideoMetadata } from '../services/metadata.js';
 import { containsSensitiveContent } from '../services/safety.js';
@@ -52,8 +52,12 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
                 keywordGlossary: { type: 'array', items: Schemas.KeywordGlossaryItem, nullable: true },
+                redbookTitle: { type: 'string', nullable: true },
+                redbookDescription: { type: 'string', nullable: true },
+                redbookHashtags: { type: 'string', nullable: true },
                 summaryReady: { type: 'boolean' },
                 publishReady: { type: 'boolean' },
+                redbookReady: { type: 'boolean' },
                 mindmapReady: { type: 'boolean' },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
@@ -106,8 +110,12 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               videoDescription: cached.videoDescription,
               videoHashtags: cached.videoHashtags,
               keywordGlossary: Array.isArray(cached.keywordGlossary) ? cached.keywordGlossary : [],
+              redbookTitle: cached.redbookTitle,
+              redbookDescription: cached.redbookDescription,
+              redbookHashtags: cached.redbookHashtags,
               summaryReady: cached.takeaways.length > 0,
               publishReady: Boolean(cached.videoDescription || cached.videoHashtags || (Array.isArray(cached.keywordGlossary) && cached.keywordGlossary.length > 0)),
+              redbookReady: Boolean(cached.redbookTitle || cached.redbookDescription),
               mindmapReady: Boolean(cached.mindmap),
               isIndexed,
               transcriptSource: cached.subtitleCues.length > 0 ? 'cue' : 'raw',
@@ -291,6 +299,27 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
             }
           };
 
+          // STAGE 2D: 小红书发布辅助
+          const redbookAssistTask = async () => {
+            try {
+              console.log(`[Background] Stage 2D: Redbook assist starting...`);
+              const redbookResult = await generateRedbookAssist(formattedText);
+
+              await prisma.video.update({
+                where: { videoId },
+                data: {
+                  redbookTitle: redbookResult.redbookTitle,
+                  redbookDescription: redbookResult.redbookDescription,
+                  redbookHashtags: redbookResult.redbookHashtags,
+                },
+              });
+
+              console.log(`[Background] Stage 2D: Redbook assist completed.`);
+            } catch (err) {
+              console.error(`[Background Task] Stage 2D (Redbook Assist) failed:`, err);
+            }
+          };
+
           // STAGE 3: 翻译流程
           // 先按展示 cue 级别翻译，避免把半句原始 subtitle 直接送入模型导致整段串位。
           const translationFlowTask = async () => {
@@ -390,7 +419,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           // 1. 先做原文索引（最快解锁按钮）
           await initialEmbeddingTask();
           // 2. 然后并行处理摘要、发布辅助、脑图和翻译流
-          await Promise.all([summaryTask(), publishAssistTask(), mindmapTask(), translationFlowTask()]);
+          await Promise.all([summaryTask(), publishAssistTask(), redbookAssistTask(), mindmapTask(), translationFlowTask()]);
 
         } catch (err) {
           console.error(`[Background Task Overall] ${videoId}:`, err);
@@ -423,8 +452,12 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           videoDescription: null,
           videoHashtags: null,
           keywordGlossary: [],
+          redbookTitle: null,
+          redbookDescription: null,
+          redbookHashtags: null,
           summaryReady: false,
           publishReady: false,
+          redbookReady: false,
           mindmapReady: false,
           isIndexed: false, // 明确告知前端处于未索引状态，启动轮询
           transcriptSource: hasInitialCues > 0 ? 'cue' : 'raw',

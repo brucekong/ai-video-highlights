@@ -23,9 +23,9 @@
     "youtube-transcript": "^1.2.1"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.1.4",
+    "@vitejs/plugin-vue": "^6.0.6",
     "typescript": "^5.5.3",
-    "vite": "^5.4.8",
+    "vite": "^6.4.2",
     "vue-tsc": "^2.1.6"
   }
 }

@@ -9,6 +9,8 @@ import { exportToNotion } from '../services/notion.js';
 import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
 import {
   enrichKeywordGlossaryItem,
+  generatePublishAssist,
+  generateRedbookAssist,
   getEmbedding,
   isValidKeywordGlossaryEnglish,
   normalizeKeywordGlossaryEnglish,
@@ -432,8 +434,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
                 keywordGlossary: { type: 'array', items: Schemas.KeywordGlossaryItem, nullable: true },
+                redbookTitle: { type: 'string', nullable: true },
+                redbookDescription: { type: 'string', nullable: true },
+                redbookHashtags: { type: 'string', nullable: true },
                 summaryReady: { type: 'boolean' },
                 publishReady: { type: 'boolean' },
+                redbookReady: { type: 'boolean' },
                 mindmapReady: { type: 'boolean' },
                 isIndexed: { type: 'boolean', description: '是否已完成向量化索引' },
                 transcriptSource: { type: 'string', enum: ['raw', 'cue'] },
@@ -488,8 +494,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
         videoDescription: video.videoDescription,
         videoHashtags: video.videoHashtags,
         keywordGlossary: Array.isArray(video.keywordGlossary) ? video.keywordGlossary : [],
+        redbookTitle: video.redbookTitle,
+        redbookDescription: video.redbookDescription,
+        redbookHashtags: video.redbookHashtags,
         summaryReady: video.takeaways.length > 0,
         publishReady: Boolean(video.videoDescription || video.videoHashtags || (Array.isArray(video.keywordGlossary) && video.keywordGlossary.length > 0)),
+        redbookReady: Boolean(video.redbookTitle || video.redbookDescription),
         mindmapReady: Boolean(video.mindmap),
         isIndexed,
         transcriptSource: video.subtitleCues.length > 0 ? 'cue' : 'raw',
@@ -1379,6 +1389,158 @@ export async function videoRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       fastify.log.error(error);
       return reply.status(500).send({ error: '重翻译失败', message: error.message });
+    }
+  });
+
+  /**
+   * POST /api/videos/:videoId/regenerate-channels
+   * 重新生成视频号发布辅助文案
+   */
+  fastify.post('/api/videos/:videoId/regenerate-channels', {
+    schema: {
+      tags: ['Videos'],
+      summary: '重新生成视频号发布文案',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: { videoId: { type: 'string' } },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: {
+              type: 'object',
+              properties: {
+                videoDescription: { type: 'string', nullable: true },
+                videoHashtags: { type: 'string', nullable: true },
+              },
+            },
+          },
+        },
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+
+    const video = await prisma.video.findUnique({
+      where: { videoId },
+      include: { subtitles: { orderBy: { sortOrder: 'asc' } } },
+    });
+
+    if (!video) return reply.status(404).send({ error: '视频不存在' });
+    if (!video.subtitles.length) return reply.status(400).send({ error: '视频无字幕数据' });
+
+    try {
+      const { formatTranscriptForAI } = await import('../services/transcript.js');
+      const formattedText = formatTranscriptForAI(
+        video.subtitles.map(s => ({ text: s.text, offset: s.offset, duration: s.duration }))
+      );
+
+      const result = await generatePublishAssist(formattedText);
+
+      await prisma.video.update({
+        where: { videoId },
+        data: {
+          videoDescription: result.videoDescription,
+          videoHashtags: result.videoHashtags,
+          keywordGlossary: (result.keywordGlossary || []) as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return reply.send({
+        success: true,
+        data: {
+          videoDescription: result.videoDescription,
+          videoHashtags: result.videoHashtags,
+        },
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: '重新生成视频号文案失败', message: error.message });
+    }
+  });
+
+  /**
+   * POST /api/videos/:videoId/regenerate-redbook
+   * 重新生成小红书发布辅助文案
+   */
+  fastify.post('/api/videos/:videoId/regenerate-redbook', {
+    schema: {
+      tags: ['Videos'],
+      summary: '重新生成小红书发布文案',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: { videoId: { type: 'string' } },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: {
+              type: 'object',
+              properties: {
+                redbookTitle: { type: 'string', nullable: true },
+                redbookDescription: { type: 'string', nullable: true },
+                redbookHashtags: { type: 'string', nullable: true },
+              },
+            },
+          },
+        },
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+
+    const video = await prisma.video.findUnique({
+      where: { videoId },
+      include: { subtitles: { orderBy: { sortOrder: 'asc' } } },
+    });
+
+    if (!video) return reply.status(404).send({ error: '视频不存在' });
+    if (!video.subtitles.length) return reply.status(400).send({ error: '视频无字幕数据' });
+
+    try {
+      const { formatTranscriptForAI } = await import('../services/transcript.js');
+      const formattedText = formatTranscriptForAI(
+        video.subtitles.map(s => ({ text: s.text, offset: s.offset, duration: s.duration }))
+      );
+
+      const result = await generateRedbookAssist(formattedText);
+
+      await prisma.video.update({
+        where: { videoId },
+        data: {
+          redbookTitle: result.redbookTitle,
+          redbookDescription: result.redbookDescription,
+          redbookHashtags: result.redbookHashtags,
+        },
+      });
+
+      return reply.send({
+        success: true,
+        data: {
+          redbookTitle: result.redbookTitle,
+          redbookDescription: result.redbookDescription,
+          redbookHashtags: result.redbookHashtags,
+        },
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: '重新生成小红书文案失败', message: error.message });
     }
   });
 }

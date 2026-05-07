@@ -110,7 +110,7 @@ const clipDuration = computed(() => {
 });
 
 const isValidRange = computed(() => {
-  return endTime.value > startTime.value && clipDuration.value >= MIN_CLIP_DURATION && clipDuration.value <= 600; // Limit to 10 mins
+  return endTime.value > startTime.value && clipDuration.value >= MIN_CLIP_DURATION
 });
 
 const setStart = () => {

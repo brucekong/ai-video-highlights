@@ -237,23 +237,24 @@ function buildScenes(segments: TranscriptCueSegment[]): TranscriptCueSegment[][]
 function parseGlossary(keywordGlossary: Prisma.JsonValue | null): GlossaryItem[] {
   if (!Array.isArray(keywordGlossary)) return [];
 
-  return keywordGlossary
-    .map((item) => {
-      if (!item || typeof item !== 'object') return null;
+  const results: GlossaryItem[] = [];
+  for (const item of keywordGlossary) {
+    if (item && typeof item === 'object') {
       const record = item as Record<string, unknown>;
       const english = cleanText(String(record.english || ''));
       const chinese = cleanText(String(record.chinese || ''));
 
-      if (!english || !chinese) return null;
-
-      return {
-        english,
-        chinese,
-        phonetic: cleanText(String(record.phonetic || '')) || undefined,
-        type: record.type === 'phrase' ? 'phrase' : 'word',
-      } satisfies GlossaryItem;
-    })
-    .filter((item): item is GlossaryItem => Boolean(item));
+      if (english && chinese) {
+        results.push({
+          english,
+          chinese,
+          phonetic: cleanText(String(record.phonetic || '')) || undefined,
+          type: record.type === 'phrase' ? 'phrase' : 'word',
+        });
+      }
+    }
+  }
+  return results;
 }
 
 export async function buildStorybookDraft(

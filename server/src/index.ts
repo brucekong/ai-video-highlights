@@ -11,6 +11,7 @@ import { videoRoutes } from './routes/video.js';
 import { searchRoutes } from './routes/search.js';
 import { transcriptRoutes } from './routes/transcript.js';
 import { swaggerOptions } from './docs/openapi.js';
+import { startKeepAlive } from './lib/keepalive.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -158,6 +159,9 @@ async function main() {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
     fastify.log.info(`🚀 Server is running on http://localhost:${PORT}`);
     fastify.log.info(`📖 API Documentation: http://localhost:${PORT}/api/docs`);
+
+    // 启动保活定时任务（仅生产环境）
+    startKeepAlive();
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

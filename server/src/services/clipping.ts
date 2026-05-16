@@ -328,7 +328,7 @@ const DEFAULT_WATERMARK_TEXT = '@慢速英语动画';
 const DEFAULT_WATERMARK_ALPHA = 0.5;
 const DEFAULT_WATERMARK_MARGIN = 28;
 const WATERMARK_VERSION = 'wm_v1';
-const CLIP_PIPELINE_VERSION = 'clip_v2';
+const CLIP_PIPELINE_VERSION = 'clip_v5';
 
 function buildWatermarkFilter(): string {
   const fontFile = escapeDrawtextPath(getSubtitleFontFile());
@@ -487,11 +487,13 @@ export async function createVideoClip({
   const hasTranslatedSubs = mergedSubtitles.some((s) => s.translatedText && s.translatedText.trim());
   // 英文视频切片统一输出中文字幕硬字幕
   const shouldBurnTranslatedSubtitles = format === 'mp4' && language !== 'zh' && hasTranslatedSubs;
+  const shouldBurnRequestedSubtitles = format === 'mp4' && burnSubtitles && mergedSubtitles.length > 0;
+  const shouldBurnAnySubtitles = shouldBurnTranslatedSubtitles || shouldBurnRequestedSubtitles;
   const isMp3 = format === 'mp3';
 
   // 生成更友好的缓存文件名
   const safeTitle = sanitizeFilename(title);
-  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}_${quality}${shouldBurnTranslatedSubtitles ? '_burned_zh_v21' : ''}${burnSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}_${CLIP_PIPELINE_VERSION}_${WATERMARK_VERSION}`;
+  const clipId = `${safeTitle}_${videoId}_${Math.floor(start)}_${Math.floor(duration)}_${quality}${shouldBurnTranslatedSubtitles ? '_burned_zh_v21' : ''}${shouldBurnRequestedSubtitles && !shouldBurnTranslatedSubtitles ? '_burned' : ''}${isMp3 ? '_mp3' : ''}_${CLIP_PIPELINE_VERSION}_${WATERMARK_VERSION}`;
   const ext = isMp3 ? 'mp3' : 'mp4';
   const outputPath = path.join(CLIPS_DIR, `${clipId}.${ext}`);
 
@@ -524,17 +526,21 @@ export async function createVideoClip({
       return outputPath;
     }
 
-    if (shouldBurnTranslatedSubtitles) {
-      const srtContent = generateSrt(mergedSubtitles, start, { translatedOnly: true });
+    // First produce a local clip with normalized timestamps. Burning subtitles
+    // directly while trimming from the source can desync ASS/SRT timing on some
+    // sources even when the rendered result "looks" successful in single-frame tests.
+    await execAsync(`ffmpeg -y -i "${sourceVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${tempRawPath}"`);
+
+    if (shouldBurnAnySubtitles) {
+      const srtContent = generateSrt(mergedSubtitles, start, {
+        translatedOnly: shouldBurnTranslatedSubtitles,
+      });
       await fs.writeFile(srtPath, srtContent);
       const vfFilter = appendWatermarkFilter(buildHardSubtitleFilter(srtPath));
-      await execAsync(`ffmpeg -y -i "${sourceVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
+      console.log(`[Clipping] Burning ${shouldBurnTranslatedSubtitles ? 'translated' : 'original/bilingual'} subtitles into clip output...`);
+      await execAsync(`ffmpeg -y -i "${tempRawPath}" -map 0:v:0 -map 0:a:0? -vf "${vfFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${outputPath}"`);
       return outputPath;
     }
-
-    // Avoid stream-copy cutting here. Copy-based trimming around non-keyframes
-    // can produce clips with damaged/misaligned audio tracks on some sources.
-    await execAsync(`ffmpeg -y -i "${sourceVideoPath}" -ss ${start} -t ${duration} -map 0:v:0 -map 0:a:0? -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${tempRawPath}"`);
 
     // 最终封装阶段：强制重编码为兼容性最高的 H.264 + YUV420P
     console.log(`[Clipping] Finalizing video with high-compatibility settings...`);

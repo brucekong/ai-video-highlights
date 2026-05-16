@@ -9,7 +9,8 @@ const emit = defineEmits(['close']);
 
 const loginWithGoogle = () => {
   const currentPath = window.location.pathname + window.location.search;
-  window.location.href = `${API_BASE}/api/auth/google?redirect=${encodeURIComponent(currentPath)}`;
+  const origin = window.location.origin;
+  window.location.href = `${API_BASE}/api/auth/google?redirect=${encodeURIComponent(currentPath)}&origin=${encodeURIComponent(origin)}`;
 };
 
 const handleEsc = (e: KeyboardEvent) => {

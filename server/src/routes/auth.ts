@@ -38,14 +38,44 @@ const getCookieDomain = (): string => {
 const COOKIE_DOMAIN = getCookieDomain();
 const IS_PRODUCTION = FRONTEND_URL.startsWith('https');
 
-// 动态获取前端 URL (本地开发环境下优先使用请求的 Origin)
-const getFrontendUrl = (request: FastifyRequest) => {
-  const origin = request.headers.origin || request.headers.referer;
-  if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+// 检查 origin 是否为允许的本地开发地址
+const isAllowedLocalOrigin = (origin: string): boolean => {
+  try {
+    const url = new URL(origin);
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+};
+
+// 从 state 中解析前端 origin 和 redirect 路径
+const parseState = (state?: string): { redirect?: string; origin?: string } => {
+  if (!state) return {};
+  try {
+    return JSON.parse(Buffer.from(state, 'base64').toString('utf-8'));
+  } catch {
+    // 兼容旧格式（纯 redirect 路径）
     try {
-      const url = new URL(origin);
+      return { redirect: Buffer.from(state, 'base64').toString('utf-8') };
+    } catch {
+      return {};
+    }
+  }
+};
+
+// 动态获取前端 URL：优先使用 state 中携带的 origin（本地开发时端口可能不固定）
+const getFrontendUrl = (request: FastifyRequest, stateOrigin?: string) => {
+  // 优先使用 state 中携带的 origin（已通过 OAuth 流程传递）
+  if (stateOrigin && isAllowedLocalOrigin(stateOrigin)) {
+    return stateOrigin;
+  }
+  // 回退：尝试从请求头获取
+  const headerOrigin = request.headers.origin || request.headers.referer;
+  if (headerOrigin && isAllowedLocalOrigin(headerOrigin)) {
+    try {
+      const url = new URL(headerOrigin);
       return `${url.protocol}//${url.host}`;
-    } catch (e) {
+    } catch {
       return FRONTEND_URL;
     }
   }
@@ -63,16 +93,15 @@ export async function authRoutes(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           redirect: { type: 'string', description: '登录成功后返回的页面路径' },
+          origin: { type: 'string', description: '前端 origin（本地开发时端口可能不固定）' },
         },
       },
-      response: {
-        302: { type: 'null', description: '重定向到 Google 授权页面' },
-      },
     },
-  }, async (request: FastifyRequest<{ Querystring: { redirect?: string } }>, reply) => {
-    const { redirect } = request.query;
-    // 使用 state 携带跳转地址
-    const state = redirect ? Buffer.from(redirect).toString('base64') : '';
+  }, async (request: FastifyRequest<{ Querystring: { redirect?: string; origin?: string } }>, reply) => {
+    const { redirect, origin } = request.query;
+    // 将 redirect 路径和前端 origin 一起编码进 state
+    const statePayload = JSON.stringify({ redirect, origin });
+    const state = Buffer.from(statePayload).toString('base64');
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${GOOGLE_REDIRECT_URI}&response_type=code&scope=email%20profile&state=${state}`;
 
     console.log(authUrl);
@@ -100,15 +129,11 @@ export async function authRoutes(fastify: FastifyInstance) {
     reply: FastifyReply
   ) => {
     const { code, state } = request.query;
-    const targetBase = getFrontendUrl(request);
+    const { redirect, origin: stateOrigin } = parseState(state);
+    const targetBase = getFrontendUrl(request, stateOrigin);
     let targetUrl = targetBase;
-    if (state) {
-      try {
-        const decodedPath = Buffer.from(state, 'base64').toString('utf-8');
-        targetUrl = `${targetBase}${decodedPath.startsWith('/') ? '' : '/'}${decodedPath}`;
-      } catch (e) {
-        console.error('Failed to decode state:', e);
-      }
+    if (redirect) {
+      targetUrl = `${targetBase}${redirect.startsWith('/') ? '' : '/'}${redirect}`;
     }
 
     if (!code) {
@@ -172,15 +197,17 @@ export async function authRoutes(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           redirect: { type: 'string', description: '登录成功后返回的页面路径' },
+          origin: { type: 'string', description: '前端 origin（本地开发时端口可能不固定）' },
         },
       },
       response: {
         302: { type: 'null', description: '重定向到微信授权页面' },
       },
     },
-  }, async (request: FastifyRequest<{ Querystring: { redirect?: string } }>, reply) => {
-    const { redirect } = request.query;
-    const state = redirect ? Buffer.from(redirect).toString('base64') : 'STATE';
+  }, async (request: FastifyRequest<{ Querystring: { redirect?: string; origin?: string } }>, reply) => {
+    const { redirect, origin } = request.query;
+    const statePayload = JSON.stringify({ redirect, origin });
+    const state = Buffer.from(statePayload).toString('base64');
     const authUrl = `https://open.weixin.qq.com/connect/qrconnect?appid=${WECHAT_APP_ID}&redirect_uri=${encodeURIComponent(WECHAT_REDIRECT_URI)}&response_type=code&scope=snsapi_login&state=${state}#wechat_redirect`;
     reply.redirect(authUrl);
   });
@@ -206,15 +233,11 @@ export async function authRoutes(fastify: FastifyInstance) {
     reply: FastifyReply
   ) => {
     const { code, state } = request.query;
-    const targetBase = getFrontendUrl(request);
+    const { redirect, origin: stateOrigin } = parseState(state);
+    const targetBase = getFrontendUrl(request, stateOrigin);
     let targetUrl = targetBase;
-    if (state && state !== 'STATE') {
-      try {
-        const decodedPath = Buffer.from(state, 'base64').toString('utf-8');
-        targetUrl = `${targetBase}${decodedPath.startsWith('/') ? '' : '/'}${decodedPath}`;
-      } catch (e) {
-        console.error('Failed to decode state:', e);
-      }
+    if (redirect) {
+      targetUrl = `${targetBase}${redirect.startsWith('/') ? '' : '/'}${redirect}`;
     }
 
     if (!code) {

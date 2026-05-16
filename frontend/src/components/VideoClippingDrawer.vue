@@ -49,6 +49,12 @@ const formatTime = (seconds: number) => {
   return `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
 };
 
+const formatSecondsTotal = (seconds: number) => `${seconds.toFixed(1)}s`;
+
+const formatTimeWithSeconds = (seconds: number) => (
+  `${formatTime(seconds)} · ${formatSecondsTotal(seconds)}`
+);
+
 const roundToTenth = (value: number) => Math.round(value * 10) / 10;
 
 const clampTime = (value: number) => {
@@ -109,6 +115,9 @@ const clipDuration = computed(() => {
   return Math.max(0, endTime.value - startTime.value);
 });
 
+const clipDurationFormatted = computed(() => formatTime(clipDuration.value));
+const clipDurationSeconds = computed(() => formatSecondsTotal(clipDuration.value));
+
 const isValidRange = computed(() => {
   return endTime.value > startTime.value && clipDuration.value >= MIN_CLIP_DURATION
 });
@@ -119,6 +128,10 @@ const setStart = () => {
 
 const setEnd = () => {
   endTime.value = props.currentTime;
+};
+
+const setEndToVideoEnd = () => {
+  applyRange(startTime.value, props.videoDuration || 0);
 };
 
 const previewRange = () => {
@@ -257,7 +270,10 @@ const handleGenerate = async () => {
         <div class="clip-summary-bar">
           <div class="summary-chip primary">
             <span class="summary-label">时长</span>
-            <strong>{{ clipDuration.toFixed(1) }}s</strong>
+            <div class="summary-duration">
+              <strong>{{ clipDurationFormatted }}</strong>
+              <span>{{ clipDurationSeconds }}</span>
+            </div>
           </div>
           <div class="summary-chip">
             <span class="summary-label">格式</span>
@@ -298,7 +314,10 @@ const handleGenerate = async () => {
 
           <div class="range-center">
             <div class="range-line"></div>
-            <div class="duration-pill">{{ clipDuration.toFixed(1) }}s</div>
+            <div class="duration-pill">
+              <strong>{{ clipDurationFormatted }}</strong>
+              <span>{{ clipDurationSeconds }}</span>
+            </div>
           </div>
 
           <div class="time-box">
@@ -311,10 +330,24 @@ const handleGenerate = async () => {
             </div>
             <div class="input-with-action">
               <input type="number" v-model.number="endTime" step="0.1" :min="startTime" :max="videoDuration" />
-              <button class="btn-set" @click="setEnd" title="快捷键: O">
-                <Clock :size="12" />
-                <span>此时</span>
-              </button>
+              <div class="input-action-group">
+                <button class="btn-set" @click="setEnd" title="快捷键: O">
+                  <Clock :size="12" />
+                  <span>此时</span>
+                </button>
+                <button
+                  class="btn-set btn-set-end"
+                  @click="setEndToVideoEnd"
+                  :disabled="videoDuration <= 0"
+                  title="将结束时间设为视频结尾"
+                >
+                  <ChevronRight :size="12" />
+                  <span class="btn-set-end-text">
+                    <span>结尾</span>
+                    <span class="btn-set-end-meta">{{ formatTimeWithSeconds(videoDuration) }}</span>
+                  </span>
+                </button>
+              </div>
             </div>
             <div class="nudge-controls">
               <button class="btn-nudge" @click="nudgeEnd(-0.5)" title="后退 0.5s"><ChevronLeft :size="12"/>0.5s</button>
@@ -520,6 +553,17 @@ const handleGenerate = async () => {
   font-weight: 700;
 }
 
+.summary-duration {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.summary-duration span {
+  font-size: 0.66rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
 .range-selector {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 88px minmax(0, 1fr);
@@ -592,6 +636,11 @@ const handleGenerate = async () => {
   outline: none;
 }
 
+.input-action-group {
+  display: flex;
+  gap: 6px;
+}
+
 .btn-set {
   background: rgba(255, 255, 255, 0.06);
   border: none;
@@ -603,6 +652,30 @@ const handleGenerate = async () => {
   gap: 4px;
   font-size: 0.68rem;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-set-end {
+  background: rgba(99, 102, 241, 0.12);
+  align-items: flex-start;
+  min-width: 104px;
+}
+
+.btn-set:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-set-end-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+
+.btn-set-end-meta {
+  font-size: 0.58rem;
+  color: rgba(255, 255, 255, 0.68);
 }
 
 .formatted-time {
@@ -632,13 +705,27 @@ const handleGenerate = async () => {
 .duration-pill {
   background: rgba(99, 102, 241, 0.15);
   color: var(--text-accent);
-  padding: 4px 10px;
+  padding: 6px 10px;
   border-radius: 999px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  box-shadow: 0 8px 18px rgba(99, 102, 241, 0.16);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  min-width: 92px;
+}
+
+.duration-pill strong {
   font-size: 0.75rem;
   font-weight: 700;
-  border: 1px solid rgba(99, 102, 241, 0.2);
   white-space: nowrap;
-  box-shadow: 0 8px 18px rgba(99, 102, 241, 0.16);
+}
+
+.duration-pill span {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.68);
+  white-space: nowrap;
 }
 
 .preview-actions {

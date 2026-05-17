@@ -8,6 +8,7 @@ import { downloadFullVideo } from '../services/clipping.js';
 import { exportToNotion } from '../services/notion.js';
 import { getPreferredTranscriptForVideo, rebuildSubtitleCuesForVideo } from '../services/subtitleCues.js';
 import {
+  analyzeTranscriptSummary,
   enrichKeywordGlossaryItem,
   generatePublishAssist,
   generateRedbookAssist,
@@ -1464,6 +1465,116 @@ export async function videoRoutes(fastify: FastifyInstance) {
     } catch (error: any) {
       fastify.log.error(error);
       return reply.status(500).send({ error: '重新生成视频号文案失败', message: error.message });
+    }
+  });
+
+  /**
+   * POST /api/videos/:videoId/regenerate-summary
+   * 重新生成核心摘要
+   */
+  fastify.post('/api/videos/:videoId/regenerate-summary', {
+    schema: {
+      tags: ['Videos'],
+      summary: '重新生成核心摘要',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: { videoId: { type: 'string' } },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            data: {
+              type: 'object',
+              properties: {
+                videoTitle: { type: 'string', nullable: true },
+                takeaways: {
+                  type: 'array',
+                  items: Schemas.TakeawayItem,
+                },
+              },
+            },
+          },
+        },
+        404: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const { videoId } = request.params;
+
+    const video = await prisma.video.findUnique({
+      where: { videoId },
+      include: { subtitles: { orderBy: { sortOrder: 'asc' } } },
+    });
+
+    if (!video) return reply.status(404).send({ error: '视频不存在' });
+    if (!video.subtitles.length) return reply.status(400).send({ error: '视频无字幕数据' });
+
+    try {
+      const { formatTranscriptForAI } = await import('../services/transcript.js');
+      const transcript = video.subtitles.map((s) => ({
+        text: s.text,
+        offset: s.offset,
+        duration: s.duration,
+      }));
+      const formattedText = formatTranscriptForAI(transcript);
+      const lastSegment = transcript[transcript.length - 1];
+      const maxDurationSeconds = lastSegment
+        ? Math.ceil((lastSegment.offset + lastSegment.duration) / 1000)
+        : 0;
+      const result = await analyzeTranscriptSummary(formattedText, maxDurationSeconds);
+
+      await prisma.video.update({
+        where: { videoId },
+        data: {
+          title: result.title,
+          category: result.category,
+          tags: Array.isArray(result.tags) ? result.tags.join(',') : '',
+          duration: maxDurationSeconds,
+        },
+      });
+
+      const newTitleEmbedding = await getEmbedding(result.title);
+      await prisma.$executeRawUnsafe(
+        `UPDATE videos SET "embedding" = $1::vector WHERE video_id = $2`,
+        `[${newTitleEmbedding.join(',')}]`,
+        videoId
+      );
+
+      await prisma.takeaway.deleteMany({ where: { videoId } });
+      await prisma.takeaway.createMany({
+        data: result.takeaways.map((t, i) => ({
+          videoId,
+          title: t.title,
+          summary: t.summary,
+          timestamp: t.timestamp,
+          duration: t.duration,
+          sortOrder: i,
+        })),
+      });
+
+      return reply.send({
+        success: true,
+        data: {
+          videoTitle: result.title,
+          takeaways: result.takeaways.map((t, index) => ({
+            id: `regen-${videoId}-${index}`,
+            title: t.title,
+            summary: t.summary,
+            timestamp: t.timestamp,
+            duration: t.duration,
+          })),
+        },
+      });
+    } catch (error: any) {
+      fastify.log.error(error);
+      return reply.status(500).send({ error: '重新生成核心摘要失败', message: error.message });
     }
   });
 

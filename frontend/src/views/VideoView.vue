@@ -66,6 +66,7 @@ const SOURCE_KEEP_MAX_DURATION_MS = 6500;
 const SOURCE_FORCE_SPLIT_SENTENCE_COUNT = 4;
 const TRANSCRIPT_COLLAPSE_THRESHOLD = 140;
 const BOTTOM_SUBTITLE_TOGGLE_STORAGE_KEY = 'video-view-bottom-subtitle-visible';
+const SUMMARY_STALL_TIMEOUT_MS = 90000;
 
 
 const route = useRoute();
@@ -124,7 +125,7 @@ const isClippingId = ref<string | null>(null); // 正在剪辑的 ID
 const isRebuildingCues = ref(false);
 const isRetranslatingCues = ref(false);
 const isDeletingKeywordGlossary = ref(false);
-const pendingAction = ref<null | 'rebuild-cues' | 'retranslate-cues' | 'force-analyze' | 'delete-keyword'>(null);
+const pendingAction = ref<null | 'rebuild-cues' | 'retranslate-cues' | 'force-analyze' | 'regenerate-summary' | 'delete-keyword'>(null);
 const pendingKeywordDelete = ref<KeywordGlossaryItem | null>(null);
 const actionNotice = ref<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -136,6 +137,9 @@ const expandedTranscriptKeys = ref<Record<string, boolean>>({});
 const glossaryPickerSegIndex = ref<number | null>(null);
 const glossaryPickerSegment = ref<TranscriptSegment | null>(null);
 const selectedGlossaryCandidates = ref<SelectedGlossaryCandidate[]>([]);
+const summaryAnalysisStartedAt = ref<number | null>(null);
+const summaryGenerationStalled = ref(false);
+const summaryStallNoticeShown = ref(false);
 
 // 手动修复相关状态 / Manual fix states
 const editingSegIndex = ref<number | null>(null);
@@ -283,7 +287,7 @@ const handleForceAnalyze = async () => {
   await handleAnalyze(true);
 };
 
-const openConfirmModal = (action: 'rebuild-cues' | 'retranslate-cues' | 'force-analyze') => {
+const openConfirmModal = (action: 'rebuild-cues' | 'retranslate-cues' | 'force-analyze' | 'regenerate-summary') => {
   pendingAction.value = action;
 };
 
@@ -293,7 +297,7 @@ const openDeleteKeywordConfirm = (item: KeywordGlossaryItem) => {
 };
 
 const closeConfirmModal = () => {
-  if (isRebuildingCues.value || isRetranslatingCues.value || isLoading.value || isDeletingKeywordGlossary.value) return;
+  if (isRebuildingCues.value || isRetranslatingCues.value || isLoading.value || isDeletingKeywordGlossary.value || isRegeneratingSummary.value) return;
   pendingAction.value = null;
   pendingKeywordDelete.value = null;
 };
@@ -313,6 +317,38 @@ const showActionNotice = (notice: { title: string; message: string; type: 'succe
     actionNotice.value = null;
     actionNoticeTimeout = null;
   }, 2200);
+};
+
+const resetSummaryPollingState = () => {
+  summaryAnalysisStartedAt.value = null;
+  summaryGenerationStalled.value = false;
+  summaryStallNoticeShown.value = false;
+};
+
+const startSummaryPollingState = () => {
+  summaryAnalysisStartedAt.value = Date.now();
+  summaryGenerationStalled.value = false;
+  summaryStallNoticeShown.value = false;
+};
+
+const resolveSummaryReady = () => {
+  isAnalyzingSummary.value = false;
+  resetSummaryPollingState();
+};
+
+const markSummaryAsStalled = () => {
+  isAnalyzingSummary.value = false;
+  summaryGenerationStalled.value = true;
+  summaryAnalysisStartedAt.value = null;
+
+  if (!summaryStallNoticeShown.value) {
+    summaryStallNoticeShown.value = true;
+    showActionNotice({
+      title: '摘要暂未生成',
+      message: '其他内容已完成，可点击“重新生成摘要”继续处理',
+      type: 'info',
+    });
+  }
 };
 
 const normalizeKeywordGlossary = (items: any[]): KeywordGlossaryItem[] => {
@@ -536,9 +572,22 @@ const resetKeywordGlossaryForm = () => {
 const keywordGlossaryCopyText = computed(() => {
   if (!keywordGlossary.value.length) return '';
 
-  return keywordGlossary.value
-    .map((item, index) => `${index + 1}. ${item.english}${item.phonetic ? ` ${item.phonetic}` : ''} - ${item.chinese}`)
-    .join('\n');
+  const escapeCell = (value: string) => value.replace(/\|/g, '\\|').trim();
+  const header = [
+    '## 🔑 关键词',
+    '',
+    '| 中文 | 英文 | 音标 |',
+    '|------|------|------|',
+  ];
+
+  const rows = keywordGlossary.value.map((item) => {
+    const chinese = escapeCell(item.chinese || '-');
+    const english = escapeCell(item.english || '-');
+    const phonetic = escapeCell(item.phonetic || '-');
+    return `| ${chinese} | ${english} | ${phonetic} |`;
+  });
+
+  return [...header, ...rows].join('\n');
 });
 
 const speakGlossaryItem = (item: KeywordGlossaryItem, index: number) => {
@@ -764,11 +813,13 @@ const confirmPendingAction = async () => {
     await handleRetranslateCues();
   } else if (pendingAction.value === 'force-analyze') {
     await handleForceAnalyze();
+  } else if (pendingAction.value === 'regenerate-summary') {
+    await regenerateSummaryAssist();
   } else if (pendingAction.value === 'delete-keyword') {
     await deleteKeywordGlossaryItem();
   }
 
-  if (!isRebuildingCues.value && !isRetranslatingCues.value && !isLoading.value && !isDeletingKeywordGlossary.value) {
+  if (!isRebuildingCues.value && !isRetranslatingCues.value && !isLoading.value && !isDeletingKeywordGlossary.value && !isRegeneratingSummary.value) {
     pendingAction.value = null;
     if (pendingAction.value === null) {
       pendingKeywordDelete.value = null;
@@ -1356,6 +1407,7 @@ const isAnalyzingSummary = ref(false); // 是否正在分析摘要/脑图
 const isGeneratingMindmap = ref(false);
 const isGeneratingPublishAssist = ref(false);
 const isGeneratingRedbookAssist = ref(false);
+const isRegeneratingSummary = ref(false);
 const isRegeneratingChannels = ref(false);
 const isRegeneratingRedbook = ref(false);
 const isIndexing = ref(false); // 是否正在进行向量化索引（用于语义搜索）
@@ -1377,6 +1429,8 @@ const pollAnalysisStatus = async () => {
     const result = await res.json();
 
     if (result.success && result.data) {
+      const hasSummary = Array.isArray(result.data.takeaways) && result.data.takeaways.length > 0;
+
       // 1. 更新标题
       if (result.data.videoTitle) {
         videoTitle.value = decodeHtml(result.data.videoTitle);
@@ -1389,16 +1443,21 @@ const pollAnalysisStatus = async () => {
       redbookHashtags.value = decodeHtml(result.data.redbookHashtags || '');
 
       // 2. 更新摘要
-      if (result.data.takeaways && result.data.takeaways.length > 0) {
+      if (hasSummary) {
         takeaways.value = result.data.takeaways.map((ta: any) => ({
           ...ta,
           title: decodeHtml(ta.title),
           summary: decodeHtml(ta.summary)
         }));
-      }
-
-      if (result.data.summaryReady) {
-        isAnalyzingSummary.value = false;
+        resolveSummaryReady();
+      } else if (!summaryGenerationStalled.value) {
+        const stalled = summaryAnalysisStartedAt.value !== null
+          && Date.now() - summaryAnalysisStartedAt.value >= SUMMARY_STALL_TIMEOUT_MS;
+        if (stalled) {
+          markSummaryAsStalled();
+        } else {
+          isAnalyzingSummary.value = !result.data.summaryReady;
+        }
       }
 
       // 3. 更新脑图
@@ -1466,6 +1525,7 @@ const handleAnalyze = async (force: boolean = false) => {
   isGeneratingPublishAssist.value = false;
   isGeneratingRedbookAssist.value = false;
   isIndexing.value = false;
+  resetSummaryPollingState();
 
   if (pollingInterval) clearInterval(pollingInterval);
   errorMsg.value = '';
@@ -1524,11 +1584,14 @@ const handleAnalyze = async (force: boolean = false) => {
           title: decodeHtml(ta.title),
           summary: decodeHtml(ta.summary)
         }));
-        isAnalyzingSummary.value = false;
+        resolveSummaryReady();
       } else {
         // 如果摘要为空，开启异步分析状态
         takeaways.value = [];
         isAnalyzingSummary.value = !result.data.summaryReady;
+        if (isAnalyzingSummary.value) {
+          startSummaryPollingState();
+        }
       }
 
       isGeneratingMindmap.value = !result.data.mindmapReady;
@@ -1778,6 +1841,41 @@ const regenerateChannelsAssist = async () => {
     showActionNotice({ title: '生成失败', message: '重新生成视频号文案失败', type: 'error' });
   } finally {
     isRegeneratingChannels.value = false;
+  }
+};
+
+const regenerateSummaryAssist = async () => {
+  if (!videoId.value || isRegeneratingSummary.value) return;
+  isRegeneratingSummary.value = true;
+  summaryGenerationStalled.value = false;
+  summaryStallNoticeShown.value = false;
+  try {
+    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/regenerate-summary`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    const result = await res.json();
+    if (result.success && result.data) {
+      videoTitle.value = decodeHtml(result.data.videoTitle || videoTitle.value || '');
+      takeaways.value = (result.data.takeaways || []).map((ta: any) => ({
+        ...ta,
+        title: decodeHtml(ta.title),
+        summary: decodeHtml(ta.summary),
+      }));
+      resolveSummaryReady();
+      showActionNotice({ title: '重新生成成功', message: '核心摘要已更新', type: 'success' });
+    } else {
+      throw new Error(result.error || '重新生成核心摘要失败');
+    }
+  } catch (err) {
+    console.error('Failed to regenerate summary assist:', err);
+    if (takeaways.value.length === 0) {
+      summaryAnalysisStartedAt.value = null;
+      summaryGenerationStalled.value = true;
+    }
+    showActionNotice({ title: '生成失败', message: '重新生成核心摘要失败', type: 'error' });
+  } finally {
+    isRegeneratingSummary.value = false;
   }
 };
 
@@ -2123,7 +2221,7 @@ const takeawayMap = computed(() => {
             </div>
 
             <!-- AI Takeaways (below video) -->
-            <div v-if="showResult && (takeaways.length > 0 || isAnalyzingSummary)" class="takeaways-section glass-panel animate-slide-in">
+            <div v-if="showResult" class="takeaways-section glass-panel animate-slide-in">
               <div class="sidebar-header">
                 <div class="sidebar-title-area">
                    <h3>
@@ -2143,6 +2241,18 @@ const takeawayMap = computed(() => {
                    </AppTooltip>
                  </div>
                    <div class="sidebar-actions">
+                    <AppTooltip text="重新生成核心摘要，需要再次调用 AI 分析当前字幕内容">
+                      <button
+                        class="btn-search-in-video"
+                        :disabled="isRegeneratingSummary || isLoading || isAnalyzingSummary"
+                        @click="openConfirmModal('regenerate-summary')"
+                      >
+                        <Loader2 v-if="isRegeneratingSummary" :size="14" class="spin" />
+                        <RefreshCw v-else :size="14" />
+                        <span>{{ isRegeneratingSummary ? '生成中...' : '重生成摘要' }}</span>
+                      </button>
+                    </AppTooltip>
+
                     <AppTooltip text="查看视频内容的 AI 脑图可视化">
                       <button
                         class="btn-mindmap"
@@ -2201,7 +2311,7 @@ const takeawayMap = computed(() => {
                   </div>
                </div>
 
-              <div class="takeaways-timeline-container">
+              <div v-if="takeaways.length > 0" class="takeaways-timeline-container">
                 <div class="takeaways-timeline" @click="handleTimelineClick">
                   <div
                     v-for="item in takeawayMap"
@@ -2219,17 +2329,17 @@ const takeawayMap = computed(() => {
               </div>
 
               <!-- Summary Loading State -->
-              <div v-if="isAnalyzingSummary && takeaways.length === 0" class="takeaway-loading-placeholder animate-fade-in">
+              <div v-if="(isAnalyzingSummary || isRegeneratingSummary) && takeaways.length === 0 && !summaryGenerationStalled" class="takeaway-loading-placeholder animate-fade-in">
                 <div class="loading-icon-pulse">
                   <Sparkles :size="32" class="spin" />
                 </div>
                 <div class="loading-text">
-                  <h4>AI 正在提取核心摘要...</h4>
+                  <h4>{{ isRegeneratingSummary ? 'AI 正在重新生成核心摘要...' : 'AI 正在提取核心摘要...' }}</h4>
                   <p>我们正在深度分析视频文本并为您生成关键跳转点，请稍候。</p>
                 </div>
               </div>
 
-              <div v-else class="takeaways-list">
+              <div v-else-if="takeaways.length > 0" class="takeaways-list">
                 <div
                   v-for="item in takeawayMap"
                   :key="item.id || item.index"
@@ -2272,9 +2382,24 @@ const takeawayMap = computed(() => {
                 </div>
               </div>
 
+              <div v-else class="publish-item">
+                <div class="publish-content glossary-empty-state publish-empty-action">
+                  <span>{{ summaryGenerationStalled ? '核心摘要生成超时或失败' : '暂无核心摘要' }}</span>
+                  <p v-if="summaryGenerationStalled" class="summary-empty-hint">其他内容已经就绪，可以直接重新生成核心摘要。</p>
+                  <button class="btn-copy-mini" @click="openConfirmModal('regenerate-summary')" :disabled="isRegeneratingSummary || isAnalyzingSummary">
+                    <Sparkles :size="12" />
+                    <span>{{ isRegeneratingSummary ? '生成中...' : (summaryGenerationStalled ? '重新生成摘要' : '立即生成') }}</span>
+                  </button>
+                </div>
+              </div>
+
               <!-- 发布辅助区域（视频号 / 小红书 切换） -->
-              <div v-if="showResult && takeaways.length > 0" class="channels-publish-section animate-fade-in">
+              <div v-if="showResult" class="channels-publish-section animate-fade-in">
                 <div class="divider"></div>
+
+                <div class="publish-label publish-section-header">
+                  <span>发布文案 / Publishing Copy</span>
+                </div>
 
                 <div class="publish-tabs">
                   <button
@@ -2948,6 +3073,8 @@ const takeawayMap = computed(() => {
             ? '确认重建字幕分段'
             : pendingAction === 'retranslate-cues'
               ? '确认仅重翻译展示字幕'
+              : pendingAction === 'regenerate-summary'
+                ? '确认重新生成核心摘要'
               : pendingAction === 'delete-keyword'
                 ? '确认删除关键词词条'
                 : '确认重新分析视频'"
@@ -2955,6 +3082,8 @@ const takeawayMap = computed(() => {
             ? '这会根据当前原始字幕重新生成 cues 分段，但不会重新抓取字幕，也不会重新跑 AI 分析。'
             : pendingAction === 'retranslate-cues'
               ? '这会仅重建并重翻译展示用的字幕 cues，不重新抓取字幕，也不重新生成摘要、脑图和发布辅助。'
+              : pendingAction === 'regenerate-summary'
+                ? '这会保留现有字幕与发布文案，仅重新调用 AI 生成核心摘要和关键跳转点。'
               : pendingAction === 'delete-keyword'
                 ? `这会从当前视频的关键词列表中删除“${pendingKeywordDelete?.english || ''}”，删除后不可恢复。`
                 : '这会重新抓取字幕、翻译并重跑 AI 分析，适合在字幕错位或翻译异常时使用。'"
@@ -2962,6 +3091,8 @@ const takeawayMap = computed(() => {
             ? '开始重建'
             : pendingAction === 'retranslate-cues'
               ? '开始重翻译'
+              : pendingAction === 'regenerate-summary'
+                ? '重新生成'
               : pendingAction === 'delete-keyword'
                 ? '确认删除'
                 : '重新分析'"
@@ -2969,6 +3100,8 @@ const takeawayMap = computed(() => {
             ? isRebuildingCues
             : pendingAction === 'retranslate-cues'
               ? isRetranslatingCues
+              : pendingAction === 'regenerate-summary'
+                ? isRegeneratingSummary
               : pendingAction === 'delete-keyword'
                 ? isDeletingKeywordGlossary
                 : isLoading"
@@ -4841,6 +4974,13 @@ input::placeholder {
   padding: 20px 16px;
   color: var(--text-secondary);
   font-size: 0.85rem;
+}
+
+.summary-empty-hint {
+  margin: 0;
+  max-width: 320px;
+  line-height: 1.6;
+  text-align: center;
 }
 
 .glossary-grid {

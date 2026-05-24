@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { 
   Video, Upload, Play, Pause, ChevronLeft, ChevronRight, 
   Download, RefreshCw, ArrowLeft, CheckCircle2, AlertCircle, 
-  Loader2, Scissors, Clock, Trash2, HelpCircle
+  Loader2, Scissors, Clock, Trash2, HelpCircle, Camera
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -37,6 +37,69 @@ const trackRef = ref<HTMLElement | null>(null);
 
 // 剪切进度百分比 (0 - 100)
 const trimProgress = ref(0);
+
+// 已截取的封面图历史列表
+interface CapturedCover {
+  id: string;
+  url: string;
+  time: number;
+}
+const capturedCovers = ref<CapturedCover[]>([]);
+
+// 截取当前帧画面
+const captureCurrentFrame = () => {
+  const video = videoRef.value;
+  if (!video || duration.value === 0) return;
+
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const dataUrl = canvas.toDataURL('image/png');
+    const coverId = `${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    
+    capturedCovers.value.unshift({
+      id: coverId,
+      url: dataUrl,
+      time: video.currentTime
+    });
+
+    // 触发全局通知
+    window.dispatchEvent(new CustomEvent('notify', {
+      detail: {
+        message: `已成功截取并保存 ${formatTime(video.currentTime)} 帧画面，可在右侧查看。`,
+        title: '封面截取成功',
+        type: 'success',
+        duration: 3000
+      }
+    }));
+
+  } catch (error) {
+    console.error('Capture frame failed:', error);
+    alert('截取封面失败，请重试。');
+  }
+};
+
+// 下载封面
+const downloadCover = (cover: CapturedCover) => {
+  const a = document.createElement('a');
+  a.href = cover.url;
+  const baseName = videoFile.value ? videoFile.value.name.replace(/\.[^/.]+$/, "") : 'video';
+  a.download = `cover_${baseName}_${formatTime(cover.time).replace(':', '_')}.png`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+};
+
+// 删除封面
+const removeCover = (id: string) => {
+  capturedCovers.value = capturedCovers.value.filter(c => c.id !== id);
+};
 
 // 清理预览的 Blob URL
 const revokeVideoSrc = () => {
@@ -570,6 +633,16 @@ const resetAll = () => {
               <ChevronRight :size="18" />
               <span class="btn-subtext">+10s</span>
             </button>
+
+            <!-- Camera shortcut for capturing frame -->
+            <button 
+              class="control-btn camera-btn" 
+              @click="captureCurrentFrame" 
+              :disabled="duration === 0" 
+              title="截取当前画面为封面"
+            >
+              <Camera :size="18" />
+            </button>
             
             <div class="time-display">
               <span class="current">{{ formatTime(currentTime) }}</span>
@@ -722,6 +795,44 @@ const resetAll = () => {
               <button @click="adjustEnd(0.1)">+0.1s</button>
               <button @click="adjustEnd(1.0)">+1.0s</button>
             </div>
+          </div>
+
+          <!-- Cover Capture Panel -->
+          <div class="presets-card glass-panel">
+            <div class="presets-header flex items-center justify-between">
+              <span>选取帧作封面:</span>
+              <span class="hotkey-tip" v-if="capturedCovers.length > 0">已截取 {{ capturedCovers.length }} 张</span>
+            </div>
+            
+            <button 
+              class="btn-action-capture" 
+              @click="captureCurrentFrame" 
+              :disabled="duration === 0"
+            >
+              <Camera :size="15" />
+              <span>截取当前帧画面</span>
+            </button>
+
+            <!-- Captured list thumbnails -->
+            <div v-if="capturedCovers.length > 0" class="covers-grid">
+              <div 
+                v-for="cover in capturedCovers" 
+                :key="cover.id" 
+                class="cover-thumbnail-wrapper"
+              >
+                <img :src="cover.url" class="cover-thumbnail" alt="Cover Preview" />
+                <span class="cover-time-tag">{{ formatTime(cover.time) }}</span>
+                <div class="cover-actions-overlay">
+                  <button class="cover-action-btn" @click="downloadCover(cover)" title="下载高清原图">
+                    <Download :size="13" />
+                  </button>
+                  <button class="cover-action-btn delete" @click="removeCover(cover.id)" title="删除">
+                    <Trash2 :size="13" />
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p v-else class="presets-empty-hint">在播放中看到满意的画面时，点击上方按钮或控制栏相机即可无损截取为封面图。</p>
           </div>
 
           <!-- Quick Duration Presets -->
@@ -1903,6 +2014,152 @@ const resetAll = () => {
   font-family: monospace;
   font-weight: 700;
   color: var(--text-accent);
+}
+
+/* 封面截取卡片与缩略图样式 */
+.btn-action-capture {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.88rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-action-capture:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: var(--accent-color);
+  color: var(--text-accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.btn-action-capture:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.presets-empty-hint {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  text-align: center;
+  margin: 4px 0;
+  line-height: 1.4;
+}
+
+.covers-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 5px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Custom Scrollbar for Covers Grid */
+.covers-grid::-webkit-scrollbar {
+  width: 4px;
+}
+.covers-grid::-webkit-scrollbar-thumb {
+  background-color: var(--border-color);
+  border-radius: 4px;
+}
+
+.cover-thumbnail-wrapper {
+  position: relative;
+  aspect-ratio: 16/10;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #000;
+  transition: all var(--transition-fast);
+}
+
+.cover-thumbnail-wrapper:hover {
+  border-color: var(--accent-color);
+  transform: scale(1.02);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.cover-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cover-time-tag {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-family: monospace;
+  pointer-events: none;
+}
+
+.cover-actions-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.cover-thumbnail-wrapper:hover .cover-actions-overlay {
+  opacity: 1;
+}
+
+.cover-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+
+.cover-action-btn:hover {
+  transform: scale(1.1);
+  background: #4f46e5;
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.cover-action-btn.delete {
+  background: rgba(239, 68, 68, 0.8);
+}
+
+.cover-action-btn.delete:hover {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+.camera-btn:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--text-accent);
+  border-color: rgba(99, 102, 241, 0.3);
 }
 
 </style>

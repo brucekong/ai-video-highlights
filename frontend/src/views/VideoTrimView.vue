@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { 
   Video, Upload, Play, Pause, ChevronLeft, ChevronRight, 
   Download, RefreshCw, ArrowLeft, CheckCircle2, AlertCircle, 
-  Loader2, Scissors, Clock, Trash2
+  Loader2, Scissors, Clock, Trash2, HelpCircle
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -32,6 +32,9 @@ const trimError = ref('');
 const resultUrl = ref('');
 const resultFileName = ref('');
 
+// 拖动轨道引用
+const trackRef = ref<HTMLElement | null>(null);
+
 // 清理预览的 Blob URL
 const revokeVideoSrc = () => {
   if (videoSrc.value) {
@@ -44,7 +47,7 @@ onUnmounted(() => {
   revokeVideoSrc();
 });
 
-// 处理拖拽
+// 处理拖拽文件
 const onDragOver = () => {
   isDragging.value = true;
 };
@@ -113,16 +116,6 @@ const togglePlay = () => {
   } else {
     videoRef.value.play();
     isPlaying.value = true;
-  }
-};
-
-// 调整进度条
-const onSeek = (e: Event) => {
-  const target = e.target as HTMLInputElement;
-  const val = parseFloat(target.value);
-  if (videoRef.value) {
-    videoRef.value.currentTime = val;
-    currentTime.value = val;
   }
 };
 
@@ -201,6 +194,132 @@ const handleEndBlur = () => {
     endTime.value = Math.min(duration.value, Number((startTime.value + 0.5).toFixed(2)));
   }
 };
+
+// 预设截取时长从当前开始
+const clipPreset = (seconds: number) => {
+  if (duration.value === 0) return;
+  startTime.value = Number(currentTime.value.toFixed(2));
+  endTime.value = Number(Math.min(duration.value, currentTime.value + seconds).toFixed(2));
+  
+  // 预览裁剪区域开头画面
+  if (videoRef.value) {
+    videoRef.value.currentTime = startTime.value;
+    currentTime.value = startTime.value;
+  }
+};
+
+// 自定义双手柄拖拽逻辑
+const onDragStart = (type: 'start' | 'end' | 'play', e: MouseEvent) => {
+  e.preventDefault();
+  const track = trackRef.value;
+  if (!track || duration.value === 0) return;
+
+  const updatePosition = (clientX: number) => {
+    const rect = track.getBoundingClientRect();
+    let percentage = (clientX - rect.left) / rect.width;
+    percentage = Math.max(0, Math.min(1, percentage));
+    const time = percentage * duration.value;
+
+    if (type === 'start') {
+      startTime.value = Number(Math.min(time, endTime.value - 0.05).toFixed(2));
+      // 拖拽起点时，跳转视频画面，方便预览起点帧
+      if (videoRef.value) {
+        videoRef.value.currentTime = startTime.value;
+        currentTime.value = startTime.value;
+      }
+    } else if (type === 'end') {
+      endTime.value = Number(Math.max(time, startTime.value + 0.05).toFixed(2));
+      // 拖拽终点时，跳转视频画面，方便预览终点帧
+      if (videoRef.value) {
+        videoRef.value.currentTime = endTime.value;
+        currentTime.value = endTime.value;
+      }
+    } else if (type === 'play') {
+      currentTime.value = Number(time.toFixed(2));
+      if (videoRef.value) {
+        videoRef.value.currentTime = currentTime.value;
+      }
+    }
+  };
+
+  updatePosition(e.clientX);
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    updatePosition(moveEvent.clientX);
+  };
+
+  const onMouseUp = () => {
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  };
+
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+};
+
+// 点击轨道空白处跳转播放进度
+const onTrackClick = (e: MouseEvent) => {
+  const target = e.target as HTMLElement;
+  // 排除点击手柄的情况
+  if (target.closest('.timeline-handle') || target.closest('.timeline-playhead-handle')) {
+    return;
+  }
+
+  const track = trackRef.value;
+  if (!track || duration.value === 0) return;
+
+  const rect = track.getBoundingClientRect();
+  let percentage = (e.clientX - rect.left) / rect.width;
+  percentage = Math.max(0, Math.min(1, percentage));
+  const time = percentage * duration.value;
+
+  currentTime.value = Number(time.toFixed(2));
+  if (videoRef.value) {
+    videoRef.value.currentTime = currentTime.value;
+  }
+};
+
+// 键盘快捷键监听
+const handleKeyDown = (e: KeyboardEvent) => {
+  const activeEl = document.activeElement;
+  // 如果焦点在输入框，忽略快捷键以免影响正常打字
+  if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+    return;
+  }
+
+  if (!videoFile.value || duration.value === 0) return;
+
+  switch (e.key) {
+    case ' ': // 空格键播放/暂停
+      e.preventDefault();
+      togglePlay();
+      break;
+    case '[': // 设置起点
+      e.preventDefault();
+      setStartToCurrent();
+      break;
+    case ']': // 设置终点
+      e.preventDefault();
+      setEndToCurrent();
+      break;
+    case 'ArrowLeft': // 微调快退
+      e.preventDefault();
+      seekRelative(e.shiftKey ? -5 : -0.5);
+      break;
+    case 'ArrowRight': // 微调快进
+      e.preventDefault();
+      seekRelative(e.shiftKey ? 5 : 0.5);
+      break;
+  }
+};
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown);
+});
 
 // 校验是否允许裁剪
 const canTrim = computed(() => {
@@ -372,7 +491,7 @@ const resetAll = () => {
               <ChevronLeft :size="18" />
               <span class="btn-subtext">-10s</span>
             </button>
-            <button class="control-btn play-toggle-btn" @click="togglePlay">
+            <button class="control-btn play-toggle-btn" @click="togglePlay" title="播放 / 暂停 (空格键)">
               <Pause v-if="isPlaying" :size="20" />
               <Play v-else :size="20" />
             </button>
@@ -388,30 +507,50 @@ const resetAll = () => {
             </div>
           </div>
 
-          <!-- Interactive Range Timeline -->
+          <!-- Custom Dual-Handle Interactive Timeline -->
           <div class="timeline-container">
-            <div class="timeline-track-wrapper">
-              <!-- Total Track (Dark gray background) -->
+            <div class="timeline-track-wrapper" ref="trackRef" @mousedown="onTrackClick">
+              <!-- Total Track (Dark background) -->
               <div class="timeline-total-track"></div>
-              <!-- Highlighting range [start, end] (Neon Purple Gradient) -->
-              <div class="timeline-trim-range" :style="trimRangeStyle"></div>
-              <!-- Current Play Pointer (Red/White line) -->
-              <div class="timeline-play-pointer" :style="currentPointerStyle"></div>
               
-              <!-- Transparent native input overlay for easy scrubbing -->
-              <input 
-                type="range"
-                min="0"
-                :max="duration"
-                step="0.01"
-                v-model="currentTime"
-                @input="onSeek"
-                class="timeline-slider"
-              />
+              <!-- Highlighting range [start, end] (Neon Purple Gradient) -->
+              <div class="timeline-trim-range" :style="trimRangeStyle">
+                <!-- Left handle (Start Point) -->
+                <div 
+                  class="timeline-handle start-handle"
+                  @mousedown.stop="onDragStart('start', $event)"
+                  title="拖动调整裁剪起点"
+                >
+                  <div class="handle-bar"></div>
+                  <div class="handle-tooltip">{{ formatTime(startTime) }}</div>
+                </div>
+                <!-- Right handle (End Point) -->
+                <div 
+                  class="timeline-handle end-handle"
+                  @mousedown.stop="onDragStart('end', $event)"
+                  title="拖动调整裁剪终点"
+                >
+                  <div class="handle-bar"></div>
+                  <div class="handle-tooltip">{{ formatTime(endTime) }}</div>
+                </div>
+              </div>
+              
+              <!-- Playhead Pointer (Red line & dot) -->
+              <div 
+                class="timeline-playhead-handle" 
+                :style="currentPointerStyle"
+                @mousedown.stop="onDragStart('play', $event)"
+                title="拖动调整当前播放进度"
+              >
+                <div class="playhead-cap"></div>
+                <div class="playhead-line"></div>
+                <div class="playhead-tooltip">{{ formatTime(currentTime) }}</div>
+              </div>
             </div>
+            
             <div class="timeline-markers">
               <span>00:00</span>
-              <span>{{ formatTime(duration / 2) }}</span>
+              <span class="timeline-tip-center">💡 拖曳紫色区域边缘调整裁剪范围，拖拽红色指针调整播放</span>
               <span>{{ formatTime(duration) }}</span>
             </div>
           </div>
@@ -443,7 +582,10 @@ const resetAll = () => {
           <!-- Start Point Config -->
           <div class="time-config-card glass-panel">
             <div class="card-header">
-              <span class="point-tag start">起点</span>
+              <div class="flex items-center gap-2">
+                <span class="point-tag start">起点</span>
+                <span class="hotkey-tip">快捷键 [</span>
+              </div>
               <span class="time-val">{{ formatTime(startTime) }}</span>
             </div>
             <div class="adjust-inputs">
@@ -459,7 +601,7 @@ const resetAll = () => {
                 <span class="unit">秒</span>
               </div>
               <button class="btn-set-current" @click="setStartToCurrent">
-                将当前时间设为起点
+                设当前为起点
               </button>
             </div>
             <div class="micro-adjust-group">
@@ -473,7 +615,10 @@ const resetAll = () => {
           <!-- End Point Config -->
           <div class="time-config-card glass-panel">
             <div class="card-header">
-              <span class="point-tag end">终点</span>
+              <div class="flex items-center gap-2">
+                <span class="point-tag end">终点</span>
+                <span class="hotkey-tip">快捷键 ]</span>
+              </div>
               <span class="time-val">{{ formatTime(endTime) }}</span>
             </div>
             <div class="adjust-inputs">
@@ -489,7 +634,7 @@ const resetAll = () => {
                 <span class="unit">秒</span>
               </div>
               <button class="btn-set-current" @click="setEndToCurrent">
-                将当前时间设为终点
+                设当前为终点
               </button>
             </div>
             <div class="micro-adjust-group">
@@ -500,13 +645,26 @@ const resetAll = () => {
             </div>
           </div>
 
-          <!-- Summary segment info -->
+          <!-- Quick Duration Presets -->
+          <div class="presets-card glass-panel">
+            <div class="presets-header">
+              <span>一键向后截取:</span>
+            </div>
+            <div class="preset-buttons">
+              <button @click="clipPreset(5)" :disabled="duration === 0">5s</button>
+              <button @click="clipPreset(10)" :disabled="duration === 0">10s</button>
+              <button @click="clipPreset(15)" :disabled="duration === 0">15s</button>
+              <button @click="clipPreset(30)" :disabled="duration === 0">30s</button>
+              <button @click="clipPreset(60)" :disabled="duration === 0">60s</button>
+            </div>
+          </div>
+
+          <!-- Highlight duration & action buttons -->
           <div class="range-summary">
             <span>已选择片段时长:</span>
             <strong class="highlight-duration">{{ (endTime - startTime).toFixed(1) }}s</strong>
           </div>
 
-          <!-- Action Buttons -->
           <div class="action-buttons-group">
             <button 
               class="btn-action-trim btn-gradient-neon" 
@@ -521,6 +679,21 @@ const resetAll = () => {
               <Trash2 :size="16" />
               <span>清空并重新导入</span>
             </button>
+          </div>
+
+          <!-- Hotkeys Cheat Sheet -->
+          <div class="hotkeys-card glass-panel">
+            <div class="hotkeys-title">
+              <HelpCircle :size="14" />
+              <span>键盘快捷键指引</span>
+            </div>
+            <div class="hotkeys-list">
+              <div class="hotkey-row"><kbd>空格 Space</kbd> <span>播放 / 暂停视频</span></div>
+              <div class="hotkey-row"><kbd>[</kbd> <span>当前时间设为起点</span></div>
+              <div class="hotkey-row"><kbd>]</kbd> <span>当前时间设为终点</span></div>
+              <div class="hotkey-row"><kbd>←</kbd> / <kbd>→</kbd> <span>微调时间进度 ±0.5s</span></div>
+              <div class="hotkey-row"><kbd>Shift + ←/→</kbd> <span>快速时间跳转 ±5.0s</span></div>
+            </div>
           </div>
 
         </div>
@@ -845,21 +1018,22 @@ const resetAll = () => {
   color: var(--text-secondary);
 }
 
-/* Timeline Custom Overlay range */
+/* Custom Hands-on Timeline Slider styling */
 .timeline-container {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin-top: 4px;
 }
 
 .timeline-track-wrapper {
   position: relative;
-  height: 10px;
+  height: 18px;
   width: 100%;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.05);
-  overflow: visible;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  user-select: none;
 }
 
 .timeline-total-track {
@@ -869,40 +1043,115 @@ const resetAll = () => {
   width: 100%;
   height: 100%;
   border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .timeline-trim-range {
   position: absolute;
   top: 0;
   height: 100%;
-  background: linear-gradient(90deg, #6366f1, #a5b4fc);
+  background: linear-gradient(90deg, rgba(99, 102, 241, 0.22), rgba(139, 92, 246, 0.22));
+  border-left: 2px solid var(--accent-color);
+  border-right: 2px solid #818cf8;
+  box-shadow: inset 0 0 12px rgba(99, 102, 241, 0.2);
+}
+
+/* Handles on two ends of the trim range */
+.timeline-handle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 28px;
   border-radius: 4px;
-  box-shadow: 0 0 12px var(--accent-glow);
-  opacity: 0.75;
+  cursor: ew-resize;
+  z-index: 10;
+  transition: box-shadow 0.15s, background-color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.timeline-play-pointer {
+.start-handle {
+  left: -6px;
+  background-color: var(--accent-color);
+  border: 1px solid #818cf8;
+}
+
+.end-handle {
+  right: -6px;
+  background-color: #818cf8;
+  border: 1px solid #a5b4fc;
+}
+
+.timeline-handle:hover {
+  background-color: #a5b4fc;
+  box-shadow: 0 0 15px var(--accent-glow);
+}
+
+.handle-bar {
+  width: 2px;
+  height: 12px;
+  background-color: rgba(255, 255, 255, 0.5);
+  border-radius: 1px;
+}
+
+/* Handle floating value tooltips */
+.handle-tooltip, .playhead-tooltip {
   position: absolute;
-  top: -4px;
-  width: 4px;
-  height: 18px;
-  background: #ff4757;
-  border-radius: 2px;
-  box-shadow: 0 0 8px rgba(255, 71, 87, 0.6);
-  z-index: 2;
+  bottom: 34px;
+  background: rgba(10, 10, 12, 0.9);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-family: monospace;
+  white-space: nowrap;
   pointer-events: none;
+  opacity: 0;
+  transform: scale(0.9) translateX(-50%);
+  left: 50%;
+  transform-origin: bottom center;
+  transition: opacity 0.2s, transform 0.2s;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
 }
 
-.timeline-slider {
+.timeline-handle:hover .handle-tooltip,
+.timeline-playhead-handle:hover .playhead-tooltip {
+  opacity: 1;
+  transform: scale(1) translateX(-50%);
+}
+
+/* Playhead indicators */
+.timeline-playhead-handle {
   position: absolute;
   top: -4px;
-  left: 0;
-  width: 100%;
-  height: 18px;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 3;
-  margin: 0;
+  width: 14px;
+  height: 26px;
+  z-index: 11;
+  cursor: ew-resize;
+  transform: translateX(-50%);
+}
+
+.playhead-cap {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff4757;
+  border: 2px solid #fff;
+  box-shadow: 0 0 8px rgba(255, 71, 87, 0.8);
+}
+
+.playhead-line {
+  position: absolute;
+  top: 12px;
+  left: 6px;
+  width: 2px;
+  height: 14px;
+  background: #ff4757;
+  box-shadow: 0 0 5px rgba(255, 71, 87, 0.8);
 }
 
 .timeline-markers {
@@ -910,14 +1159,20 @@ const resetAll = () => {
   justify-content: space-between;
   color: var(--text-secondary);
   font-size: 0.8rem;
-  opacity: 0.7;
+  opacity: 0.75;
+}
+
+.timeline-tip-center {
+  font-size: 0.78rem;
+  color: var(--text-accent);
+  opacity: 0.85;
 }
 
 /* Console Panel Styling */
 .console-panel {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .section-title {
@@ -932,18 +1187,18 @@ const resetAll = () => {
 }
 
 .meta-card {
-  padding: 14px 18px;
+  padding: 12px 16px;
   background: rgba(255, 255, 255, 0.02);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   border-radius: var(--radius-md);
 }
 
 .meta-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 .meta-row .label {
@@ -964,11 +1219,11 @@ const resetAll = () => {
 }
 
 .time-config-card {
-  padding: 16px 18px;
+  padding: 14px 16px;
   background: rgba(255, 255, 255, 0.02);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   border-radius: var(--radius-md);
 }
 
@@ -998,8 +1253,14 @@ const resetAll = () => {
   border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
+.hotkey-tip {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  opacity: 0.55;
+}
+
 .time-val {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: #fff;
   font-family: monospace;
@@ -1026,7 +1287,7 @@ const resetAll = () => {
   border: none;
   background: transparent;
   color: #fff;
-  height: 38px;
+  height: 36px;
   font-size: 0.95rem;
   outline: none;
   font-family: monospace;
@@ -1048,9 +1309,9 @@ const resetAll = () => {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--text-primary);
-  height: 40px;
-  padding: 0 14px;
-  font-size: 0.85rem;
+  height: 38px;
+  padding: 0 12px;
+  font-size: 0.82rem;
   font-weight: 600;
   border-radius: var(--radius-sm);
   white-space: nowrap;
@@ -1071,7 +1332,7 @@ const resetAll = () => {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--text-secondary);
-  height: 30px;
+  height: 28px;
   font-size: 0.8rem;
   font-weight: 600;
   font-family: monospace;
@@ -1082,6 +1343,93 @@ const resetAll = () => {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
   border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Presets card */
+.presets-card {
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: var(--radius-md);
+}
+
+.presets-header {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.preset-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.preset-buttons button {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: var(--text-accent);
+  height: 32px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: 6px;
+  font-family: monospace;
+}
+
+.preset-buttons button:hover:not(:disabled) {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
+}
+
+.preset-buttons button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Hotkey Card style */
+.hotkeys-card {
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.015);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: var(--radius-md);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.hotkeys-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.hotkeys-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.hotkey-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.hotkey-row kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: monospace;
+  font-size: 0.72rem;
+  color: #fff;
 }
 
 .range-summary {
@@ -1106,17 +1454,16 @@ const resetAll = () => {
 .action-buttons-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 10px;
 }
 
 .btn-action-trim {
   background: linear-gradient(135deg, #6366f1, #4f46e5);
   color: #fff;
-  height: 48px;
+  height: 46px;
   border-radius: 100px;
   font-weight: 700;
-  font-size: 1rem;
+  font-size: 0.96rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1141,10 +1488,10 @@ const resetAll = () => {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--text-secondary);
-  height: 44px;
+  height: 42px;
   border-radius: 100px;
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1362,6 +1709,16 @@ const resetAll = () => {
 
 .step-arrow {
   opacity: 0.3;
+}
+
+.flex {
+  display: flex;
+}
+.items-center {
+  align-items: center;
+}
+.gap-2 {
+  gap: 8px;
 }
 
 @keyframes pulse {

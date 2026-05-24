@@ -35,6 +35,9 @@ const resultFileName = ref('');
 // 拖动轨道引用
 const trackRef = ref<HTMLElement | null>(null);
 
+// 剪切进度百分比 (0 - 100)
+const trimProgress = ref(0);
+
 // 清理预览的 Blob URL
 const revokeVideoSrc = () => {
   if (videoSrc.value) {
@@ -368,48 +371,92 @@ const currentPointerStyle = computed(() => {
 });
 
 // 执行裁剪
-const handleTrim = async () => {
+const handleTrim = () => {
   if (!canTrim.value || !videoFile.value) return;
 
   isTrimming.value = true;
   trimSuccess.value = false;
   trimError.value = '';
+  trimProgress.value = 0;
 
   const formData = new FormData();
   // 必须先 append 文本字段，最后 append 大视频文件
-  // 这是因为 Fastify 流式解析 multipart 请求时，如果文件在前面，文件流被解析完时后面的文本字段可能还没被传输，导致 data.fields 里拿不到值。
+  // 这是因为 Fastify 流式解析 multipart 请求时，如果视频在前，流解析完后后面的文本字段可能还没被传输，导致 data.fields 里拿不到值。
   formData.append('start', startTime.value.toString());
   formData.append('end', endTime.value.toString());
   formData.append('video', videoFile.value);
 
-  try {
-    // 双重保险：URL query string 也带上起止时间参数
-    const res = await fetch(`${API_BASE}/api/video/trim-local?start=${startTime.value}&end=${endTime.value}`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.message || errData.error || '裁剪处理失败');
+  // 使用 XMLHttpRequest 替代 fetch 方式以获得真实的流式上传进度监听
+  const xhr = new XMLHttpRequest();
+  
+  // 监听上传进度（占总进度的 0% - 85% 权重）
+  xhr.upload.addEventListener('progress', (e) => {
+    if (e.lengthComputable) {
+      const percentage = (e.loaded / e.total) * 85;
+      trimProgress.value = Math.round(percentage);
     }
+  });
 
-    // 获取二进制流并创建本地下载链接
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    resultUrl.value = url;
-    resultFileName.value = `trimmed_${videoFile.value.name}`;
-    trimSuccess.value = true;
+  // ffmpeg 转码阶段模拟进度（占总进度的 85% - 98% 权重）
+  let transcodeTimer: any = null;
+  const startTranscodeProgress = () => {
+    trimProgress.value = 85;
+    transcodeTimer = setInterval(() => {
+      if (trimProgress.value < 98) {
+        trimProgress.value += 1;
+      } else {
+        clearInterval(transcodeTimer);
+      }
+    }, 450); // 每 450ms 递增 1%
+  };
 
-    // 自动触发一次下载
-    triggerDownload();
+  // 监听上传完毕事件，开始进入转码阶段
+  xhr.upload.addEventListener('load', () => {
+    startTranscodeProgress();
+  });
 
-  } catch (error: any) {
-    console.error('[Trim Error]', error);
-    trimError.value = error.message || '裁剪发生网络或系统错误，请检查后端服务。';
-  } finally {
+  xhr.addEventListener('load', () => {
+    if (transcodeTimer) clearInterval(transcodeTimer);
+    
+    if (xhr.status >= 200 && xhr.status < 300) {
+      trimProgress.value = 100;
+      
+      // 处理流式下载
+      const blob = xhr.response; // 必须是 blob 类型
+      const url = URL.createObjectURL(blob);
+      resultUrl.value = url;
+      resultFileName.value = `trimmed_${videoFile.value!.name}`;
+      trimSuccess.value = true;
+      isTrimming.value = false;
+      
+      // 自动触发一次下载
+      triggerDownload();
+    } else {
+      isTrimming.value = false;
+      // 尝试解析 Blob 中的错误 JSON 信息
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const errData = JSON.parse(reader.result as string);
+          trimError.value = errData.message || errData.error || '裁剪失败';
+        } catch {
+          trimError.value = '裁剪处理失败，请稍后重试。';
+        }
+      };
+      reader.readAsText(xhr.response || new Blob());
+    }
+  });
+
+  xhr.addEventListener('error', () => {
+    if (transcodeTimer) clearInterval(transcodeTimer);
     isTrimming.value = false;
-  }
+    trimError.value = '裁剪发生网络或系统错误，请检查后端服务。';
+  });
+
+  // 使用 POST 请求，并在 URL 上携带 query string 双重保险
+  xhr.open('POST', `${API_BASE}/api/video/trim-local?start=${startTime.value}&end=${endTime.value}`);
+  xhr.responseType = 'blob';
+  xhr.send(formData);
 };
 
 // 触发下载裁剪后文件
@@ -734,64 +781,81 @@ const resetAll = () => {
 
     </div>
 
-    <!-- Success overlay / dialog -->
-    <div v-if="trimSuccess" class="overlay success-overlay fade-in">
-      <div class="dialog-card glass-panel text-center">
-        <CheckCircle2 :size="64" class="success-icon animate-pulse-glow" />
-        <h2>裁剪处理完成!</h2>
-        <p>裁剪后的文件已成功生成，并自动开始下载。</p>
-        <div class="result-file-box">
-          <Video :size="18" />
-          <span>{{ resultFileName }}</span>
-        </div>
-        <div class="dialog-buttons">
-          <button class="btn-dialog-primary" @click="triggerDownload">
-            <Download :size="18" />
-            <span>再次下载</span>
-          </button>
-          <button class="btn-dialog-secondary" @click="trimSuccess = false">
-            <span>继续微调</span>
-          </button>
-          <button class="btn-dialog-secondary" @click="resetAll">
-            <RefreshCw :size="16" />
-            <span>裁剪新视频</span>
-          </button>
+    <!-- Teleport overlays to body to avoid transform containing block layout issues and ensure absolute viewport centering -->
+    <Teleport to="body">
+      <!-- Success overlay / dialog -->
+      <div v-if="trimSuccess" class="overlay success-overlay fade-in">
+        <div class="dialog-card glass-panel text-center">
+          <CheckCircle2 :size="64" class="success-icon animate-pulse-glow" />
+          <h2>裁剪处理完成!</h2>
+          <p>裁剪后的文件已成功生成，并自动开始下载。</p>
+          <div class="result-file-box">
+            <Video :size="18" />
+            <span>{{ resultFileName }}</span>
+          </div>
+          <div class="dialog-buttons">
+            <button class="btn-dialog-primary" @click="triggerDownload">
+              <Download :size="18" />
+              <span>再次下载</span>
+            </button>
+            <button class="btn-dialog-secondary" @click="trimSuccess = false">
+              <span>继续微调</span>
+            </button>
+            <button class="btn-dialog-secondary" @click="resetAll">
+              <RefreshCw :size="16" />
+              <span>裁剪新视频</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Error notice -->
-    <div v-if="trimError" class="overlay error-overlay fade-in">
-      <div class="dialog-card glass-panel text-center">
-        <AlertCircle :size="64" class="error-icon animate-pulse-glow" />
-        <h2>裁剪失败</h2>
-        <p class="error-msg-detail">{{ trimError }}</p>
-        <div class="dialog-buttons text-center justify-center">
-          <button class="btn-dialog-primary btn-error-retry" @click="trimError = ''">
-            <span>返回调整参数</span>
-          </button>
+      <!-- Error notice -->
+      <div v-if="trimError" class="overlay error-overlay fade-in">
+        <div class="dialog-card glass-panel text-center">
+          <AlertCircle :size="64" class="error-icon animate-pulse-glow" />
+          <h2>裁剪失败</h2>
+          <p class="error-msg-detail">{{ trimError }}</p>
+          <div class="dialog-buttons text-center justify-center">
+            <button class="btn-dialog-primary btn-error-retry" @click="trimError = ''">
+              <span>返回调整参数</span>
+            </button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Trimming Loading Overlay -->
-    <div v-if="isTrimming" class="overlay processing-overlay">
-      <div class="dialog-card glass-panel text-center">
-        <div class="spinner-container">
-          <Loader2 :size="64" class="spin-icon spin" />
-          <Scissors :size="24" class="center-scissors animate-pulse" />
-        </div>
-        <h2>视频切片处理中...</h2>
-        <p>正在后台调用 ffmpeg 进行高兼容性重编码，大文件处理需要较长时间，请不要关闭或刷新此页面...</p>
-        <div class="loader-steps">
-          <div class="step-item active">上传视频流</div>
-          <div class="step-arrow">→</div>
-          <div class="step-item active">FFmpeg 切片</div>
-          <div class="step-arrow">→</div>
-          <div class="step-item">下载切片文件</div>
+      <!-- Trimming Loading Overlay -->
+      <div v-if="isTrimming" class="overlay processing-overlay">
+        <div class="dialog-card glass-panel text-center">
+          <div class="spinner-container">
+            <Loader2 :size="64" class="spin-icon spin" />
+            <Scissors :size="24" class="center-scissors animate-pulse" />
+          </div>
+          <h2>视频切片处理中...</h2>
+          
+          <!-- Premium Linear Progress Bar -->
+          <div class="progress-container">
+            <div class="progress-bar-wrapper">
+              <div class="progress-bar-fill" :style="{ width: trimProgress + '%' }"></div>
+            </div>
+            <div class="progress-percentage-label">
+              <span class="progress-status-text">
+                {{ trimProgress < 85 ? `正在上传视频文件...` : `视频上传完成，FFmpeg 正在转码切片...` }}
+              </span>
+              <span class="progress-num">{{ trimProgress }}%</span>
+            </div>
+          </div>
+
+          <p>正在后台调用 ffmpeg 进行高兼容性重编码，大文件处理需要较长时间，请不要关闭或刷新此页面...</p>
+          <div class="loader-steps">
+            <div class="step-item" :class="{ active: trimProgress > 0 }">上传视频流</div>
+            <div class="step-arrow">→</div>
+            <div class="step-item" :class="{ active: trimProgress >= 85 }">FFmpeg 切片</div>
+            <div class="step-arrow">→</div>
+            <div class="step-item" :class="{ active: trimProgress === 100 }">下载切片文件</div>
+          </div>
         </div>
       </div>
-    </div>
+    </Teleport>
 
   </div>
 </template>
@@ -1796,6 +1860,49 @@ const resetAll = () => {
   color: #fff;
   border-color: #ef4444;
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+}
+
+/* 视频裁剪上传与处理进度条样式 */
+.progress-container {
+  width: 100%;
+  margin: 10px 0 25px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-bar-wrapper {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #818cf8);
+  box-shadow: 0 0 10px var(--accent-glow);
+  border-radius: 4px;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-percentage-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.progress-status-text {
+  color: var(--text-secondary);
+}
+
+.progress-num {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--text-accent);
 }
 
 </style>

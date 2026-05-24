@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { 
   Video, Upload, Play, Pause, ChevronLeft, ChevronRight, 
   Download, RefreshCw, ArrowLeft, CheckCircle2, AlertCircle, 
-  Loader2, Scissors, Clock, Trash2, HelpCircle, Camera, Search, X
+  Loader2, Scissors, Clock, Trash2, HelpCircle, Camera, Search, X, Copy
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -97,6 +97,39 @@ const downloadCover = (cover: CapturedCover) => {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+};
+
+// 复制封面到剪贴板
+const copyCoverToClipboard = async (cover: CapturedCover) => {
+  try {
+    const res = await fetch(cover.url);
+    const blob = await res.blob();
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        [blob.type]: blob
+      })
+    ]);
+    
+    // 触发全局通知
+    window.dispatchEvent(new CustomEvent('notify', {
+      detail: {
+        message: '已复制截图到剪贴板，您可以在其他应用（如 ChatGPT、飞书等）中直接粘贴。',
+        title: '复制成功',
+        type: 'success',
+        duration: 3000
+      }
+    }));
+  } catch (error) {
+    console.error('Copy cover failed:', error);
+    window.dispatchEvent(new CustomEvent('notify', {
+      detail: {
+        message: '复制图片失败，当前浏览器可能不支持此操作，请使用下载功能。',
+        title: '复制失败',
+        type: 'error',
+        duration: 4000
+      }
+    }));
+  }
 };
 
 // 删除封面
@@ -830,6 +863,10 @@ const resetAll = () => {
                   <button class="cover-action-btn" @click="activePreviewCover = cover" title="放大查看">
                     <Search :size="12" />
                   </button>
+                  <!-- 📋 复制到剪贴板按钮 -->
+                  <button class="cover-action-btn" @click="copyCoverToClipboard(cover)" title="复制到剪贴板">
+                    <Copy :size="12" />
+                  </button>
                   <!-- 📥 下载高清按钮 -->
                   <button class="cover-action-btn" @click="downloadCover(cover)" title="下载高清原图">
                     <Download :size="12" />
@@ -989,6 +1026,10 @@ const resetAll = () => {
             <img :src="activePreviewCover.url" class="large-cover-image" alt="Large Cover" />
           </div>
           <div class="preview-footer">
+            <button class="btn-dialog-secondary" @click="copyCoverToClipboard(activePreviewCover)">
+              <Copy :size="16" />
+              <span>复制到剪贴板</span>
+            </button>
             <button class="btn-dialog-primary" @click="downloadCover(activePreviewCover)">
               <Download :size="16" />
               <span>下载该高清封面</span>
@@ -2148,12 +2189,14 @@ const resetAll = () => {
   height: 100%;
   background: rgba(0, 0, 0, 0.75);
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
+  align-content: center;
   justify-content: center;
-  gap: 6px; /* 间距缩小，以在 120px 宽度内塞入 3 个按钮 */
+  gap: 6px;
   opacity: 0;
   transition: opacity 0.2s ease;
   z-index: 6;
+  padding: 4px;
 }
 
 .cover-thumbnail-wrapper:hover .cover-actions-overlay {
@@ -2200,8 +2243,8 @@ const resetAll = () => {
 }
 
 .preview-dialog-card {
-  width: 760px;
-  max-width: 90%;
+  width: 1000px;
+  max-width: 95%;
   padding: 24px;
   border-radius: var(--radius-xl);
   display: flex;
@@ -2252,10 +2295,14 @@ const resetAll = () => {
 .preview-footer {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
 }
 
-.preview-footer .btn-dialog-primary {
-  width: 200px;
+.preview-footer .btn-dialog-primary,
+.preview-footer .btn-dialog-secondary {
+  width: auto;
+  min-width: 180px;
+  padding: 0 24px;
 }
 
 </style>

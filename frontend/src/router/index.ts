@@ -3,6 +3,7 @@ import HomeView from '../views/HomeView.vue';
 import VideoView from '../views/VideoView.vue';
 const StorybookView = () => import('../views/StorybookView.vue');
 const StorybookPrintView = () => import('../views/StorybookPrintView.vue');
+const VideoTrimView = () => import('../views/VideoTrimView.vue');
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -26,6 +27,11 @@ const router = createRouter({
       path: '/storybook/print',
       name: 'storybook-print',
       component: StorybookPrintView
+    },
+    {
+      path: '/trim',
+      name: 'video-trim',
+      component: VideoTrimView
     },
     // Catch-all route to redirect back to home if path doesn't exist
     {

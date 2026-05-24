@@ -12,6 +12,8 @@ import { searchRoutes } from './routes/search.js';
 import { transcriptRoutes } from './routes/transcript.js';
 import { swaggerOptions } from './docs/openapi.js';
 import { startKeepAlive } from './lib/keepalive.js';
+import multipart from '@fastify/multipart';
+import { trimRoutes } from './routes/trim.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -57,6 +59,13 @@ async function main() {
     credentials: true
   });
 
+  // 注册 Multipart 支持以支持本地视频上传裁剪
+  await fastify.register(multipart, {
+    limits: {
+      fileSize: 1024 * 1024 * 1024, // 限制 1GB
+    }
+  });
+
   // 注册 OpenAPI 规范生成器（@fastify/swagger 仅用于生成 spec，不渲染 UI）
   await fastify.register(swagger, {
     ...swaggerOptions,
@@ -95,6 +104,7 @@ async function main() {
   await fastify.register(videoRoutes);
   await fastify.register(searchRoutes);
   await fastify.register(transcriptRoutes);
+  await fastify.register(trimRoutes);
 
   // Health checks
   fastify.get('/api/health', {

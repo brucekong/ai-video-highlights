@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, User, Menu, Search, Globe, Video, CheckCircle2, AlertCircle, X, Loader2 } from 'lucide-vue-next';
+import { Sparkles, User, Menu, Search, Globe, Video, CheckCircle2, AlertCircle, X, Loader2, Scissors } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 import GlobalSearchModal from './components/GlobalSearchModal.vue';
@@ -248,6 +248,14 @@ onUnmounted(() => {
           >
             <Video :size="18" />
             <span>解析</span>
+          </button>
+          <button
+            class="btn-icon-labeled glass-panel"
+            @click="router.push('/trim')"
+            title="本地视频裁剪"
+          >
+            <Scissors :size="18" />
+            <span>裁剪</span>
           </button>
           <button
             class="global-search-entry"

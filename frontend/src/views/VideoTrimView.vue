@@ -2243,8 +2243,9 @@ const resetAll = () => {
 }
 
 .preview-dialog-card {
-  width: 1000px;
-  max-width: 95%;
+  width: 1400px;
+  max-width: 96vw;
+  max-height: 94vh;
   padding: 24px;
   border-radius: var(--radius-xl);
   display: flex;
@@ -2279,16 +2280,20 @@ const resetAll = () => {
 
 .preview-img-container {
   width: 100%;
-  aspect-ratio: 16/9;
+  flex: 1;
+  min-height: 0;
   border-radius: var(--radius-md);
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .large-cover-image {
-  width: 100%;
-  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
 }
 

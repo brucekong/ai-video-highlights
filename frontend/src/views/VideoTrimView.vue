@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { 
   Video, Upload, Play, Pause, ChevronLeft, ChevronRight, 
   Download, RefreshCw, ArrowLeft, CheckCircle2, AlertCircle, 
-  Loader2, Scissors, Clock, Trash2, HelpCircle, Camera
+  Loader2, Scissors, Clock, Trash2, HelpCircle, Camera, Search, X
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -45,6 +45,9 @@ interface CapturedCover {
   time: number;
 }
 const capturedCovers = ref<CapturedCover[]>([]);
+
+// 当前正在放大预览的封面图
+const activePreviewCover = ref<CapturedCover | null>(null);
 
 // 截取当前帧画面
 const captureCurrentFrame = () => {
@@ -823,11 +826,17 @@ const resetAll = () => {
                 <img :src="cover.url" class="cover-thumbnail" alt="Cover Preview" />
                 <span class="cover-time-tag">{{ formatTime(cover.time) }}</span>
                 <div class="cover-actions-overlay">
-                  <button class="cover-action-btn" @click="downloadCover(cover)" title="下载高清原图">
-                    <Download :size="13" />
+                  <!-- 🔍 放大查看按钮 -->
+                  <button class="cover-action-btn" @click="activePreviewCover = cover" title="放大查看">
+                    <Search :size="12" />
                   </button>
+                  <!-- 📥 下载高清按钮 -->
+                  <button class="cover-action-btn" @click="downloadCover(cover)" title="下载高清原图">
+                    <Download :size="12" />
+                  </button>
+                  <!-- 🗑️ 删除按钮 -->
                   <button class="cover-action-btn delete" @click="removeCover(cover.id)" title="删除">
-                    <Trash2 :size="13" />
+                    <Trash2 :size="12" />
                   </button>
                 </div>
               </div>
@@ -963,6 +972,27 @@ const resetAll = () => {
             <div class="step-item" :class="{ active: trimProgress >= 85 }">FFmpeg 切片</div>
             <div class="step-arrow">→</div>
             <div class="step-item" :class="{ active: trimProgress === 100 }">下载切片文件</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- HD Cover Large Preview Modal -->
+      <div v-if="activePreviewCover" class="overlay preview-modal-overlay" @click="activePreviewCover = null">
+        <div class="preview-dialog-card glass-panel" @click.stop>
+          <div class="preview-header">
+            <span class="preview-title">📷 封面大图预览 ({{ formatTime(activePreviewCover.time) }})</span>
+            <button class="btn-close-preview" @click="activePreviewCover = null">
+              <X :size="20" />
+            </button>
+          </div>
+          <div class="preview-img-container">
+            <img :src="activePreviewCover.url" class="large-cover-image" alt="Large Cover" />
+          </div>
+          <div class="preview-footer">
+            <button class="btn-dialog-primary" @click="downloadCover(activePreviewCover)">
+              <Download :size="16" />
+              <span>下载该高清封面</span>
+            </button>
           </div>
         </div>
       </div>
@@ -2098,15 +2128,16 @@ const resetAll = () => {
 
 .cover-time-tag {
   position: absolute;
-  bottom: 4px;
+  bottom: 2px;
   left: 4px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.7);
   color: #fff;
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: 0.65rem;
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-size: 0.62rem;
   font-family: monospace;
   pointer-events: none;
+  z-index: 5;
 }
 
 .cover-actions-overlay {
@@ -2119,9 +2150,10 @@ const resetAll = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px; /* 间距缩小，以在 120px 宽度内塞入 3 个按钮 */
   opacity: 0;
   transition: opacity 0.2s ease;
+  z-index: 6;
 }
 
 .cover-thumbnail-wrapper:hover .cover-actions-overlay {
@@ -2129,8 +2161,8 @@ const resetAll = () => {
 }
 
 .cover-action-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px; /* 尺寸从 28px 缩小到 24px，防止宽度溢出 */
+  height: 24px;
   border-radius: 50%;
   background: var(--accent-color);
   color: #fff;
@@ -2160,6 +2192,70 @@ const resetAll = () => {
   background: rgba(99, 102, 241, 0.15);
   color: var(--text-accent);
   border-color: rgba(99, 102, 241, 0.3);
+}
+
+/* 封面大图预览弹窗 */
+.preview-modal-overlay {
+  background: rgba(4, 4, 6, 0.9) !important;
+}
+
+.preview-dialog-card {
+  width: 760px;
+  max-width: 90%;
+  padding: 24px;
+  border-radius: var(--radius-xl);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  background: rgba(20, 20, 25, 0.85);
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.preview-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.btn-close-preview {
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.btn-close-preview:hover {
+  color: #fff;
+}
+
+.preview-img-container {
+  width: 100%;
+  aspect-ratio: 16/9;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #000;
+}
+
+.large-cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.preview-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.preview-footer .btn-dialog-primary {
+  width: 200px;
 }
 
 </style>

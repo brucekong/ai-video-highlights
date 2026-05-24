@@ -355,12 +355,15 @@ const handleTrim = async () => {
   trimError.value = '';
 
   const formData = new FormData();
-  formData.append('video', videoFile.value);
+  // 必须先 append 文本字段，最后 append 大视频文件
+  // 这是因为 Fastify 流式解析 multipart 请求时，如果文件在前面，文件流被解析完时后面的文本字段可能还没被传输，导致 data.fields 里拿不到值。
   formData.append('start', startTime.value.toString());
   formData.append('end', endTime.value.toString());
+  formData.append('video', videoFile.value);
 
   try {
-    const res = await fetch(`${API_BASE}/api/video/trim-local`, {
+    // 双重保险：URL query string 也带上起止时间参数
+    const res = await fetch(`${API_BASE}/api/video/trim-local?start=${startTime.value}&end=${endTime.value}`, {
       method: 'POST',
       body: formData,
     });

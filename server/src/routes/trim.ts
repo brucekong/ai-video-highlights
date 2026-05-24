@@ -41,12 +41,28 @@ export async function trimRoutes(fastify: FastifyInstance) {
       return reply.status(400).send({ error: '未上传视频文件' });
     }
 
-    // 提取时间参数 (start 和 end 均为秒数)
+    // 提取时间参数 (优先从 query 里取，作为后备再从 multipart fields 取)
+    const query = request.query as any;
+    const startQuery = query?.start;
+    const endQuery = query?.end;
+
     const startField = data.fields?.start as any;
     const endField = data.fields?.end as any;
 
-    const start = startField ? parseFloat(startField.value) : 0;
-    const end = endField ? parseFloat(endField.value) : 0;
+    const startVal = startQuery !== undefined ? startQuery : startField?.value;
+    const endVal = endQuery !== undefined ? endQuery : endField?.value;
+
+    const start = parseFloat(String(startVal || '0'));
+    const end = parseFloat(String(endVal || '0'));
+
+    request.log.info({ 
+      start, 
+      end, 
+      startQuery, 
+      endQuery, 
+      startFieldValue: startField?.value, 
+      endFieldValue: endField?.value 
+    }, '[Trim Local] Time Parameters');
 
     if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
       return reply.status(400).send({ error: '无效的裁剪时间范围' });

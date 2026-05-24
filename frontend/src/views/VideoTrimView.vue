@@ -279,6 +279,27 @@ const onTrackClick = (e: MouseEvent) => {
   }
 };
 
+// 从起点播放预览
+const playFromStart = () => {
+  if (videoRef.value) {
+    videoRef.value.currentTime = startTime.value;
+    currentTime.value = startTime.value;
+    videoRef.value.play();
+    isPlaying.value = true;
+  }
+};
+
+// 预览终点前的 3 秒
+const playToEndPreview = () => {
+  if (videoRef.value) {
+    const previewStart = Math.max(startTime.value, endTime.value - 3);
+    videoRef.value.currentTime = previewStart;
+    currentTime.value = previewStart;
+    videoRef.value.play();
+    isPlaying.value = true;
+  }
+};
+
 // 键盘快捷键监听
 const handleKeyDown = (e: KeyboardEvent) => {
   const activeEl = document.activeElement;
@@ -587,6 +608,10 @@ const resetAll = () => {
             <div class="card-header">
               <div class="flex items-center gap-2">
                 <span class="point-tag start">起点</span>
+                <button class="btn-play-preview" @click="playFromStart" title="从起点播放预览">
+                  <Play :size="12" />
+                  <span>预览</span>
+                </button>
                 <span class="hotkey-tip">快捷键 [</span>
               </div>
               <span class="time-val">{{ formatTime(startTime) }}</span>
@@ -620,6 +645,10 @@ const resetAll = () => {
             <div class="card-header">
               <div class="flex items-center gap-2">
                 <span class="point-tag end">终点</span>
+                <button class="btn-play-preview end-preview" @click="playToEndPreview" title="预览终点前 3 秒">
+                  <Play :size="12" />
+                  <span>预览</span>
+                </button>
                 <span class="hotkey-tip">快捷键 ]</span>
               </div>
               <span class="time-val">{{ formatTime(endTime) }}</span>
@@ -1731,6 +1760,42 @@ const resetAll = () => {
 
 .animate-pulse {
   animation: pulse 1.8s infinite ease-in-out;
+}
+
+/* 预览播放按钮样式 */
+.btn-play-preview {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(99, 102, 241, 0.15);
+  color: var(--text-accent);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-play-preview:hover {
+  background: var(--accent-color);
+  color: #fff;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.btn-play-preview.end-preview {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.btn-play-preview.end-preview:hover {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
 }
 
 </style>

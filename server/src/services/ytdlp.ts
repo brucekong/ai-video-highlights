@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 
 type YtDlpFlags = Record<string, any>;
 
@@ -46,7 +47,21 @@ function resolveJsRuntime(): string | undefined {
 
 function resolveFfmpegLocation(): string | undefined {
   const configured = (process.env.FFMPEG_PATH || process.env.FFMPEG_BINARY || '').trim();
-  if (configured) return configured;
+  if (configured) {
+    try {
+      const stat = fs.statSync(configured);
+      if (stat.isDirectory()) {
+        const exeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+        const candidate = path.join(configured, exeName);
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      }
+    } catch (e) {
+      // 忽略文件不存在等异常，直接返回原配置
+    }
+    return configured;
+  }
 
   return resolveBinary('ffmpeg');
 }

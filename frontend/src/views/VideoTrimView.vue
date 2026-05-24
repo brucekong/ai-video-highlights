@@ -404,6 +404,25 @@ const playToEndPreview = () => {
 
 // 键盘快捷键监听
 const handleKeyDown = (e: KeyboardEvent) => {
+  // ESC 键关闭弹窗 (大图预览、成功弹窗、失败弹窗)
+  if (e.key === 'Escape') {
+    let closedAny = false;
+    if (activePreviewCover.value) {
+      activePreviewCover.value = null;
+      closedAny = true;
+    } else if (trimSuccess.value) {
+      trimSuccess.value = false;
+      closedAny = true;
+    } else if (trimError.value) {
+      trimError.value = '';
+      closedAny = true;
+    }
+    if (closedAny) {
+      e.preventDefault();
+      return;
+    }
+  }
+
   const activeEl = document.activeElement;
   // 如果焦点在输入框，忽略快捷键以免影响正常打字
   if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
@@ -941,102 +960,110 @@ const resetAll = () => {
     <!-- Teleport overlays to body to avoid transform containing block layout issues and ensure absolute viewport centering -->
     <Teleport to="body">
       <!-- Success overlay / dialog -->
-      <div v-if="trimSuccess" class="overlay success-overlay fade-in">
-        <div class="dialog-card glass-panel text-center">
-          <CheckCircle2 :size="64" class="success-icon animate-pulse-glow" />
-          <h2>裁剪处理完成!</h2>
-          <p>裁剪后的文件已成功生成，并自动开始下载。</p>
-          <div class="result-file-box">
-            <Video :size="18" />
-            <span>{{ resultFileName }}</span>
-          </div>
-          <div class="dialog-buttons">
-            <button class="btn-dialog-primary" @click="triggerDownload">
-              <Download :size="18" />
-              <span>再次下载</span>
-            </button>
-            <button class="btn-dialog-secondary" @click="trimSuccess = false">
-              <span>继续微调</span>
-            </button>
-            <button class="btn-dialog-secondary" @click="resetAll">
-              <RefreshCw :size="16" />
-              <span>裁剪新视频</span>
-            </button>
+      <Transition name="dialog-fade">
+        <div v-if="trimSuccess" class="overlay success-overlay">
+          <div class="dialog-card glass-panel text-center">
+            <CheckCircle2 :size="64" class="success-icon animate-pulse-glow" />
+            <h2>裁剪处理完成!</h2>
+            <p>裁剪后的文件已成功生成，并自动开始下载。</p>
+            <div class="result-file-box">
+              <Video :size="18" />
+              <span>{{ resultFileName }}</span>
+            </div>
+            <div class="dialog-buttons">
+              <button class="btn-dialog-primary" @click="triggerDownload">
+                <Download :size="18" />
+                <span>再次下载</span>
+              </button>
+              <button class="btn-dialog-secondary" @click="trimSuccess = false">
+                <span>继续微调</span>
+              </button>
+              <button class="btn-dialog-secondary" @click="resetAll">
+                <RefreshCw :size="16" />
+                <span>裁剪新视频</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </Transition>
 
       <!-- Error notice -->
-      <div v-if="trimError" class="overlay error-overlay fade-in">
-        <div class="dialog-card glass-panel text-center">
-          <AlertCircle :size="64" class="error-icon animate-pulse-glow" />
-          <h2>裁剪失败</h2>
-          <p class="error-msg-detail">{{ trimError }}</p>
-          <div class="dialog-buttons text-center justify-center">
-            <button class="btn-dialog-primary btn-error-retry" @click="trimError = ''">
-              <span>返回调整参数</span>
-            </button>
+      <Transition name="dialog-fade">
+        <div v-if="trimError" class="overlay error-overlay">
+          <div class="dialog-card glass-panel text-center">
+            <AlertCircle :size="64" class="error-icon animate-pulse-glow" />
+            <h2>裁剪失败</h2>
+            <p class="error-msg-detail">{{ trimError }}</p>
+            <div class="dialog-buttons text-center justify-center">
+              <button class="btn-dialog-primary btn-error-retry" @click="trimError = ''">
+                <span>返回调整参数</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </Transition>
 
       <!-- Trimming Loading Overlay -->
-      <div v-if="isTrimming" class="overlay processing-overlay">
-        <div class="dialog-card glass-panel text-center">
-          <div class="spinner-container">
-            <Loader2 :size="64" class="spin-icon spin" />
-            <Scissors :size="24" class="center-scissors animate-pulse" />
-          </div>
-          <h2>视频切片处理中...</h2>
-          
-          <!-- Premium Linear Progress Bar -->
-          <div class="progress-container">
-            <div class="progress-bar-wrapper">
-              <div class="progress-bar-fill" :style="{ width: trimProgress + '%' }"></div>
+      <Transition name="dialog-fade">
+        <div v-if="isTrimming" class="overlay processing-overlay">
+          <div class="dialog-card glass-panel text-center">
+            <div class="spinner-container">
+              <Loader2 :size="64" class="spin-icon spin" />
+              <Scissors :size="24" class="center-scissors animate-pulse" />
             </div>
-            <div class="progress-percentage-label">
-              <span class="progress-status-text">
-                {{ trimProgress < 85 ? `正在上传视频文件...` : `视频上传完成，FFmpeg 正在转码切片...` }}
-              </span>
-              <span class="progress-num">{{ trimProgress }}%</span>
+            <h2>视频切片处理中...</h2>
+            
+            <!-- Premium Linear Progress Bar -->
+            <div class="progress-container">
+              <div class="progress-bar-wrapper">
+                <div class="progress-bar-fill" :style="{ width: trimProgress + '%' }"></div>
+              </div>
+              <div class="progress-percentage-label">
+                <span class="progress-status-text">
+                  {{ trimProgress < 85 ? `正在上传视频文件...` : `视频上传完成，FFmpeg 正在转码切片...` }}
+                </span>
+                <span class="progress-num">{{ trimProgress }}%</span>
+              </div>
             </div>
-          </div>
 
-          <p>正在后台调用 ffmpeg 进行高兼容性重编码，大文件处理需要较长时间，请不要关闭或刷新此页面...</p>
-          <div class="loader-steps">
-            <div class="step-item" :class="{ active: trimProgress > 0 }">上传视频流</div>
-            <div class="step-arrow">→</div>
-            <div class="step-item" :class="{ active: trimProgress >= 85 }">FFmpeg 切片</div>
-            <div class="step-arrow">→</div>
-            <div class="step-item" :class="{ active: trimProgress === 100 }">下载切片文件</div>
+            <p>正在后台调用 ffmpeg 进行高兼容性重编码，大文件处理需要较长时间，请不要关闭或刷新此页面...</p>
+            <div class="loader-steps">
+              <div class="step-item" :class="{ active: trimProgress > 0 }">上传视频流</div>
+              <div class="step-arrow">→</div>
+              <div class="step-item" :class="{ active: trimProgress >= 85 }">FFmpeg 切片</div>
+              <div class="step-arrow">→</div>
+              <div class="step-item" :class="{ active: trimProgress === 100 }">下载切片文件</div>
+            </div>
           </div>
         </div>
-      </div>
+      </Transition>
 
       <!-- HD Cover Large Preview Modal -->
-      <div v-if="activePreviewCover" class="overlay preview-modal-overlay" @click="activePreviewCover = null">
-        <div class="preview-dialog-card glass-panel" @click.stop>
-          <div class="preview-header">
-            <span class="preview-title">📷 封面大图预览 ({{ formatTime(activePreviewCover.time) }})</span>
-            <button class="btn-close-preview" @click="activePreviewCover = null">
-              <X :size="20" />
-            </button>
-          </div>
-          <div class="preview-img-container">
-            <img :src="activePreviewCover.url" class="large-cover-image" alt="Large Cover" />
-          </div>
-          <div class="preview-footer">
-            <button class="btn-dialog-secondary" @click="copyCoverToClipboard(activePreviewCover)">
-              <Copy :size="16" />
-              <span>复制到剪贴板</span>
-            </button>
-            <button class="btn-dialog-primary" @click="downloadCover(activePreviewCover)">
-              <Download :size="16" />
-              <span>下载该高清封面</span>
-            </button>
+      <Transition name="dialog-fade">
+        <div v-if="activePreviewCover" class="overlay preview-modal-overlay" @click="activePreviewCover = null">
+          <div class="preview-dialog-card glass-panel" @click.stop>
+            <div class="preview-header">
+              <span class="preview-title">📷 封面大图预览 ({{ formatTime(activePreviewCover.time) }})</span>
+              <button class="btn-close-preview" @click="activePreviewCover = null">
+                <X :size="20" />
+              </button>
+            </div>
+            <div class="preview-img-container">
+              <img :src="activePreviewCover.url" class="large-cover-image" alt="Large Cover" />
+            </div>
+            <div class="preview-footer">
+              <button class="btn-dialog-secondary" @click="copyCoverToClipboard(activePreviewCover)">
+                <Copy :size="16" />
+                <span>复制到剪贴板</span>
+              </button>
+              <button class="btn-dialog-primary" @click="downloadCover(activePreviewCover)">
+                <Download :size="16" />
+                <span>下载该高清封面</span>
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      </Transition>
     </Teleport>
 
   </div>
@@ -2308,6 +2335,36 @@ const resetAll = () => {
   width: auto;
   min-width: 180px;
   padding: 0 24px;
+}
+
+/* 弹窗过渡动画 */
+.dialog-fade-enter-active,
+.dialog-fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+
+.dialog-fade-enter-active .dialog-card,
+.dialog-fade-enter-active .preview-dialog-card,
+.dialog-fade-leave-active .dialog-card,
+.dialog-fade-leave-active .preview-dialog-card {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+}
+
+.dialog-fade-enter-from,
+.dialog-fade-leave-to {
+  opacity: 0;
+}
+
+.dialog-fade-enter-from .dialog-card,
+.dialog-fade-enter-from .preview-dialog-card {
+  transform: scale(0.92);
+  opacity: 0;
+}
+
+.dialog-fade-leave-to .dialog-card,
+.dialog-fade-leave-to .preview-dialog-card {
+  transform: scale(0.95);
+  opacity: 0;
 }
 
 </style>

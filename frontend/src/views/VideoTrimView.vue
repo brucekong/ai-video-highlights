@@ -311,7 +311,7 @@ const clipPreset = (seconds: number) => {
 };
 
 // 自定义双手柄拖拽逻辑
-const onDragStart = (type: 'start' | 'end' | 'play', e: MouseEvent) => {
+const onDragStart = (type: 'start' | 'end', e: MouseEvent) => {
   e.preventDefault();
   const track = trackRef.value;
   if (!track || duration.value === 0) return;
@@ -324,22 +324,15 @@ const onDragStart = (type: 'start' | 'end' | 'play', e: MouseEvent) => {
 
     if (type === 'start') {
       startTime.value = Number(Math.min(time, endTime.value - 0.05).toFixed(2));
-      // 拖拽起点时，跳转视频画面，方便预览起点帧
       if (videoRef.value) {
         videoRef.value.currentTime = startTime.value;
         currentTime.value = startTime.value;
       }
-    } else if (type === 'end') {
+    } else {
       endTime.value = Number(Math.max(time, startTime.value + 0.05).toFixed(2));
-      // 拖拽终点时，跳转视频画面，方便预览终点帧
       if (videoRef.value) {
         videoRef.value.currentTime = endTime.value;
         currentTime.value = endTime.value;
-      }
-    } else if (type === 'play') {
-      currentTime.value = Number(time.toFixed(2));
-      if (videoRef.value) {
-        videoRef.value.currentTime = currentTime.value;
       }
     }
   };
@@ -363,7 +356,7 @@ const onDragStart = (type: 'start' | 'end' | 'play', e: MouseEvent) => {
 const onTrackClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement;
   // 排除点击手柄的情况
-  if (target.closest('.timeline-handle') || target.closest('.timeline-playhead-handle')) {
+  if (target.closest('.timeline-handle')) {
     return;
   }
 
@@ -738,8 +731,6 @@ const resetAll = () => {
               <div 
                 class="timeline-playhead-handle" 
                 :style="currentPointerStyle"
-                @mousedown.stop="onDragStart('play', $event)"
-                title="拖动调整当前播放进度"
               >
                 <div class="playhead-cap"></div>
                 <div class="playhead-line"></div>
@@ -1370,7 +1361,7 @@ const resetAll = () => {
   height: 28px;
   border-radius: 4px;
   cursor: ew-resize;
-  z-index: 10;
+  z-index: 12;
   transition: box-shadow 0.15s, background-color 0.15s;
   display: flex;
   align-items: center;
@@ -1436,7 +1427,7 @@ const resetAll = () => {
   width: 14px;
   height: 26px;
   z-index: 11;
-  cursor: ew-resize;
+  pointer-events: none;
   transform: translateX(-50%);
 }
 

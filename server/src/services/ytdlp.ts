@@ -78,6 +78,7 @@ export function buildYtDlpBaseFlags(flags: YtDlpFlags = {}): YtDlpFlags {
   return {
     noCheckCertificates: true,
     forceIpv4: true,
+    remoteComponents: 'ejs:github',
     retries: 3,
     fragmentRetries: 3,
     fileAccessRetries: 3,

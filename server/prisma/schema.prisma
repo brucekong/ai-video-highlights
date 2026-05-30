@@ -26,6 +26,7 @@ model Video {
   tags                String?                @map("tags")
   videoDescription    String?                @map("video_description")
   videoHashtags       String?                @map("video_hashtags")
+  channelsTitle       String?                @map("channels_title")
   keywordGlossary     Json?                  @map("keyword_glossary")
   redbookTitle        String?                @map("redbook_title")
   redbookDescription  String?                @map("redbook_description")
@@ -37,6 +38,7 @@ model Video {
   subtitleCues        SubtitleCue[]
   takeaways           Takeaway[]
   histories           UserHistory[]
+  publishAssets       PublishAsset[]
 
   @@map("videos")
 }
@@ -139,4 +141,58 @@ model SubtitleCue {
   @@unique([videoId, sortOrder])
   @@index([videoId, offset])
   @@map("subtitle_cues")
+}
+
+/// 本地物料（已加工完成、待发布的视频包）
+model PublishAsset {
+  id              String        @id @default(cuid())
+  videoId         String?       @map("video_id")
+  title           String
+  description     String?
+  hashtags        String?
+  videoFilePath   String        @map("video_file_path")
+  cover43Path     String?       @map("cover_43_path")   // 4:3 封面
+  cover34Path     String?       @map("cover_34_path")   // 3:4 封面
+  status          String        @default("draft") // draft | ready | publishing | published | failed
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  video           Video?        @relation(fields: [videoId], references: [videoId])
+  publishTasks    PublishTask[]
+
+  @@map("publish_assets")
+}
+
+/// 发布任务（一个物料可发布到多个平台）
+model PublishTask {
+  id            String       @id @default(cuid())
+  assetId       String       @map("asset_id")
+  platform      String       // douyin | xiaohongshu | bilibili | wxvideo
+  platformTitle String?      @map("platform_title")
+  platformDesc  String?      @map("platform_desc")
+  publishMode   String       @default("draft") @map("publish_mode") // draft | publish
+  status        String       @default("pending") // pending | running | draft_saved | published | failed | retrying
+  errorMessage  String?      @map("error_message")
+  publishedAt   DateTime?    @map("published_at")
+  publishedUrl  String?      @map("published_url")
+  retryCount    Int          @default(0) @map("retry_count")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  asset         PublishAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId])
+  @@index([status])
+  @@map("publish_tasks")
+}
+
+/// 平台账号配置
+model PlatformAccount {
+  id          String   @id @default(cuid())
+  platform    String   @unique // douyin | xiaohongshu | bilibili | wxvideo
+  displayName String   @map("display_name")
+  isActive    Boolean  @default(true) @map("is_active")
+  config      Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_accounts")
 }

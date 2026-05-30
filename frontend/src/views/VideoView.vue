@@ -84,6 +84,10 @@ const redbookTitle = ref('');
 const redbookDescription = ref('');
 const redbookHashtags = ref('');
 const activePublishTab = ref<'channels' | 'redbook'>('channels');
+
+// Merged: prefer redbook content over channels content
+const mergedDescription = computed(() => redbookDescription.value || videoDescription.value);
+const mergedHashtags = computed(() => redbookHashtags.value || videoHashtags.value);
 const keywordGlossary = ref<KeywordGlossaryItem[]>([]);
 const showKeywordGlossaryForm = ref(false);
 const isSavingKeywordGlossary = ref(false);
@@ -2393,7 +2397,7 @@ const takeawayMap = computed(() => {
                 </div>
               </div>
 
-              <!-- 发布辅助区域（视频号 / 小红书 切换） -->
+              <!-- 发布辅助区域（合并描述） -->
               <div v-if="showResult" class="channels-publish-section animate-fade-in">
                 <div class="divider"></div>
 
@@ -2401,103 +2405,44 @@ const takeawayMap = computed(() => {
                   <span>发布文案 / Publishing Copy</span>
                 </div>
 
-                <div class="publish-tabs">
-                  <button
-                    class="publish-tab"
-                    :class="{ active: activePublishTab === 'channels' }"
-                    @click="activePublishTab = 'channels'"
-                  >
-                    <Sparkles :size="12" />
-                    <span>视频号</span>
-                  </button>
-                  <button
-                    class="publish-tab"
-                    :class="{ active: activePublishTab === 'redbook' }"
-                    @click="activePublishTab = 'redbook'"
-                  >
-                    <BookOpen :size="12" />
-                    <span>小红书</span>
-                  </button>
+                <!-- Loading state -->
+                <div v-if="(isGeneratingPublishAssist || isRegeneratingChannels || isRegeneratingRedbook) && !mergedDescription && !mergedHashtags && !redbookTitle" class="publish-item">
+                  <div class="publish-content glossary-empty-state">
+                    <Loader2 :size="16" class="spin" />
+                    <span>正在生成发布文案...</span>
+                  </div>
                 </div>
 
-                <!-- 视频号 Tab -->
-                <div v-if="activePublishTab === 'channels'">
-                  <div v-if="(isGeneratingPublishAssist || isRegeneratingChannels) && !videoDescription && !videoHashtags" class="publish-item">
-                    <div class="publish-content glossary-empty-state">
-                      <Loader2 :size="16" class="spin" />
-                      <span>正在生成发布文案...</span>
-                    </div>
+                <!-- Empty state -->
+                <div v-else-if="!mergedDescription && !mergedHashtags && !redbookTitle" class="publish-item">
+                  <div class="publish-content glossary-empty-state publish-empty-action">
+                    <span>暂无发布文案</span>
+                    <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels || isRegeneratingRedbook">
+                      <Sparkles :size="12" />
+                      <span>立即生成</span>
+                    </button>
                   </div>
+                </div>
 
-                  <div v-else-if="!videoDescription && !videoHashtags" class="publish-item">
-                    <div class="publish-content glossary-empty-state publish-empty-action">
-                      <span>暂无视频号文案</span>
+                <!-- Content -->
+                <div v-if="mergedDescription || mergedHashtags || redbookTitle" class="publish-item">
+                  <div class="publish-label">
+                    <span>描述 / Description</span>
+                    <div class="publish-label-actions">
                       <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels">
-                        <Sparkles :size="12" />
-                        <span>立即生成</span>
+                        <Loader2 v-if="isRegeneratingChannels || isRegeneratingRedbook" :size="12" class="spin" />
+                        <RefreshCw v-else :size="12" />
+                        <span>{{ (isRegeneratingChannels || isRegeneratingRedbook) ? '生成中...' : '重新生成' }}</span>
+                      </button>
+                      <button class="btn-copy-mini" @click="copyToClipboard([redbookTitle, mergedDescription, mergedHashtags].filter(Boolean).join('\n\n'))">
+                        <span>一键复制</span>
                       </button>
                     </div>
                   </div>
-
-                  <div v-if="videoDescription || videoHashtags" class="publish-item">
-                    <div class="publish-label">
-                      <span>发布文案 / Post Copy</span>
-                      <div class="publish-label-actions">
-                        <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels">
-                          <Loader2 v-if="isRegeneratingChannels" :size="12" class="spin" />
-                          <RefreshCw v-else :size="12" />
-                          <span>{{ isRegeneratingChannels ? '生成中...' : '重新生成' }}</span>
-                        </button>
-                        <button class="btn-copy-mini" @click="copyToClipboard([videoDescription, videoHashtags].filter(Boolean).join('\n\n'))">
-                          <span>一键复制</span>
-                        </button>
-                      </div>
-                    </div>
-                    <div class="publish-content">
-                      <div v-if="videoDescription">{{ videoDescription }}</div>
-                      <div v-if="videoHashtags" class="publish-hashtags-inline">{{ videoHashtags }}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 小红书 Tab -->
-                <div v-if="activePublishTab === 'redbook'">
-                  <div v-if="(isGeneratingRedbookAssist || isRegeneratingRedbook) && !redbookTitle && !redbookDescription && !redbookHashtags" class="publish-item">
-                    <div class="publish-content glossary-empty-state">
-                      <Loader2 :size="16" class="spin" />
-                      <span>正在生成小红书文案...</span>
-                    </div>
-                  </div>
-
-                  <div v-else-if="!redbookTitle && !redbookDescription && !redbookHashtags" class="publish-item">
-                    <div class="publish-content glossary-empty-state publish-empty-action">
-                      <span>暂无小红书文案</span>
-                      <button class="btn-copy-mini" @click="regenerateRedbookAssist" :disabled="isRegeneratingRedbook">
-                        <Sparkles :size="12" />
-                        <span>立即生成</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div v-if="redbookTitle || redbookDescription || redbookHashtags" class="publish-item">
-                    <div class="publish-label">
-                      <span>发布文案 / Post Copy</span>
-                      <div class="publish-label-actions">
-                        <button class="btn-copy-mini" @click="regenerateRedbookAssist" :disabled="isRegeneratingRedbook">
-                          <Loader2 v-if="isRegeneratingRedbook" :size="12" class="spin" />
-                          <RefreshCw v-else :size="12" />
-                          <span>{{ isRegeneratingRedbook ? '生成中...' : '重新生成' }}</span>
-                        </button>
-                        <button class="btn-copy-mini" @click="copyToClipboard([redbookTitle, redbookDescription, redbookHashtags].filter(Boolean).join('\n\n'))">
-                          <span>一键复制</span>
-                        </button>
-                      </div>
-                    </div>
-                    <div class="publish-content redbook-description-content">
-                      <div v-if="redbookTitle" class="redbook-title-content">{{ redbookTitle }}</div>
-                      <div v-if="redbookDescription" class="redbook-body-content">{{ redbookDescription }}</div>
-                      <div v-if="redbookHashtags" class="publish-hashtags-inline">{{ redbookHashtags }}</div>
-                    </div>
+                  <div class="publish-content redbook-description-content">
+                    <div v-if="redbookTitle" class="redbook-title-content">{{ redbookTitle }}</div>
+                    <div v-if="mergedDescription">{{ mergedDescription }}</div>
+                    <div v-if="mergedHashtags" class="publish-hashtags-inline">{{ mergedHashtags }}</div>
                   </div>
                 </div>
               </div>

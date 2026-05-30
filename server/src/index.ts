@@ -14,6 +14,8 @@ import { swaggerOptions } from './docs/openapi.js';
 import { startKeepAlive } from './lib/keepalive.js';
 import multipart from '@fastify/multipart';
 import { trimRoutes } from './routes/trim.js';
+import { assetsRoutes } from './routes/assets.js';
+import { publishRoutes } from './routes/publish.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -55,7 +57,7 @@ async function main() {
       }
       cb(new Error(`Not allowed by CORS: ${origin}`), false);
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true
   });
 
@@ -105,6 +107,8 @@ async function main() {
   await fastify.register(searchRoutes);
   await fastify.register(transcriptRoutes);
   await fastify.register(trimRoutes);
+  await fastify.register(assetsRoutes);
+  await fastify.register(publishRoutes);
 
   // Health checks
   fastify.get('/api/health', {

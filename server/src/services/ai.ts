@@ -22,6 +22,7 @@ export interface AISummaryResult {
 }
 
 export interface AIPublishAssistResult {
+  videoTitle?: string;
   videoDescription?: string;
   videoHashtags?: string;
   keywordGlossary?: AIKeywordGlossaryItem[];
@@ -79,6 +80,7 @@ const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。
 请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
 
 {
+  "video_title": "适合视频号发布的标题，最多16个字",
   "video_description": "一段吸引人的视频简介，适合发布在视频号、小红书等社交平台，需包含视频核心价值，字数约 100 字左右",
   "video_hashtags": "#话题1 #话题2 #话题3",
   "keyword_glossary": [
@@ -92,14 +94,20 @@ const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。
 }
 
 要求：
-1. video_description 要自然、适合发布，不要空泛套话
-2. video_hashtags 提取 3-5 个最相关的话题，使用空格分隔
-3. keyword_glossary 提炼 8-15 个最值得学习的关键单词和短语
-4. english 保留原文，phonetic 提供自然、常见的美式音标，建议使用 /.../ 格式；如果实在不适合可返回空字符串
-5. chinese 给出自然中文释义，type 只能是 word 或 phrase
-5. 优先选择视频里高频、核心、场景相关的表达，避免过于基础的虚词
-6. 如果视频主要是中文，keyword_glossary 可以返回空数组
-7. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
+1. video_title 必须遵守视频号标题规则：
+   - 不超过16个字（中文算1个字，英文字母/数字算半个字）
+   - 不得包含 emoji 和特殊符号
+   - 仅允许以下符号：书名号《》、引号""''、冒号：、加号+、问号？、百分号%、摄氏度℃
+   - 不使用逗号，可用空格代替
+   - 简洁有吸引力，突出视频核心内容
+2. video_description 要自然、适合发布，不要空泛套话
+3. video_hashtags 提取 3-5 个最相关的话题，使用空格分隔
+4. keyword_glossary 提炼 8-15 个最值得学习的关键单词和短语
+5. english 保留原文，phonetic 提供自然、常见的美式音标，建议使用 /.../ 格式；如果实在不适合可返回空字符串
+6. chinese 给出自然中文释义，type 只能是 word 或 phrase
+7. 优先选择视频里高频、核心、场景相关的表达，避免过于基础的虚词
+8. 如果视频主要是中文，keyword_glossary 可以返回空数组
+9. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
 
 const REDBOOK_ASSIST_SYSTEM_PROMPT = `你是一个小红书内容运营专家。你的任务是基于视频转录文本，生成一套适合在小红书发布的文案。
 
@@ -357,6 +365,7 @@ export async function generatePublishAssist(
   });
 
   return {
+    videoTitle: String(parsed.video_title || '').trim(),
     videoDescription: parsed.video_description || '',
     videoHashtags: normalizeVideoHashtags(parsed.video_hashtags),
     keywordGlossary: Array.isArray(parsed.keyword_glossary)

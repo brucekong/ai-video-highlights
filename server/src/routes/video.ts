@@ -1414,6 +1414,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
             data: {
               type: 'object',
               properties: {
+                videoTitle: { type: 'string', nullable: true },
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
               },
@@ -1449,6 +1450,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
       await prisma.video.update({
         where: { videoId },
         data: {
+          channelsTitle: result.videoTitle,
           videoDescription: result.videoDescription,
           videoHashtags: result.videoHashtags,
           keywordGlossary: (result.keywordGlossary || []) as unknown as Prisma.InputJsonValue,
@@ -1458,6 +1460,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
       return reply.send({
         success: true,
         data: {
+          videoTitle: result.videoTitle,
           videoDescription: result.videoDescription,
           videoHashtags: result.videoHashtags,
         },

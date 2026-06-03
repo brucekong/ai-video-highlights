@@ -20,6 +20,7 @@ const videoRef = ref<HTMLVideoElement | null>(null);
 const isPlaying = ref(false);
 const duration = ref(0);
 const currentTime = ref(0);
+const previewBoundary = ref<number | null>(null); // when set, pause at this time
 
 // 裁剪时间段 (秒)
 const startTime = ref(0);
@@ -206,6 +207,14 @@ const onVideoLoaded = () => {
 const onTimeUpdate = () => {
   if (videoRef.value) {
     currentTime.value = videoRef.value.currentTime;
+    // Stop at preview boundary
+    if (previewBoundary.value !== null && currentTime.value >= previewBoundary.value) {
+      videoRef.value.pause();
+      videoRef.value.currentTime = previewBoundary.value;
+      currentTime.value = previewBoundary.value;
+      isPlaying.value = false;
+      previewBoundary.value = null;
+    }
   }
 };
 
@@ -215,6 +224,7 @@ const togglePlay = () => {
   if (isPlaying.value) {
     videoRef.value.pause();
     isPlaying.value = false;
+    previewBoundary.value = null;
   } else {
     videoRef.value.play();
     isPlaying.value = true;
@@ -224,6 +234,7 @@ const togglePlay = () => {
 // 快速跳转 (秒数)
 const seekRelative = (seconds: number) => {
   if (videoRef.value) {
+    previewBoundary.value = null;
     let target = videoRef.value.currentTime + seconds;
     if (target < 0) target = 0;
     if (target > duration.value) target = duration.value;
@@ -379,6 +390,7 @@ const playFromStart = () => {
   if (videoRef.value) {
     videoRef.value.currentTime = startTime.value;
     currentTime.value = startTime.value;
+    previewBoundary.value = endTime.value;
     videoRef.value.play();
     isPlaying.value = true;
   }
@@ -390,6 +402,7 @@ const playToEndPreview = () => {
     const previewStart = Math.max(startTime.value, endTime.value - 3);
     videoRef.value.currentTime = previewStart;
     currentTime.value = previewStart;
+    previewBoundary.value = endTime.value;
     videoRef.value.play();
     isPlaying.value = true;
   }

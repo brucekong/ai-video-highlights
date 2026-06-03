@@ -21,11 +21,13 @@ export interface PublishContext {
 
 export type PublishStep =
   | { action: 'openPage'; url: string; reuse?: { urlIncludes: string } }
-  | { action: 'waitForSelector'; selector: string; timeoutMs?: number }
-  | { action: 'click'; selector: string; timeoutMs?: number }
-  | { action: 'clickText'; container: string; text: string; timeoutMs?: number }
+  | { action: 'waitForSelector'; selector: string; timeoutMs?: number; optional?: boolean }
+  | { action: 'click'; selector: string; timeoutMs?: number; optional?: boolean }
+  | { action: 'clickDeep'; selector: string; timeoutMs?: number; optional?: boolean }
+  | { action: 'clickText'; container: string; text: string; timeoutMs?: number; optional?: boolean }
   | { action: 'fill'; selector: string; value: string; timeoutMs?: number }
   | { action: 'upload'; selector: string; fileField: 'video' | 'cover43' | 'cover34'; timeoutMs?: number }
+  | { action: 'press'; key: string; timeoutMs?: number; optional?: boolean }
   | { action: 'delay'; ms: number }
   | { action: 'screenshot'; label: string }
   | { action: 'checkError'; selector: string; timeoutMs?: number };

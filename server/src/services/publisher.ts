@@ -1,6 +1,7 @@
 import { getBridgeClient, type BridgeClient } from './bridge.js';
 import { getTemplate, resolveTemplate, type PublishContext, type PublishStep } from '../templates/index.js';
 import { getWxvideoSteps } from '../templates/wxvideo.js';
+import { getXiaohongshuSteps } from '../templates/xiaohongshu.js';
 
 export interface PublishTaskInput {
   taskId: string;
@@ -40,10 +41,15 @@ export class Publisher {
       return { taskId: input.taskId, success: false, steps: [], error: `No template for platform: ${input.platform}` };
     }
 
-    // Use dynamic steps based on publishMode for wxvideo
-    const steps = input.platform === 'wxvideo'
-      ? getWxvideoSteps(input.context.publishMode ?? 'draft')
-      : template.steps;
+    // Use dynamic steps based on publishMode for platforms with mode support
+    let steps: PublishStep[];
+    if (input.platform === 'wxvideo') {
+      steps = getWxvideoSteps(input.context.publishMode ?? 'draft');
+    } else if (input.platform === 'xiaohongshu') {
+      steps = getXiaohongshuSteps(input.context.publishMode ?? 'draft');
+    } else {
+      steps = template.steps;
+    }
 
     // Ensure bridge is connected
     if (this.bridge.status !== 'connected') {
@@ -84,6 +90,12 @@ export class Publisher {
           stepResults.push({ step: i + 1, action: step.action, success: true });
           continue;
         }
+        // Steps marked optional are skipped on failure
+        if ('optional' in step && step.optional) {
+          console.log(`[Publisher] Optional step skipped: ${step.action} — ${(err as Error).message}`);
+          stepResults.push({ step: i + 1, action: step.action, success: true });
+          continue;
+        }
 
         stepResults.push({
           step: i + 1,
@@ -117,6 +129,16 @@ export class Publisher {
       case 'click': {
         if (!pageId) throw new Error('No active page');
         await this.bridge.click(pageId, step.selector, step.timeoutMs);
+        return {};
+      }
+      case 'clickDeep': {
+        if (!pageId) throw new Error('No active page');
+        await this.bridge.clickDeep(pageId, step.selector, step.timeoutMs);
+        return {};
+      }
+      case 'press': {
+        if (!pageId) throw new Error('No active page');
+        await this.bridge.press(pageId, step.key);
         return {};
       }
       case 'clickText': {

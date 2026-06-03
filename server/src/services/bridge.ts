@@ -142,6 +142,16 @@ export class BridgeClient extends EventEmitter {
     if (!resp.ok) throw new Error(resp.error?.message ?? 'dom.click failed');
   }
 
+  async clickDeep(pageId: string, selector: string, timeoutMs = 5000): Promise<void> {
+    const resp = await this.send('dom.clickDeep', { pageId, selector, timeoutMs });
+    if (!resp.ok) throw new Error(resp.error?.message ?? 'dom.clickDeep failed');
+  }
+
+  async press(pageId: string, key: string): Promise<void> {
+    const resp = await this.send('dom.press', { pageId, key });
+    if (!resp.ok) throw new Error(resp.error?.message ?? 'dom.press failed');
+  }
+
   async clickText(pageId: string, container: string, text: string, timeoutMs = 5000): Promise<void> {
     const resp = await this.send('dom.clickText', { pageId, text, timeoutMs });
     if (!resp.ok) throw new Error(resp.error?.message ?? 'dom.clickText failed');
@@ -196,7 +206,7 @@ export class BridgeClient extends EventEmitter {
       requestedCapabilities: [
         'pages.open', 'pages.list', 'pages.focus', 'pages.focusByUrl',
         'pages.screenshot', 'pages.reload',
-        'dom.click', 'dom.clickText', 'dom.clickSelectorText',
+        'dom.click', 'dom.clickText', 'dom.clickSelectorText', 'dom.clickDeep',
         'dom.fill', 'dom.text', 'dom.waitSelector', 'dom.waitText',
         'dom.scroll', 'dom.hover', 'dom.press',
         'files.upload', 'files.uploadData',

@@ -40,11 +40,12 @@ export interface PlatformInfo {
 }
 
 // Assets API
-export async function fetchAssets(params?: { status?: string; page?: number; limit?: number }) {
+export async function fetchAssets(params?: { status?: string; page?: number; limit?: number; search?: string }) {
   const query = new URLSearchParams();
   if (params?.status) query.set('status', params.status);
   if (params?.page) query.set('page', String(params.page));
   if (params?.limit) query.set('limit', String(params.limit));
+  if (params?.search) query.set('search', params.search);
 
   const res = await fetch(`${API_BASE}/api/assets?${query}`);
   return res.json() as Promise<{ assets: PublishAsset[]; total: number; page: number; limit: number }>;

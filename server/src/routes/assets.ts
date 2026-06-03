@@ -135,13 +135,18 @@ export async function assetsRoutes(app: FastifyInstance) {
 
   // List assets with pagination and filtering
   app.get('/api/assets', async (request, reply) => {
-    const { status, page = 1, limit = 20 } = request.query as {
+    const { status, page = 1, limit = 20, search } = request.query as {
       status?: string;
       page?: number;
       limit?: number;
+      search?: string;
     };
 
-    const where = status ? { status } : {};
+    const where: any = {};
+    if (status) where.status = status;
+    if (search) {
+      where.title = { contains: search, mode: 'insensitive' };
+    }
     const [assets, total] = await Promise.all([
       prisma.publishAsset.findMany({
         where,
@@ -246,6 +251,7 @@ export async function assetsRoutes(app: FastifyInstance) {
       description: string;
       hashtags: string;
       status: string;
+      videoFilePath: string;
       cover43Path: string;
       cover34Path: string;
     }>;
@@ -261,6 +267,18 @@ export async function assetsRoutes(app: FastifyInstance) {
     if (body.status !== undefined) data.status = body.status;
 
     const titleForFile = sanitizeFilename(body.title || current.title);
+
+    // Handle videoFilePath — if it's a new absolute path, copy into the store
+    if (body.videoFilePath !== undefined) {
+      if (path.isAbsolute(body.videoFilePath) && fs.existsSync(body.videoFilePath)) {
+        const ext = path.extname(body.videoFilePath);
+        const videoName = titleForFile + ext;
+        const relPath = copyFileToStore(id, body.videoFilePath, videoName);
+        data.videoFilePath = relPath;
+      } else {
+        data.videoFilePath = body.videoFilePath;
+      }
+    }
 
     // Handle cover43Path — if it's a new absolute path, import it
     if (body.cover43Path !== undefined) {

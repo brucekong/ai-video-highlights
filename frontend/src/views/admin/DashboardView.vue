@@ -5,7 +5,7 @@
         <LayoutDashboard :size="16" /> 概览
       </router-link>
       <router-link to="/admin/assets" class="admin-nav-item" active-class="active">
-        <FolderOpen :size="16" /> 物料
+        <FolderOpen :size="16" /> 视频
       </router-link>
       <router-link to="/admin/publish" class="admin-nav-item" active-class="active">
         <Send :size="16" /> 发布
@@ -45,7 +45,7 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th>物料</th>
+              <th>视频</th>
               <th>平台</th>
               <th>模式</th>
               <th>状态</th>
@@ -73,8 +73,8 @@
         <router-link to="/admin/assets" class="action-card glass-panel">
           <FolderOpen :size="22" />
           <div class="action-text">
-            <span class="action-title">物料管理</span>
-            <span class="action-desc">导入、编辑视频物料</span>
+            <span class="action-title">视频管理</span>
+            <span class="action-desc">导入、编辑视频视频</span>
           </div>
           <ChevronRight :size="16" class="action-arrow" />
         </router-link>
@@ -110,7 +110,7 @@ const stats = ref({ totalAssets: 0, readyAssets: 0, publishedAssets: 0, failedTa
 const recentTasks = ref<PublishTask[]>([]);
 
 const statItems = computed(() => [
-  { value: stats.value.totalAssets, label: '物料总数', icon: Layers, color: 'blue' },
+  { value: stats.value.totalAssets, label: '视频总数', icon: Layers, color: 'blue' },
   { value: stats.value.readyAssets, label: '待发布', icon: Package, color: 'purple' },
   { value: stats.value.publishedAssets, label: '已发布', icon: CheckCircle, color: 'green' },
   { value: stats.value.failedTasks, label: '失败任务', icon: AlertTriangle, color: 'red' },

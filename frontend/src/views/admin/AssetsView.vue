@@ -5,7 +5,7 @@
         <LayoutDashboard :size="16" /> 概览
       </router-link>
       <router-link to="/admin/assets" class="admin-nav-item" active-class="active">
-        <FolderOpen :size="16" /> 物料
+        <FolderOpen :size="16" /> 视频
       </router-link>
       <router-link to="/admin/publish" class="admin-nav-item" active-class="active">
         <Send :size="16" /> 发布
@@ -14,12 +14,19 @@
 
     <header class="page-header">
       <div class="header-left">
-        <h1 class="page-title">物料管理</h1>
+        <h1 class="page-title">视频管理</h1>
         <span class="count-badge" v-if="total">{{ total }}</span>
       </div>
       <div class="header-actions">
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="搜索标题..."
+          class="search-input"
+          @input="debouncedSearch"
+        />
         <button @click="showImportDialog = true" class="btn-primary">
-          <Plus :size="14" /> 导入物料
+          <Plus :size="14" /> 导入视频
         </button>
       </div>
     </header>
@@ -98,15 +105,25 @@
 
         <!-- Actions -->
         <div class="asset-actions">
-          <button @click="quickPublish(asset)" class="btn-action btn-publish" :disabled="asset.status === 'publishing'">
-            <Send :size="13" /> 发布
-          </button>
-          <button @click="editAsset(asset)" class="btn-icon-sm" title="编辑">
-            <Pencil :size="13" />
-          </button>
-          <button @click="handleDelete(asset.id)" class="btn-icon-sm btn-danger" title="删除">
-            <Trash2 :size="13" />
-          </button>
+          <template v-if="asset.status === 'published' || asset.status === 'draft_saved'">
+            <button @click="quickPublish(asset)" class="btn-action btn-publish">
+              <Send :size="13" /> 再发布
+            </button>
+            <button @click="editAsset(asset)" class="btn-icon-sm" title="查看">
+              <Eye :size="13" />
+            </button>
+          </template>
+          <template v-else>
+            <button @click="quickPublish(asset)" class="btn-action btn-publish" :disabled="asset.status === 'publishing'">
+              <Send :size="13" /> 发布
+            </button>
+            <button @click="editAsset(asset)" class="btn-icon-sm" title="编辑">
+              <Pencil :size="13" />
+            </button>
+            <button @click="handleDelete(asset.id)" class="btn-icon-sm btn-danger" title="删除">
+              <Trash2 :size="13" />
+            </button>
+          </template>
         </div>
       </div>
     </div>
@@ -114,18 +131,21 @@
     <!-- Empty State -->
     <div v-if="!assets.length" class="empty-state">
       <Package :size="48" class="empty-icon" />
-      <p class="empty-title">暂无物料</p>
-      <p class="empty-hint">点击「导入物料」选择本地视频文件入库</p>
+      <p class="empty-title">暂无视频</p>
+      <p class="empty-hint">点击「导入视频」选择本地视频文件入库</p>
     </div>
 
     <!-- Import Dialog (File Browser Mode) -->
-    <div v-if="showImportDialog" class="dialog-overlay" @click.self="showImportDialog = false">
-      <div class="dialog dialog-wide glass-panel">
-        <div class="dialog-header">
-          <h3><Plus :size="18" /> 导入物料</h3>
-          <button @click="showImportDialog = false" class="btn-close"><X :size="16" /></button>
-        </div>
-
+    <!-- Import Dialog -->
+    <VideoFormDialog
+      v-if="showImportDialog"
+      mode="import"
+      :video-id="selectedVideoId"
+      :show-ai-toggle="importStep === 'meta'"
+      @close="showImportDialog = false"
+      @apply-ai="applyImportAiContent"
+    >
+      <template #before-form>
         <!-- Step indicator -->
         <div class="import-steps">
           <div class="step" :class="{ active: importStep === 'browse', done: importStep === 'meta' }">
@@ -136,7 +156,9 @@
             <span class="step-num">2</span> 填写信息
           </div>
         </div>
+      </template>
 
+      <template #form-fields>
         <!-- Step 1: File Selection -->
         <div v-if="importStep === 'browse'" class="import-browser">
           <!-- Selection cards -->
@@ -145,7 +167,7 @@
             <div class="cover-card import-card-wide" :class="{ active: showImportBrowser && importBrowseTarget === 'video' }">
               <div class="cover-card-label">📹 视频文件</div>
               <div class="cover-card-preview" v-if="importForm.videoFilePath" @click="previewFile = importForm.videoFilePath">
-                <video :src="`${API_BASE}/api/fs/preview?path=${encodeURIComponent(importForm.videoFilePath)}`" muted class="import-video-thumb"></video>
+                <video :src="`${API_BASE}/api/fs/preview?path=${encodeURIComponent(importForm.videoFilePath)}#t=0.5`" muted preload="metadata" class="import-video-thumb"></video>
                 <span class="import-card-filename">{{ getFileName(importForm.videoFilePath) }}</span>
               </div>
               <div class="cover-card-empty" v-else>
@@ -325,17 +347,55 @@
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </VideoFormDialog>
 
     <!-- Edit Dialog -->
-    <div v-if="editingAsset" class="dialog-overlay" @click.self="editingAsset = null">
-      <div class="dialog dialog-wide glass-panel">
-        <div class="dialog-header">
-          <h3><Pencil :size="18" /> 编辑物料</h3>
-          <button @click="editingAsset = null" class="btn-close"><X :size="16" /></button>
+    <VideoFormDialog
+      v-if="editingAsset"
+      mode="edit"
+      :video-id="editingAsset?.videoId"
+      :show-ai-toggle="true"
+      @close="editingAsset = null"
+      @apply-ai="applyAiContent"
+    >
+      <template #form-fields>
+        <div class="form-group">
+          <label>视频文件</label>
+          <div class="video-file-row">
+            <div class="video-file-info" v-if="editForm.videoFilePath">
+              <Film :size="14" />
+              <span class="file-name clickable" @click="previewFile = editForm.videoFilePath">{{ getFileName(editForm.videoFilePath) }}</span>
+            </div>
+            <span v-else class="text-muted">未选择</span>
+            <button class="btn-outline btn-xs" @click="openEditBrowserFor('video')">{{ editForm.videoFilePath ? '更换' : '选择' }}</button>
+          </div>
+          <div v-if="showEditBrowser && editCoverTarget === 'video'" class="edit-cover-browser">
+            <div class="edit-browser-header">
+              <span class="edit-browser-hint">选择视频文件</span>
+              <button class="btn-outline btn-xs" @click="showEditBrowser = false">收起</button>
+            </div>
+            <div class="quick-access">
+              <button v-for="qa in quickPaths" :key="qa.path" @click="editBrowseTo(qa.path)" class="qa-btn" :class="{ active: editBrowsePath === qa.path }">{{ qa.label }}</button>
+            </div>
+            <div class="browse-list browse-list-short" v-if="editBrowseData">
+              <div v-if="editBrowseData.current !== editBrowseData.parent" class="browse-item" @click="editBrowseTo(editBrowseData.parent)">
+                <FolderOpen :size="14" class="item-icon dir" /> <span>..</span>
+              </div>
+              <div v-for="v in editBrowseVideosSorted" :key="v.path" class="browse-item file-item" :class="{ selected: editForm.videoFilePath === v.path }" @click="selectEditVideoFile(v)">
+                <Film :size="14" class="item-icon video" />
+                <span class="file-name">{{ v.name }}</span>
+                <span class="file-size">{{ formatSize(v.size) }}</span>
+                <button class="btn-preview" @click.stop="previewFile = v.path" title="预览">▶</button>
+                <CheckCircle v-if="editForm.videoFilePath === v.path" :size="14" class="check-icon" />
+              </div>
+              <div v-for="dir in editBrowseData.dirs" :key="dir.path" class="browse-item" @click="editBrowseTo(dir.path)">
+                <Folder :size="14" class="item-icon dir" /> <span>{{ dir.name }}</span>
+              </div>
+              <div v-if="!editBrowseData.dirs.length && !editBrowseData.videos?.length" class="browse-empty">无视频文件</div>
+            </div>
+          </div>
         </div>
-        <!-- AI Generate button (edit) - moved to footer area below -->
         <div class="form-group">
           <label>标题</label>
           <input v-model="editForm.title" class="input" />
@@ -348,62 +408,48 @@
           <label>标签</label>
           <input v-model="editForm.hashtags" class="input" placeholder="标签（逗号分隔）" />
         </div>
-        <!-- Cover editing -->
+      </template>
+
+      <template #after-form>
         <div class="form-group">
           <label>封面图</label>
           <div class="edit-covers-grid">
-            <!-- 4:3 slot -->
             <div class="cover-card" :class="{ active: showEditBrowser && editCoverTarget === '43' }">
               <div class="cover-card-label">4:3</div>
               <div class="cover-card-preview" v-if="editForm.cover43Path" @click="previewEditCover(editForm.cover43Path, '43')">
                 <img :src="editCoverUrl(editForm.cover43Path, '43')" />
               </div>
-              <div class="cover-card-empty" v-else>
-                <ImageIcon :size="20" />
-                <span>未设置</span>
-              </div>
+              <div class="cover-card-empty" v-else><ImageIcon :size="20" /><span>未设置</span></div>
               <div class="cover-card-actions">
                 <button class="btn-outline btn-xs" @click="openEditBrowserFor('43')">选择</button>
                 <button v-if="editForm.cover43Path" class="btn-outline btn-xs btn-danger" @click="editForm.cover43Path = ''">移除</button>
               </div>
             </div>
-            <!-- 3:4 slot -->
             <div class="cover-card" :class="{ active: showEditBrowser && editCoverTarget === '34' }">
               <div class="cover-card-label">3:4</div>
               <div class="cover-card-preview" v-if="editForm.cover34Path" @click="previewEditCover(editForm.cover34Path, '34')">
                 <img :src="editCoverUrl(editForm.cover34Path, '34')" />
               </div>
-              <div class="cover-card-empty" v-else>
-                <ImageIcon :size="20" />
-                <span>未设置</span>
-              </div>
+              <div class="cover-card-empty" v-else><ImageIcon :size="20" /><span>未设置</span></div>
               <div class="cover-card-actions">
                 <button class="btn-outline btn-xs" @click="openEditBrowserFor('34')">选择</button>
                 <button v-if="editForm.cover34Path" class="btn-outline btn-xs btn-danger" @click="editForm.cover34Path = ''">移除</button>
               </div>
             </div>
           </div>
-          <!-- Mini file browser for cover selection -->
           <div v-if="showEditBrowser" class="edit-cover-browser">
             <div class="edit-browser-header">
               <span class="edit-browser-hint">正在选择 <strong>{{ editCoverTarget === '43' ? '4:3' : '3:4' }}</strong> 封面，点击图片即可选中</span>
               <button class="btn-outline btn-xs" @click="showEditBrowser = false">收起</button>
             </div>
             <div class="quick-access">
-              <button v-for="qa in quickPaths" :key="qa.path" @click="editBrowseTo(qa.path)" class="qa-btn" :class="{ active: editBrowsePath === qa.path }">
-                {{ qa.label }}
-              </button>
+              <button v-for="qa in quickPaths" :key="qa.path" @click="editBrowseTo(qa.path)" class="qa-btn" :class="{ active: editBrowsePath === qa.path }">{{ qa.label }}</button>
             </div>
             <div class="browse-list browse-list-short" v-if="editBrowseData">
               <div v-if="editBrowseData.current !== editBrowseData.parent" class="browse-item" @click="editBrowseTo(editBrowseData.parent)">
                 <FolderOpen :size="14" class="item-icon dir" /> <span>..</span>
               </div>
-              <div
-                v-for="img in editBrowseImagesSorted" :key="img.path"
-                class="browse-item file-item"
-                :class="{ selected: editForm.cover43Path === img.path || editForm.cover34Path === img.path }"
-                @click="selectEditCoverForTarget(img)"
-              >
+              <div v-for="img in editBrowseImagesSorted" :key="img.path" class="browse-item file-item" :class="{ selected: editForm.cover43Path === img.path || editForm.cover34Path === img.path }" @click="selectEditCoverForTarget(img)">
                 <img :src="`${API_BASE}/api/fs/preview?path=${encodeURIComponent(img.path)}`" class="browse-img-thumb" />
                 <span v-if="img.width && img.height" class="ratio-badge" :class="getAspectClass(img.width, img.height)">{{ getAspectLabel(img.width, img.height) }}</span>
                 <span class="file-name">{{ img.name }}</span>
@@ -415,30 +461,29 @@
               <div v-for="dir in editBrowseData.dirs" :key="dir.path" class="browse-item" @click="editBrowseTo(dir.path)">
                 <Folder :size="14" class="item-icon dir" /> <span>{{ dir.name }}</span>
               </div>
-              <div v-if="!editBrowseData.dirs.length && !editBrowseData.images?.length" class="browse-empty">
-                无图片文件
-              </div>
+              <div v-if="!editBrowseData.dirs.length && !editBrowseData.images?.length" class="browse-empty">无图片文件</div>
             </div>
           </div>
         </div>
-        <div class="dialog-footer">
-          <span style="flex:1"></span>
-          <button v-if="editingAsset?.videoId" class="btn-ai-generate" @click="aiGenerateContent('edit')" :disabled="isAIGenerating">
-            <Loader2 v-if="isAIGenerating" :size="14" class="spin" />
-            <Sparkles v-else :size="14" />
-            {{ isAIGenerating ? 'AI 生成中...' : 'AI 生成' }}
-          </button>
-          <button @click="editingAsset = null" class="btn-outline">取消</button>
-          <button @click="handleSaveEdit" class="btn-primary">保存</button>
-        </div>
-      </div>
-    </div>
+      </template>
+
+      <template #footer>
+        <span style="flex:1"></span>
+        <button v-if="editingAsset?.videoId" class="btn-ai-generate" @click="aiGenerateContent('edit')" :disabled="isAIGenerating">
+          <Loader2 v-if="isAIGenerating" :size="14" class="spin" />
+          <Sparkles v-else :size="14" />
+          {{ isAIGenerating ? 'AI 生成中...' : 'AI 生成' }}
+        </button>
+        <button @click="editingAsset = null" class="btn-outline">取消</button>
+        <button @click="handleSaveEdit" class="btn-primary">保存</button>
+      </template>
+    </VideoFormDialog>
 
     <!-- Quick Publish Dialog -->
     <div v-if="publishingAsset" class="dialog-overlay" @click.self="publishingAsset = null">
       <div class="dialog glass-panel">
         <div class="dialog-header">
-          <h3><Send :size="18" /> 发布到视频号</h3>
+          <h3><Send :size="18" /> 发布视频</h3>
           <button @click="publishingAsset = null" class="btn-close"><X :size="16" /></button>
         </div>
         <div class="publish-preview">
@@ -450,12 +495,22 @@
             <div v-else class="pv-covers">
               <img v-if="publishingAsset.cover43Path" :src="`${API_BASE}/api/assets/${publishingAsset.id}/cover`" class="pv-cover-thumb" title="4:3 封面" @click="openCoverPreview(publishingAsset, '43')" />
               <img v-if="publishingAsset.cover34Path" :src="`${API_BASE}/api/assets/${publishingAsset.id}/cover?ratio=34`" class="pv-cover-thumb" title="3:4 封面" @click="openCoverPreview(publishingAsset, '34')" />
-              <span class="pv-cover-ready">已准备</span>
             </div>
           </div>
-          <div class="pv-row"><span class="pv-label">视频</span><span class="mono">{{ shortenPath(publishingAsset.videoFilePath) }}</span></div>
+          <div class="pv-row">
+            <span class="pv-label">视频</span>
+            <video :src="`${API_BASE}/api/assets/${publishingAsset.id}/video#t=0.5`" muted autoplay playsinline loop preload="auto" controls class="pv-video-thumb"></video>
+          </div>
+        </div>
+        <div class="mode-select platform-select">
+          <span class="select-label">发布平台</span>
+          <label v-for="p in platformOptions" :key="p.value" class="radio-opt">
+            <input type="radio" v-model="pubPlatform" :value="p.value" />
+            <span>{{ p.label }}</span>
+          </label>
         </div>
         <div class="mode-select publish-mode">
+          <span class="select-label">发布方式</span>
           <label class="radio-opt">
             <input type="radio" v-model="pubMode" value="draft" />
             <span>保存为草稿</span>
@@ -558,8 +613,9 @@ import { ref, computed, onMounted, watch } from 'vue';
 import {
   LayoutDashboard, FolderOpen, Send, Plus, Video, Play,
   Tag, HardDrive, ImageIcon, Pencil, Trash2, Package, X,
-  Folder, Film, CheckCircle, Sparkles, Loader2, FileText,
+  Folder, Film, CheckCircle, Sparkles, Loader2, FileText, Eye,
 } from 'lucide-vue-next';
+import VideoFormDialog from '../../components/admin/VideoFormDialog.vue';
 import {
   fetchAssets, deleteAsset, updateAsset,
   createPublishTask, runPublishTask, browseDirectory, importAsset,
@@ -571,6 +627,7 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 const assets = ref<PublishAsset[]>([]);
 const total = ref(0);
 const filterStatus = ref<string | undefined>(undefined);
+const searchQuery = ref('');
 const showImportDialog = ref(false);
 const editingAsset = ref<PublishAsset | null>(null);
 const publishingAsset = ref<PublishAsset | null>(null);
@@ -583,6 +640,13 @@ function openCoverPreview(asset: PublishAsset, ratio: '43' | '34') {
   previewCoverRatio.value = ratio;
 }
 const pubMode = ref<'draft' | 'publish'>('draft');
+const pubPlatform = ref('wxvideo');
+const platformOptions = [
+  { value: 'wxvideo', label: '微信视频号' },
+  { value: 'xiaohongshu', label: '小红书' },
+  { value: 'douyin', label: '抖音' },
+  { value: 'bilibili', label: 'B站' },
+];
 const publishStatus = ref<{ type: string; message: string } | null>(null);
 const importing = ref(false);
 
@@ -605,11 +669,11 @@ const quickPaths = computed(() => {
   ];
 });
 
-const editForm = ref({ title: '', description: '', hashtags: '', cover43Path: '', cover34Path: '' });
+const editForm = ref({ title: '', description: '', hashtags: '', cover43Path: '', cover34Path: '', videoFilePath: '' });
 const editBrowsePath = ref('');
 const editBrowseData = ref<BrowseResult | null>(null);
 const showEditBrowser = ref(false);
-const editCoverTarget = ref<'43' | '34'>('43');
+const editCoverTarget = ref<'43' | '34' | 'video'>('43');
 const importForm = ref({ title: '', videoFilePath: '', cover43FilePath: '', cover34FilePath: '', description: '', hashtags: '' });
 
 // Analyzed videos for association
@@ -673,13 +737,19 @@ const importPathSegments = computed(() => {
 });
 
 async function loadAssets() {
-  const res = await fetchAssets({ status: filterStatus.value });
+  const res = await fetchAssets({ status: filterStatus.value, search: searchQuery.value || undefined });
   assets.value = res.assets;
   total.value = res.total;
 }
 
 onMounted(loadAssets);
 watch(filterStatus, loadAssets);
+
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+function debouncedSearch() {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadAssets, 300);
+}
 
 // Import dialog: open file browser
 watch(showImportDialog, async (v) => {
@@ -756,6 +826,28 @@ async function aiGenerateContent(target: 'import' | 'edit') {
     alert('AI 生成失败: ' + (e as Error).message);
   } finally {
     isAIGenerating.value = false;
+  }
+}
+
+// Apply AI-generated content to edit form
+function applyAiContent(content: string) {
+  if (content.length <= 30 && !content.includes('\n')) {
+    editForm.value.title = content.replace(/^["""『』【】]|["""『』【】]$/g, '');
+  } else if (content.includes('#')) {
+    editForm.value.hashtags = content.replace(/#/g, '').split(/[,，\s]+/).filter(Boolean).join(',');
+  } else {
+    editForm.value.description = content;
+  }
+}
+
+// Apply AI-generated content to import form
+function applyImportAiContent(content: string) {
+  if (content.length <= 30 && !content.includes('\n')) {
+    importForm.value.title = content.replace(/^["""『』【】]|["""『』【】]$/g, '');
+  } else if (content.includes('#')) {
+    importForm.value.hashtags = content.replace(/#/g, '').split(/[,，\s]+/).filter(Boolean).join(',');
+  } else {
+    importForm.value.description = content;
   }
 }
 
@@ -845,7 +937,7 @@ function selectEditCoverForTarget(file: FileInfo) {
   }
 }
 
-function openEditBrowserFor(target: '43' | '34') {
+function openEditBrowserFor(target: '43' | '34' | 'video') {
   editCoverTarget.value = target;
   showEditBrowser.value = true;
   if (!editBrowseData.value) editBrowseTo('');
@@ -855,6 +947,16 @@ const editBrowseImagesSorted = computed(() => {
   if (!editBrowseData.value?.images) return [];
   return [...editBrowseData.value.images].sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
 });
+
+const editBrowseVideosSorted = computed(() => {
+  if (!editBrowseData.value?.videos) return [];
+  return [...editBrowseData.value.videos].sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+});
+
+function selectEditVideoFile(file: { path: string }) {
+  editForm.value.videoFilePath = file.path;
+  showEditBrowser.value = false;
+}
 
 function editCoverUrl(coverPath: string, ratio: string): string {
   if (coverPath.startsWith('/')) {
@@ -941,14 +1043,14 @@ async function handleImport() {
 }
 
 async function handleDelete(id: string) {
-  if (!confirm('确定删除该物料？关联的文件也会被删除。')) return;
+  if (!confirm('确定删除该视频？关联的文件也会被删除。')) return;
   await deleteAsset(id);
   await loadAssets();
 }
 
 function editAsset(asset: PublishAsset) {
   editingAsset.value = asset;
-  editForm.value = { title: asset.title, description: asset.description || '', hashtags: asset.hashtags || '', cover43Path: asset.cover43Path || '', cover34Path: asset.cover34Path || '' };
+  editForm.value = { title: asset.title, description: asset.description || '', hashtags: asset.hashtags || '', cover43Path: asset.cover43Path || '', cover34Path: asset.cover34Path || '', videoFilePath: asset.videoFilePath || '' };
   showEditBrowser.value = false;
   editBrowseData.value = null;
 }
@@ -981,7 +1083,7 @@ async function confirmPublish() {
   try {
     const task = await createPublishTask({
       assetId: publishingAsset.value.id,
-      platform: 'wxvideo',
+      platform: pubPlatform.value,
       publishMode: pubMode.value,
     });
     publishStatus.value = { type: 'info', message: '正在执行发布...' };
@@ -1047,7 +1149,20 @@ function coverLabel(asset: PublishAsset) {
   font-size: 0.75rem; padding: 2px 8px; border-radius: 10px;
   background: rgba(99, 102, 241, 0.15); color: #818cf8; font-weight: 600;
 }
-.header-actions { display: flex; gap: 0.75rem; }
+.header-actions { display: flex; gap: 0.75rem; align-items: center; }
+.search-input {
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #333;
+  border-radius: 6px;
+  background: #1a1a2e;
+  color: #e2e8f0;
+  font-size: 0.85rem;
+  width: 180px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.search-input:focus { border-color: #6366f1; }
+.search-input::placeholder { color: #666; }
 
 /* Toolbar */
 .toolbar { margin-bottom: 1.5rem; }
@@ -1220,12 +1335,11 @@ function coverLabel(asset: PublishAsset) {
   display: flex; align-items: center; justify-content: center; z-index: 100;
   backdrop-filter: blur(4px);
 }
-.dialog { padding: 1.75rem; width: 560px; max-width: 90vw; max-height: 85vh; overflow-y: auto; overflow-x: hidden; }
-.dialog-wide { width: 680px; }
+.dialog { padding: 1.75rem; width: 560px; max-width: 90vw; max-height: 85vh; overflow-y: auto; overflow-x: hidden; min-width: 0; display: flex; flex-direction: column; }
 .dialog-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 .dialog-header h3 { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem; margin: 0; }
 .dialog-desc { color: var(--text-secondary); font-size: 0.8rem; margin: 0 0 1.25rem; }
-.dialog-footer { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
+.dialog-footer { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: auto; padding-top: 1rem; }
 .btn-close {
   width: 28px; height: 28px; border-radius: 6px;
   border: none; background: transparent; color: var(--text-secondary);
@@ -1333,8 +1447,12 @@ function coverLabel(asset: PublishAsset) {
 .summary-item.clickable { cursor: pointer; padding: 0.2rem 0.4rem; border-radius: 4px; }
 .summary-item.clickable:hover { background: rgba(99, 102, 241, 0.1); color: var(--accent-color); }
 
-.form-group { margin-bottom: 1rem; }
+.form-group { margin-bottom: 1rem; min-width: 0; }
 .form-group label { display: block; font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.35rem; font-weight: 500; }
+.video-file-row { display: flex; align-items: center; gap: 8px; }
+.video-file-info { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-primary); min-width: 0; }
+.video-file-info .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.text-muted { color: var(--text-secondary); font-size: 0.8rem; }
 .input {
   width: 100%; padding: 0.55rem 0.75rem;
   border: 1px solid var(--border-color); border-radius: var(--radius-sm);
@@ -1362,6 +1480,7 @@ function coverLabel(asset: PublishAsset) {
   padding: 0.45rem 0.75rem; cursor: pointer; font-size: 0.8rem;
   transition: background var(--transition-fast);
   border-bottom: 1px solid rgba(255,255,255,0.02);
+  min-width: 0; overflow: hidden;
 }
 .browse-item:hover { background: rgba(99, 102, 241, 0.06); }
 .browse-empty { padding: 1.5rem; text-align: center; color: var(--text-secondary); font-size: 0.8rem; }
@@ -1382,8 +1501,10 @@ function coverLabel(asset: PublishAsset) {
 .mono { font-family: monospace; font-size: 0.8rem; opacity: 0.7; }
 .warn { color: #fbbf24; }
 
-.mode-select { display: flex; gap: 1.5rem; }
-.publish-mode { margin: 1rem 0; }
+.mode-select { display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; }
+.mode-select .select-label { font-size: 0.8rem; color: var(--text-secondary); min-width: 4em; }
+.platform-select { margin: 1rem 0 0.5rem; }
+.publish-mode { margin: 0.5rem 0 1rem; }
 .radio-opt {
   display: flex; align-items: center; gap: 0.35rem;
   font-size: 0.85rem; color: var(--text-primary); cursor: pointer;
@@ -1456,6 +1577,7 @@ function coverLabel(asset: PublishAsset) {
 .btn-ai-generate:disabled { opacity: 0.6; cursor: not-allowed; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 .searchable-select .clear-select {
   position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
   background: none; border: none; cursor: pointer; font-size: 14px; color: #999;
@@ -1465,15 +1587,16 @@ function coverLabel(asset: PublishAsset) {
 .dropdown-list {
   position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
   max-height: 200px; overflow-y: auto;
-  background: var(--bg-primary, #fff); border: 1px solid var(--border-color, #ddd);
-  border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-top: 2px;
+  background: #1e1e1e; border: 1px solid #444;
+  border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-top: 2px;
 }
 .dropdown-item {
   padding: 8px 12px; cursor: pointer; font-size: 13px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: #ddd;
 }
-.dropdown-item:hover { background: var(--bg-hover, #f5f5f5); }
-.dropdown-item.selected { background: var(--bg-active, #e8f0fe); font-weight: 500; }
+.dropdown-item:hover { background: rgba(99, 102, 241, 0.1); }
+.dropdown-item.selected { background: rgba(99, 102, 241, 0.15); font-weight: 500; color: var(--accent-color); }
 .dropdown-item.disabled { color: #999; cursor: default; }
 
 /* Edit cover section */
@@ -1495,7 +1618,7 @@ function coverLabel(asset: PublishAsset) {
 .btn-xs { padding: 2px 8px; font-size: 0.7rem; }
 .btn-danger { color: #f87171; border-color: #f87171; }
 .btn-danger:hover { background: rgba(248, 113, 113, 0.1); }
-.edit-cover-browser { margin-top: 0.5rem; }
+.edit-cover-browser { margin-top: 0.5rem; min-width: 0; overflow: hidden; }
 .edit-browser-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
 .edit-browser-hint { font-size: 0.75rem; color: var(--text-secondary); }
 .ratio-badge {
@@ -1517,9 +1640,12 @@ function coverLabel(asset: PublishAsset) {
   display: flex; align-items: center; gap: 0.5rem;
 }
 .pv-cover-thumb {
-  width: 48px; height: 36px; object-fit: cover; border-radius: 4px; cursor: pointer;
+  width: 80px; height: 60px; object-fit: cover; border-radius: 4px; cursor: pointer;
   border: 1px solid var(--border-color);
 }
+.pv-video-thumb {
+  width: 300px; max-height: 160px; object-fit: contain; border-radius: 4px;
+  border: 1px solid var(--border-color); background: #000;
+}
 .pv-cover-thumb:hover { border-color: var(--accent-color); }
-.pv-cover-ready { color: #4ade80; font-size: 0.8rem; }
 </style>

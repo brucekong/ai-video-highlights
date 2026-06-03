@@ -57,17 +57,93 @@ export function getWxvideoSteps(mode: 'draft' | 'publish' = 'draft'): PublishSte
       timeoutMs: 3000,
     },
     {
-      action: 'upload',
-      selector: '.cover-uploader input[type=file]',
-      fileField: 'cover43',
-      timeoutMs: 10000,
-    },
-    {
       action: 'waitForSelector',
       selector: '#fullScreenVideo',
       timeoutMs: 180000,
     },
+    { action: 'delay', ms: 10000 },
+    // Upload 3:4 cover: click container → popup → upload → confirm
+    // {
+    //   action: 'waitForSelector',
+    //   selector: '.vertical-cover-wrap',
+    //   timeoutMs: 180000,
+    // },
+    {
+      action: 'click',
+      selector: '.vertical-cover-wrap',
+      timeoutMs: 5000,
+      optional: true,
+    },
+    { action: 'delay', ms: 1000 },
+    {
+      action: 'upload',
+      selector: '.single-cover-uploader-wrap input[type=file]',
+      fileField: 'cover34',
+      timeoutMs: 10000,
+    },
     { action: 'delay', ms: 3000 },
+    { action: 'screenshot', label: 'after-cover34-upload' },
+    { action: 'delay', ms: 2000 },
+    {
+      action: 'clickDeep',
+      selector: '.finder-dialog-footer .weui-desktop-btn_primary',
+      timeoutMs: 10000,
+      optional: true,
+    },
+    { action: 'delay', ms: 2000 },
+    // Upload 4:3 cover: click container → bubble → click "直接编辑" → dialog → upload → confirm
+    {
+      action: 'click',
+      selector: '.horizon-cover-wrap',
+      timeoutMs: 5000,
+      optional: true,
+    },
+    { action: 'delay', ms: 1000 },
+    {
+      action: 'click',
+      selector: '.img-recommend-wrap .btn-directly-edit',
+      timeoutMs: 5000,
+      optional: true,
+    },
+    { action: 'delay', ms: 1000 },
+    {
+      action: 'upload',
+      selector: '.single-cover-uploader-wrap input[type=file]',
+      fileField: 'cover43',
+      timeoutMs: 10000,
+    },
+    { action: 'delay', ms: 5000 },
+    {
+      action: 'clickDeep',
+      selector: '.finder-dialog-footer .weui-desktop-btn_primary',
+      timeoutMs: 10000,
+      optional: true,
+    },
+    { action: 'delay', ms: 1000 },
+
+    // Declare original content
+    {
+      action: 'click',
+      selector: '.declare-original-checkbox',
+      timeoutMs: 5000,
+      optional: true,
+    },
+    { action: 'delay', ms: 1000 },
+    {
+      action: 'click',
+      selector: '.original-proto-wrapper',
+      timeoutMs: 5000,
+      optional: true,
+    },
+    { action: 'delay', ms: 500 },
+    {
+      action: 'clickDeep',
+      selector: '.weui-desktop-dialog__ft .weui-desktop-btn_wrp .weui-desktop-btn_primary',
+      timeoutMs: 5000,
+      optional: true,
+    },
+    { action: 'delay', ms: 1000 },
+
     {
       action: 'checkError',
       selector: '.form-error, .ant-form-item-explain-error, [class*="error-tip"], [class*="err-msg"]',

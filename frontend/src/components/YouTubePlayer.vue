@@ -126,6 +126,14 @@ defineExpose({
   },
   setLoop: (start: number, end: number) => {
     if (player && player.seekTo) {
+      if (player.previewRequestId) {
+        cancelAnimationFrame(player.previewRequestId);
+        player.previewRequestId = null;
+      }
+      if (player.previewTimeoutId) {
+        clearTimeout(player.previewTimeoutId);
+        player.previewTimeoutId = null;
+      }
       player.seekTo(start, true);
       player.playVideo();
       startTimePolling(player);
@@ -147,10 +155,73 @@ defineExpose({
       player.loopRequestId = requestAnimationFrame(checkEnd);
     }
   },
+  playUntil: (start: number, end: number) => {
+    if (player && player.seekTo) {
+      const previewStart = Math.max(0, Math.min(start, end));
+      const previewEnd = Math.max(previewStart, end);
+
+      if (player.loopRequestId) {
+        cancelAnimationFrame(player.loopRequestId);
+        player.loopRequestId = null;
+      }
+      if (player.previewRequestId) {
+        cancelAnimationFrame(player.previewRequestId);
+        player.previewRequestId = null;
+      }
+      if (player.previewTimeoutId) {
+        clearTimeout(player.previewTimeoutId);
+        player.previewTimeoutId = null;
+      }
+
+      player.seekTo(previewStart, true);
+      startTimePolling(player);
+
+      const seekReadyAt = performance.now() + 250;
+      let hasEnteredPreviewWindow = false;
+
+      const stopAtEnd = () => {
+        if (!player || !player.getCurrentTime) return;
+
+        if (performance.now() < seekReadyAt) {
+          player.previewRequestId = requestAnimationFrame(stopAtEnd);
+          return;
+        }
+
+        const currentTime = player.getCurrentTime();
+        if (currentTime >= previewStart - 0.15 && currentTime < previewEnd - 0.04) {
+          hasEnteredPreviewWindow = true;
+        }
+
+        if (hasEnteredPreviewWindow && currentTime >= previewEnd - 0.04) {
+          player.pauseVideo();
+          player.seekTo(previewEnd, true);
+          player.previewRequestId = null;
+          return;
+        }
+
+        player.previewRequestId = requestAnimationFrame(stopAtEnd);
+      };
+
+      player.previewTimeoutId = window.setTimeout(() => {
+        if (!player) return;
+        player.previewTimeoutId = null;
+        player.playVideo();
+        player.previewRequestId = requestAnimationFrame(stopAtEnd);
+      }, 120);
+    }
+  },
   stopLoop: () => {
     if (player && player.loopRequestId) {
       cancelAnimationFrame(player.loopRequestId);
       player.loopRequestId = null;
+    }
+    if (player && player.previewRequestId) {
+      cancelAnimationFrame(player.previewRequestId);
+      player.previewRequestId = null;
+    }
+    if (player && player.previewTimeoutId) {
+      clearTimeout(player.previewTimeoutId);
+      player.previewTimeoutId = null;
     }
   },
   pause: () => {

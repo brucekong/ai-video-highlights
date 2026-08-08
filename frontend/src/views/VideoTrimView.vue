@@ -2178,7 +2178,7 @@ const resetAll = () => {
 
 .cover-thumbnail-wrapper {
   position: relative;
-  aspect-ratio: 16/10;
+  aspect-ratio: 16/9;
   border-radius: 6px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2195,7 +2195,8 @@ const resetAll = () => {
 .cover-thumbnail {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center top;
 }
 
 .cover-time-tag {

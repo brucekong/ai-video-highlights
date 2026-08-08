@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma.js';
 import { fetchTranscript, formatTranscriptForAI, type TranscriptSegment } from '../services/transcript.js';
 import { fetchBilibiliTranscript } from '../services/bilibili.js';
-import { analyzeTranscriptSummary, generatePublishAssist, generateRedbookAssist, generateMindmap, translateTranscriptSegments, getEmbedding, getEmbeddings } from '../services/ai.js';
+import { analyzeTranscriptSummary, generatePublishAssist, generateMindmap, translateTranscriptSegments, getEmbedding, getEmbeddings } from '../services/ai.js';
 import { fallbackToWhisper } from '../services/whisper.js';
 import { fetchVideoMetadata } from '../services/metadata.js';
 import { containsSensitiveContent } from '../services/safety.js';
@@ -268,8 +268,12 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               await prisma.video.update({
                 where: { videoId },
                 data: {
+                  channelsTitle: publishResult.videoTitle,
                   videoDescription: publishResult.videoDescription,
                   videoHashtags: publishResult.videoHashtags,
+                  redbookTitle: publishResult.videoTitle,
+                  redbookDescription: publishResult.videoDescription,
+                  redbookHashtags: publishResult.videoHashtags,
                   keywordGlossary: (publishResult.keywordGlossary || []) as unknown as Prisma.InputJsonValue,
                 }
               });
@@ -296,27 +300,6 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
               console.log(`[Background] Stage 2C: Mindmap completed.`);
             } catch (err) {
               console.error(`[Background Task] Stage 2C (Mindmap) failed:`, err);
-            }
-          };
-
-          // STAGE 2D: 小红书发布辅助
-          const redbookAssistTask = async () => {
-            try {
-              console.log(`[Background] Stage 2D: Redbook assist starting...`);
-              const redbookResult = await generateRedbookAssist(formattedText);
-
-              await prisma.video.update({
-                where: { videoId },
-                data: {
-                  redbookTitle: redbookResult.redbookTitle,
-                  redbookDescription: redbookResult.redbookDescription,
-                  redbookHashtags: redbookResult.redbookHashtags,
-                },
-              });
-
-              console.log(`[Background] Stage 2D: Redbook assist completed.`);
-            } catch (err) {
-              console.error(`[Background Task] Stage 2D (Redbook Assist) failed:`, err);
             }
           };
 
@@ -419,7 +402,7 @@ export async function analyzeRoutes(fastify: FastifyInstance) {
           // 1. 先做原文索引（最快解锁按钮）
           await initialEmbeddingTask();
           // 2. 然后并行处理摘要、发布辅助、脑图和翻译流
-          await Promise.all([summaryTask(), publishAssistTask(), redbookAssistTask(), mindmapTask(), translationFlowTask()]);
+          await Promise.all([summaryTask(), publishAssistTask(), mindmapTask(), translationFlowTask()]);
 
         } catch (err) {
           console.error(`[Background Task Overall] ${videoId}:`, err);

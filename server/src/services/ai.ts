@@ -38,8 +38,7 @@ export interface AIMindmapResult {
   mindmap: string;
 }
 
-const FIXED_VIDEO_HASHTAGS = ['#慢速英语动画', '#慢速英语', '#慢速口语'] as const;
-const FIXED_REDBOOK_HASHTAGS = ['#慢速英语动画', '#慢速英语'] as const;
+const FIXED_PUBLISH_HASHTAGS = ['#慢速英语动画', '#慢速英语', '#慢速口语'] as const;
 const KEYWORD_GLOSSARY_MAX_WORDS = 8;
 const KEYWORD_GLOSSARY_MAX_CHARS = 80;
 
@@ -73,15 +72,30 @@ const SUMMARY_SYSTEM_PROMPT = `你是一个专业的视频内容分析助手。�
 8. 根据内容判定一个最准确的分类（建议：技术、职场、教育、自媒体、财商、人文、生活、运动、其它）
 9. 提取 3-5 个核心关键词作为标签
 10. 只返回 JSON，不要有任何其他文字或 markdown 标记`
-;
+  ;
 
-const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。你的任务是基于视频转录文本，为“视频号/小红书类平台发布”生成辅助文案。
+const XIAOHONGSHU_COPY_REQUIREMENTS = `文案要求：
+1. 标题和正文统一按“小红书爆款笔记”风格来写，语言自然、有画面感、有情绪，但不要夸张低俗。
+2. 标题要让人想点开，长度控制在 18-24 个汉字以内，可使用 1-3 个贴切 emoji，避免空泛标题。
+3. 正文必须使用小红书常见排版：
+   - 开头先用 1 句钩子点出反差、亮点或情绪
+   - 正文分成 3-5 段，每段 1-2 句
+   - 段首可用 emoji / 符号做分隔
+   - 整体约 140-260 字
+4. 正文不要只是复述剧情，要写出“为什么值得看 / 值得学”，尽量带出 2-4 个具体细节。
+5. 如果内容和英语学习有关，要自然点出“适合练听力 / 口语 / 跟读 / 积累表达”等学习价值，但不要写成生硬广告。
+6. 允许保留少量英文关键词增强记忆点，但正文主体必须是自然中文。
+7. hashtag 输出 6-9 个，必须包含这些固定标签：${FIXED_PUBLISH_HASHTAGS.join(' ')}。其它标签再根据视频主题补充，如亲子、美食、日常、听力练习、英语口语等。
+8. 避免套话，如“快来看看”“真的太绝了”“内容很精彩”等空泛表达，避免机械总结。
+9. 只返回 JSON，不要有任何其他文字或 markdown 标记。`;
+
+const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。你的任务是基于视频转录文本，生成一套适合社交平台发布的“小红书风格”文案，同时提炼英语学习关键词。
 
 请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
 
 {
-  "video_title": "适合视频号发布的标题，最多16个字",
-  "video_description": "一段吸引人的视频简介，适合发布在视频号、小红书等社交平台，需包含视频核心价值，字数约 100 字左右",
+  "video_title": "小红书风格标题，带 emoji，更有吸引力",
+  "video_description": "小红书风格正文，带分段、emoji、细节和情绪",
   "video_hashtags": "#话题1 #话题2 #话题3",
   "keyword_glossary": [
     {
@@ -93,39 +107,24 @@ const PUBLISH_ASSIST_SYSTEM_PROMPT = `你是一个短视频发布辅助助手。
   ]
 }
 
-要求：
-1. video_title 必须遵守视频号标题规则：
-   - 不超过16个字（中文算1个字，英文字母/数字算半个字）
-   - 不得包含 emoji 和特殊符号
-   - 仅允许以下符号：书名号《》、引号""''、冒号：、加号+、问号？、百分号%、摄氏度℃
-   - 不使用逗号，可用空格代替
-   - 简洁有吸引力，突出视频核心内容
-2. video_description 要自然、适合发布，不要空泛套话
-3. video_hashtags 提取 3-5 个最相关的话题，使用空格分隔
-4. keyword_glossary 提炼 8-15 个最值得学习的关键单词和短语
-5. english 保留原文，phonetic 提供自然、常见的美式音标，建议使用 /.../ 格式；如果实在不适合可返回空字符串
-6. chinese 给出自然中文释义，type 只能是 word 或 phrase
-7. 优先选择视频里高频、核心、场景相关的表达，避免过于基础的虚词
-8. 如果视频主要是中文，keyword_glossary 可以返回空数组
-9. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
+${XIAOHONGSHU_COPY_REQUIREMENTS}
+10. keyword_glossary 提炼 8-15 个最值得学习的关键单词和短语。
+11. english 保留原文，phonetic 提供自然、常见的美式音标，建议使用 /.../ 格式；如果实在不适合可返回空字符串。
+12. chinese 给出自然中文释义，type 只能是 word 或 phrase。
+13. 优先选择视频里高频、核心、场景相关的表达，避免过于基础的虚词。
+14. 如果视频主要是中文，keyword_glossary 可以返回空数组。`;
 
 const REDBOOK_ASSIST_SYSTEM_PROMPT = `你是一个小红书内容运营专家。你的任务是基于视频转录文本，生成一套适合在小红书发布的文案。
 
 请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
 
 {
-  "redbook_title": "带有 emoji 的吸引人标题，20 字以内",
-  "redbook_description": "小红书风格的正文内容，包含 emoji 和分段",
+  "redbook_title": "带 emoji 的吸引人标题",
+  "redbook_description": "小红书风格正文，包含 emoji、分段、细节和情绪",
   "redbook_hashtags": "#话题1 #话题2 #话题3"
 }
 
-要求：
-1. redbook_title 要吸引眼球，使用 1-2 个贴切的 emoji 开头或穿插，风格活泼，适合小红书信息流
-2. redbook_description 要符合小红书排版风格：使用 emoji 做段落分隔符，每段 1-2 句话，整体 150-300 字，语气自然亲切，有干货感
-3. redbook_hashtags 提取 5-8 个适合小红书的话题标签，包括通用热门话题和垂直领域话题，使用空格分隔
-4. 如果视频是英文内容，文案仍然用中文撰写，但可以保留少量英文关键词增加专业感
-5. 避免空泛套话，要突出视频的核心价值和亮点
-6. 只返回 JSON，不要有任何其他文字或 markdown 标记`;
+${XIAOHONGSHU_COPY_REQUIREMENTS}`;
 
 const MINDMAP_SYSTEM_PROMPT = `你是一个视频结构化分析助手。你的任务是根据视频转录文本生成一份完整、层次清晰的脑图 Markdown。
 
@@ -183,7 +182,7 @@ function normalizeVideoHashtags(rawHashtags: unknown): string {
     tags.push(normalized);
   };
 
-  FIXED_VIDEO_HASHTAGS.forEach(pushTag);
+  FIXED_PUBLISH_HASHTAGS.forEach(pushTag);
 
   String(rawHashtags || '')
     .split(/\s+/)
@@ -205,7 +204,7 @@ function normalizeRedbookHashtags(rawHashtags: unknown): string {
     tags.push(normalized);
   };
 
-  FIXED_REDBOOK_HASHTAGS.forEach(pushTag);
+  FIXED_PUBLISH_HASHTAGS.forEach(pushTag);
 
   String(rawHashtags || '')
     .split(/\s+/)
@@ -281,7 +280,7 @@ async function requestJsonFromDeepSeek(params: {
       console.log(`🤖 DeepSeek API attempt ${attempt}/${MAX_RETRIES}...`);
 
       const completion = await client.chat.completions.create({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         messages: [
           {
             role: 'system',
@@ -362,6 +361,7 @@ export async function generatePublishAssist(
     systemPrompt: PUBLISH_ASSIST_SYSTEM_PROMPT,
     userContent: `以下是视频转录文本：\n\n${formattedTranscript}`,
     maxTokens: 1800,
+    temperature: 0.8,
   });
 
   return {
@@ -388,6 +388,7 @@ export async function generateRedbookAssist(
     systemPrompt: REDBOOK_ASSIST_SYSTEM_PROMPT,
     userContent: `以下是视频转录文本：\n\n${formattedTranscript}`,
     maxTokens: 1200,
+    temperature: 0.8,
   });
 
   return {
@@ -493,7 +494,7 @@ export async function translateTranscriptSegments(
         console.log(`[Batch ${batchIdx + 1}] Translation attempt ${attempt}/${MAX_RETRIES}...`);
 
         const completion = await client.chat.completions.create({
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
           messages: [
             {
               role: 'system',
@@ -551,7 +552,7 @@ export async function translateTranscriptSegments(
           await sleep(delayMs);
           continue;
         }
-        
+
         // 其他错误或重试耗尽
         console.error(`[Batch ${batchIdx + 1}] Attempt ${attempt} failed:`, error.message);
         if (attempt === MAX_RETRIES) {
@@ -614,7 +615,7 @@ ${transcriptContext}
   ];
 
   const stream = await client.chat.completions.create({
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     messages,
     stream: true,
     temperature: 0.5,

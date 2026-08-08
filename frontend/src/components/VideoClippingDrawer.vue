@@ -12,7 +12,13 @@ const props = defineProps<{
   initialEnd?: number;
 }>();
 
-const emit = defineEmits(['close', 'seek', 'start-loop', 'stop-loop']);
+const emit = defineEmits<{
+  (e: 'close'): void;
+  (e: 'seek', offsetMs: number): void;
+  (e: 'play-until', start: number, end: number): void;
+  (e: 'start-loop', start: number, end: number, id: string): void;
+  (e: 'stop-loop'): void;
+}>();
 
 const startTime = ref(0);
 const endTime = ref(0);
@@ -143,7 +149,7 @@ const previewStart = () => {
 };
 
 const previewEnd = () => {
-  emit('seek', endTime.value * 1000);
+  emit('play-until', clampTime(endTime.value - 2), endTime.value);
 };
 
 const toggleLoop = () => {
@@ -323,7 +329,7 @@ const handleGenerate = async () => {
           <div class="time-box">
             <div class="time-box-header">
               <label>结束时间 / End (O)</label>
-              <button class="btn-mini-preview" @click="previewEnd" title="跳到结束时间并播放">
+              <button class="btn-mini-preview" @click="previewEnd" title="从结束前 2 秒播放，到结束时间停止">
                 <Play :size="12" />
                 <span>播放</span>
               </button>

@@ -50,6 +50,13 @@ defineExpose({
       iframeRef.value.src = `${baseUrl}&t=${Math.floor(start)}`;
     }
   },
+  playUntil: (start: number, end: number) => {
+    console.log(`Bilibili preview requested for segment ending at ${end}s (pause not supported)`);
+    if (iframeRef.value) {
+      const baseUrl = `//player.bilibili.com/player.html?bvid=${props.bvid}&page=1&high_quality=1&danmaku=0&autoplay=1`;
+      iframeRef.value.src = `${baseUrl}&t=${Math.floor(start)}`;
+    }
+  },
   stopLoop: () => {}
 });
 </script>

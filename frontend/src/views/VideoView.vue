@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2, Volume2, Trash2, BookOpen } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2, Volume2, Trash2, BookOpen, Download, Save } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
@@ -86,6 +86,7 @@ const redbookHashtags = ref('');
 const activePublishTab = ref<'channels' | 'redbook'>('channels');
 
 // Merged: prefer redbook content over channels content
+const mergedPublishTitle = computed(() => redbookTitle.value || videoTitle.value);
 const mergedDescription = computed(() => redbookDescription.value || videoDescription.value);
 const mergedHashtags = computed(() => redbookHashtags.value || videoHashtags.value);
 const keywordGlossary = ref<KeywordGlossaryItem[]>([]);
@@ -129,6 +130,7 @@ const isClippingId = ref<string | null>(null); // 正在剪辑的 ID
 const isRebuildingCues = ref(false);
 const isRetranslatingCues = ref(false);
 const isDeletingKeywordGlossary = ref(false);
+const isExportingObsidian = ref(false);
 const pendingAction = ref<null | 'rebuild-cues' | 'retranslate-cues' | 'force-analyze' | 'regenerate-summary' | 'delete-keyword'>(null);
 const pendingKeywordDelete = ref<KeywordGlossaryItem | null>(null);
 const actionNotice = ref<{ title: string; message: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -1948,6 +1950,13 @@ const startLoop = (start: number, end: number, id: string) => {
   }
 };
 
+const playUntil = (start: number, end: number) => {
+  stopLoop();
+  if (playerRef.value?.playUntil) {
+    playerRef.value.playUntil(start, end);
+  }
+};
+
 const stopLoop = () => {
   selectedLoop.value = null;
   if (playerRef.value?.stopLoop) {
@@ -2106,6 +2115,124 @@ const takeawayMap = computed(() => {
 });
 
 // --- 知识外部化 (Knowledge Externalization) ---
+const sanitizeMarkdownText = (value: string) => {
+  return (value || '')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const sanitizeFilename = (value: string) => {
+  return (value || 'video')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 80) || 'video';
+};
+
+const buildBilingualTranscriptMarkdown = () => {
+  const title = videoTitle.value || videoId.value || '视频字幕';
+  const lines = [
+    `# ${title} - 中英文字幕对照`,
+    '',
+  ];
+
+  if (videoUrl.value) {
+    lines.push(`> 视频链接：${videoUrl.value}`, '');
+  }
+
+  lines.push('## 字幕对照', '');
+
+  mergedTranscript.value.forEach((seg) => {
+    const translated = sanitizeMarkdownText(seg.translatedText || '');
+    const original = sanitizeMarkdownText(seg.text || '');
+
+    if (!translated && !original) {
+      return;
+    }
+
+    if (translated && original) {
+      lines.push(`- ${translated}  `);
+      lines.push(`  ${original}`);
+      return;
+    }
+
+    lines.push(`- ${translated || original}`);
+  });
+
+  return lines.join('\n');
+};
+
+const exportBilingualTranscriptMarkdown = () => {
+  if (!mergedTranscript.value.length) {
+    showActionNotice({
+      title: '暂无可导出字幕',
+      message: '当前视频还没有可导出的字幕内容。',
+      type: 'info',
+    });
+    return;
+  }
+
+  const markdown = buildBilingualTranscriptMarkdown();
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+
+  anchor.href = url;
+  anchor.download = `${sanitizeFilename(videoTitle.value || videoId.value)}-bilingual-subtitles.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+
+  showActionNotice({
+    title: '导出成功',
+    message: '中英文字幕对照 Markdown 已开始下载。',
+    type: 'success',
+  });
+};
+
+const exportTranscriptToObsidian = async () => {
+  if (!videoId.value || !mergedTranscript.value.length || isExportingObsidian.value) {
+    return;
+  }
+
+  isExportingObsidian.value = true;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/videos/${videoId.value}/export/obsidian`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        filename: `${sanitizeFilename(videoTitle.value || videoId.value)}-bilingual-subtitles`,
+        content: buildBilingualTranscriptMarkdown(),
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.message || result.error || '导入 Obsidian 失败');
+    }
+
+    showActionNotice({
+      title: '导入成功',
+      message: `已保存到 ${result.path}`,
+      type: 'success',
+    });
+  } catch (error: any) {
+    console.error('Export transcript to Obsidian failed:', error);
+    showActionNotice({
+      title: '导入失败',
+      message: error.message || '导入 Obsidian 失败，请检查本地目录是否可写。',
+      type: 'error',
+    });
+  } finally {
+    isExportingObsidian.value = false;
+  }
+};
 
 
 </script>
@@ -2417,7 +2544,7 @@ const takeawayMap = computed(() => {
                 <div v-else-if="!mergedDescription && !mergedHashtags && !redbookTitle" class="publish-item">
                   <div class="publish-content glossary-empty-state publish-empty-action">
                     <span>暂无发布文案</span>
-                    <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels || isRegeneratingRedbook">
+                    <button class="btn-copy-mini" @click="regenerateRedbookAssist" :disabled="isRegeneratingChannels || isRegeneratingRedbook">
                       <Sparkles :size="12" />
                       <span>立即生成</span>
                     </button>
@@ -2429,18 +2556,18 @@ const takeawayMap = computed(() => {
                   <div class="publish-label">
                     <span>描述 / Description</span>
                     <div class="publish-label-actions">
-                      <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels">
+                      <button class="btn-copy-mini" @click="regenerateRedbookAssist" :disabled="isRegeneratingChannels || isRegeneratingRedbook">
                         <Loader2 v-if="isRegeneratingChannels || isRegeneratingRedbook" :size="12" class="spin" />
                         <RefreshCw v-else :size="12" />
                         <span>{{ (isRegeneratingChannels || isRegeneratingRedbook) ? '生成中...' : '重新生成' }}</span>
                       </button>
-                      <button class="btn-copy-mini" @click="copyToClipboard([redbookTitle, mergedDescription, mergedHashtags].filter(Boolean).join('\n\n'))">
+                      <button class="btn-copy-mini" @click="copyToClipboard([mergedPublishTitle, mergedDescription, mergedHashtags].filter(Boolean).join('\n\n'))">
                         <span>一键复制</span>
                       </button>
                     </div>
                   </div>
                   <div class="publish-content redbook-description-content">
-                    <div v-if="redbookTitle" class="redbook-title-content">{{ redbookTitle }}</div>
+                    <div v-if="mergedPublishTitle" class="redbook-title-content">{{ mergedPublishTitle }}</div>
                     <div v-if="mergedDescription">{{ mergedDescription }}</div>
                     <div v-if="mergedHashtags" class="publish-hashtags-inline">{{ mergedHashtags }}</div>
                   </div>
@@ -2625,6 +2752,7 @@ const takeawayMap = computed(() => {
                 :initial-end="clippingRange.end"
                 @close="showClippingDrawer = false"
                 @seek="handleSeek"
+                @play-until="playUntil"
                 @start-loop="startLoop"
                 @stop-loop="stopLoop"
               />
@@ -2697,6 +2825,27 @@ const takeawayMap = computed(() => {
                       </button>
                     </AppTooltip>
                     <div class="sidebar-divider"></div>
+                    <AppTooltip text="导出中英文字幕对照 Markdown" teleport>
+                      <button
+                        class="btn-search-in-video btn-export-transcript"
+                        style="width: 32px; padding: 0;"
+                        @click="exportBilingualTranscriptMarkdown"
+                        :disabled="mergedTranscript.length === 0"
+                      >
+                        <Download :size="14" />
+                      </button>
+                    </AppTooltip>
+                    <AppTooltip text="导入到本地 Obsidian 字幕目录" teleport>
+                      <button
+                        class="btn-search-in-video btn-export-transcript"
+                        style="width: 32px; padding: 0;"
+                        @click="exportTranscriptToObsidian"
+                        :disabled="mergedTranscript.length === 0 || isExportingObsidian"
+                      >
+                        <Loader2 v-if="isExportingObsidian" :size="14" class="spin" />
+                        <Save v-else :size="14" />
+                      </button>
+                    </AppTooltip>
                     <button
                       v-if="hasBilingualData"
                       class="toggle-bilingual-btn"
@@ -3930,6 +4079,18 @@ input::placeholder {
   border-color: rgba(14, 165, 233, 0.35);
   color: #c8efff;
   background: rgba(14, 165, 233, 0.14);
+}
+
+.btn-export-transcript {
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.btn-export-transcript:hover:not(:disabled) {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.14);
 }
 
 .btn-search-in-video:hover:not(:disabled), .btn-mindmap:hover:not(:disabled) {

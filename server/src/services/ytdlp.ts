@@ -103,11 +103,18 @@ export async function downloadWithYtDlpFallback(
   const baseFlags = buildYtDlpBaseFlags(flags);
   const attempts: Array<{ label: string; flags: YtDlpFlags }> = [];
 
-  if (isYoutube && cookieContents && cookieFile) {
-    await fs.writeFile(cookieFile, cookieContents.replace(/\\n/g, '\n'));
+  if (isYoutube) {
+    if (cookieContents && cookieFile) {
+      await fs.writeFile(cookieFile, cookieContents.replace(/\\n/g, '\n'));
+      attempts.push({
+        label: 'with env cookies',
+        flags: { ...baseFlags, cookies: cookieFile },
+      });
+    }
+
     attempts.push({
-      label: 'with cookies',
-      flags: { ...baseFlags, cookies: cookieFile },
+      label: 'with browser cookies (chrome)',
+      flags: { ...baseFlags, cookiesFromBrowser: 'chrome' },
     });
   }
 

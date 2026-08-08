@@ -2,11 +2,33 @@ import youtubedl from 'youtube-dl-exec';
 import path from 'path';
 import fs from 'fs-extra';
 import os from 'os';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { downloadWithYtDlpFallback, resolveFfmpegLocation } from './ytdlp.js';
 
-const execAsync = promisify(exec);
+const execAsync = (cmd: string) => new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+  const child = spawn(cmd, { shell: true });
+  let errorMsg = '';
+  
+  child.stderr.on('data', (data) => {
+    errorMsg += data.toString();
+    if (errorMsg.length > 5000) {
+      errorMsg = errorMsg.slice(-5000);
+    }
+  });
+
+  child.on('close', (code) => {
+    if (code !== 0) {
+      reject(new Error(`Command failed with code ${code}:\n${errorMsg}`));
+    } else {
+      resolve({ stdout: '', stderr: '' });
+    }
+  });
+  
+  child.on('error', (err) => {
+    reject(err);
+  });
+});
 
 // 缓存目录
 const CLIPS_DIR = path.join(process.cwd(), 'cache', 'clips');
@@ -315,11 +337,17 @@ function buildHardSubtitleFilter(srtPath: string): string {
   const padFilter = `setpts=PTS-STARTPTS,pad=iw:ih+${BURN_SUBTITLE_PAD_HEIGHT}:0:0:color=black`;
   const fontName = process.env.SUBTITLE_FONT
     || (process.platform === 'darwin' ? 'PingFang SC' : process.platform === 'win32' ? 'Microsoft YaHei' : 'Noto Sans CJK SC');
-  const fontsDir = process.platform === 'darwin'
-    ? '/System/Library/Fonts'
-    : process.platform === 'win32'
-      ? 'C\\\\:/Windows/Fonts'
-      : '/usr/share/fonts';
+  let fontsDir = '';
+  const localFontsDir = path.join(process.cwd(), 'fonts');
+  if (fs.existsSync(localFontsDir)) {
+    fontsDir = localFontsDir.replace(/\\/g, '/').replace(/:/g, '\\:');
+  } else {
+    fontsDir = process.platform === 'darwin'
+      ? '/System/Library/Fonts'
+      : process.platform === 'win32'
+        ? 'C\\\\:/Windows/Fonts'
+        : '/usr/share/fonts';
+  }
   const subStyle = `FontName=${fontName},Fontsize=${BURN_SUBTITLE_FONT_SIZE},PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,MarginV=34,MarginL=${BURN_SUBTITLE_SIDE_MARGIN},MarginR=${BURN_SUBTITLE_SIDE_MARGIN},Alignment=2`;
   return `${padFilter},subtitles=${safeSrtPath}:fontsdir=${fontsDir}:force_style='${subStyle}'`;
 }
@@ -344,6 +372,15 @@ function appendWatermarkFilter(baseFilter?: string): string {
 function getSubtitleFontFile(): string {
   if (process.env.SUBTITLE_FONT_FILE) {
     return process.env.SUBTITLE_FONT_FILE;
+  }
+
+  const localFontTtc = path.join(process.cwd(), 'fonts', 'PingFang.ttc');
+  const localFontTtf = path.join(process.cwd(), 'fonts', 'PingFang.ttf');
+  if (fs.existsSync(localFontTtc)) {
+    return localFontTtc;
+  }
+  if (fs.existsSync(localFontTtf)) {
+    return localFontTtf;
   }
 
   if (process.platform === 'darwin') {
@@ -453,12 +490,11 @@ async function ensureClipSourceVideo({
     // track so later local trims do not inherit broken/short audio indexes.
     await execAsync(`ffmpeg -y -fflags +genpts -i "${rawPath}" -map 0:v:0 -map 0:a:0? -c:v copy -c:a aac -b:a 192k -af "aresample=async=1:first_pts=0" -movflags +faststart "${sourcePath}"`);
 
+    await fs.remove(rawPath).catch(() => {});
     return sourcePath;
   } catch (error) {
     await fs.remove(sourcePath).catch(() => {});
     throw error;
-  } finally {
-    await fs.remove(rawPath).catch(() => {});
   }
 }
 
@@ -633,14 +669,14 @@ export async function downloadFullVideo({
       await execAsync(`ffmpeg -y -i "${preparedPath}" -vf "${vfFilter}" -c:v libx264 -preset superfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
     }
 
+    await fs.remove(rawPath).catch(() => {});
+    await fs.remove(preparedPath).catch(() => {});
+    await fs.remove(srtPath).catch(() => {});
+    
     return outputPath;
   } catch (error: any) {
     console.error(`❌ [Full Download] Failed:`, error.message);
     throw error;
-  } finally {
-    await fs.remove(rawPath).catch(() => {});
-    await fs.remove(preparedPath).catch(() => {});
-    await fs.remove(srtPath).catch(() => {});
   }
 }
 

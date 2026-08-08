@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import prisma, { Prisma } from '../lib/prisma.js';
@@ -11,12 +12,24 @@ import {
   analyzeTranscriptSummary,
   enrichKeywordGlossaryItem,
   generatePublishAssist,
-  generateRedbookAssist,
   getEmbedding,
   isValidKeywordGlossaryEnglish,
   normalizeKeywordGlossaryEnglish,
   translateTranscriptSegments,
 } from '../services/ai.js';
+
+const OBSIDIAN_EXPORT_DIR = process.env.OBSIDIAN_EXPORT_DIR
+  || '/Users/xuelei.kong/WebstormProjects/AIKnowledge/raw/AI Talk';
+
+function sanitizeExportFilename(value: string) {
+  const baseName = (value || 'video-subtitles')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 100)
+    .trim();
+
+  return `${baseName || 'video-subtitles'}.md`;
+}
 
 async function retranslateCueSegmentsForVideo(videoId: string) {
   const cueSegments = await prisma.subtitleCue.findMany({
@@ -1020,6 +1033,80 @@ export async function videoRoutes(fastify: FastifyInstance) {
   });
 
   /**
+   * POST /api/videos/:videoId/export/obsidian
+   * 导出字幕 Markdown 到本地 Obsidian vault 目录
+   */
+  fastify.post('/api/videos/:videoId/export/obsidian', {
+    schema: {
+      tags: ['Videos'],
+      summary: '导出字幕到 Obsidian',
+      description: '将前端生成的中英文字幕 Markdown 写入本机配置的 Obsidian 目录。',
+      params: {
+        type: 'object',
+        required: ['videoId'],
+        properties: {
+          videoId: { type: 'string', description: '视频 ID' },
+        },
+      },
+      body: {
+        type: 'object',
+        required: ['content'],
+        properties: {
+          filename: { type: 'string', description: '导出的文件名，可不传扩展名' },
+          content: { type: 'string', description: 'Markdown 内容' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' },
+            path: { type: 'string' },
+          },
+        },
+        400: Schemas.ErrorResponse,
+        500: Schemas.ErrorResponse,
+      },
+    },
+  }, async (
+    request: FastifyRequest<{ Params: { videoId: string }; Body: { filename?: string; content: string } }>,
+    reply: FastifyReply,
+  ) => {
+    const content = String(request.body.content || '').trim();
+
+    if (!content) {
+      return reply.status(400).send({ error: '导出内容不能为空' });
+    }
+
+    try {
+      const exportDir = path.resolve(OBSIDIAN_EXPORT_DIR);
+      const requestedName = String(request.body.filename || request.params.videoId || '').replace(/\.md$/i, '');
+      const filename = sanitizeExportFilename(requestedName);
+      const filePath = path.resolve(exportDir, filename);
+
+      if (!filePath.startsWith(`${exportDir}${path.sep}`)) {
+        return reply.status(400).send({ error: '非法文件路径' });
+      }
+
+      await mkdir(exportDir, { recursive: true });
+      await writeFile(filePath, `${content}\n`, 'utf8');
+
+      return reply.send({
+        success: true,
+        message: '已导入 Obsidian',
+        path: filePath,
+      });
+    } catch (error: any) {
+      request.log.error(`Obsidian export failed: ${error.message}`);
+      return reply.status(500).send({
+        error: '导入 Obsidian 失败',
+        message: error.message || '请检查本地目录是否可写',
+      });
+    }
+  });
+
+  /**
    * POST /api/videos/:videoId/clip
    * 创建并导出视频切片
    */
@@ -1395,12 +1482,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /api/videos/:videoId/regenerate-channels
-   * 重新生成视频号发布辅助文案
+   * 重新生成统一发布辅助文案
    */
   fastify.post('/api/videos/:videoId/regenerate-channels', {
     schema: {
       tags: ['Videos'],
-      summary: '重新生成视频号发布文案',
+      summary: '重新生成统一发布文案',
       params: {
         type: 'object',
         required: ['videoId'],
@@ -1453,6 +1540,9 @@ export async function videoRoutes(fastify: FastifyInstance) {
           channelsTitle: result.videoTitle,
           videoDescription: result.videoDescription,
           videoHashtags: result.videoHashtags,
+          redbookTitle: result.videoTitle,
+          redbookDescription: result.videoDescription,
+          redbookHashtags: result.videoHashtags,
           keywordGlossary: (result.keywordGlossary || []) as unknown as Prisma.InputJsonValue,
         },
       });
@@ -1583,12 +1673,12 @@ export async function videoRoutes(fastify: FastifyInstance) {
 
   /**
    * POST /api/videos/:videoId/regenerate-redbook
-   * 重新生成小红书发布辅助文案
+   * 重新生成小红书风格发布文案
    */
   fastify.post('/api/videos/:videoId/regenerate-redbook', {
     schema: {
       tags: ['Videos'],
-      summary: '重新生成小红书发布文案',
+      summary: '重新生成小红书风格发布文案',
       params: {
         type: 'object',
         required: ['videoId'],
@@ -1633,23 +1723,27 @@ export async function videoRoutes(fastify: FastifyInstance) {
         video.subtitles.map(s => ({ text: s.text, offset: s.offset, duration: s.duration }))
       );
 
-      const result = await generateRedbookAssist(formattedText);
+      const result = await generatePublishAssist(formattedText);
 
       await prisma.video.update({
         where: { videoId },
         data: {
-          redbookTitle: result.redbookTitle,
-          redbookDescription: result.redbookDescription,
-          redbookHashtags: result.redbookHashtags,
+          channelsTitle: result.videoTitle,
+          videoDescription: result.videoDescription,
+          videoHashtags: result.videoHashtags,
+          redbookTitle: result.videoTitle,
+          redbookDescription: result.videoDescription,
+          redbookHashtags: result.videoHashtags,
+          keywordGlossary: (result.keywordGlossary || []) as unknown as Prisma.InputJsonValue,
         },
       });
 
       return reply.send({
         success: true,
         data: {
-          redbookTitle: result.redbookTitle,
-          redbookDescription: result.redbookDescription,
-          redbookHashtags: result.redbookHashtags,
+          redbookTitle: result.videoTitle,
+          redbookDescription: result.videoDescription,
+          redbookHashtags: result.videoHashtags,
         },
       });
     } catch (error: any) {

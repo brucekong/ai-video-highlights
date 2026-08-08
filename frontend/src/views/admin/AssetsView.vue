@@ -789,9 +789,9 @@ async function loadAnalyzedVideos() {
 function fillFromVideo() {
   const video = analyzedVideos.value.find(v => v.videoId === selectedVideoId.value);
   if (!video) return;
-  // Fill title: prefer channelsTitle (视频号 compliant) > redbookTitle > original title
-  if (video.channelsTitle) importForm.value.title = video.channelsTitle;
-  else if (video.redbookTitle) importForm.value.title = video.redbookTitle;
+  // Fill title: prefer unified redbook-style title first
+  if (video.redbookTitle) importForm.value.title = video.redbookTitle;
+  else if (video.channelsTitle) importForm.value.title = video.channelsTitle;
   else if (video.title) importForm.value.title = video.title;
   // Fill description
   if (video.redbookDescription) importForm.value.description = video.redbookDescription;
@@ -808,20 +808,16 @@ async function aiGenerateContent(target: 'import' | 'edit') {
   if (!vid || isAIGenerating.value) return;
   isAIGenerating.value = true;
   try {
-    // Regenerate both channels and redbook in parallel
-    const [channelsRes, redbookRes] = await Promise.all([
-      fetch(`${API_BASE}/api/videos/${vid}/regenerate-channels`, { method: 'POST' }).then(r => r.json()).catch(() => null),
-      fetch(`${API_BASE}/api/videos/${vid}/regenerate-redbook`, { method: 'POST' }).then(r => r.json()).catch(() => null),
-    ]);
+    const redbookRes = await fetch(`${API_BASE}/api/videos/${vid}/regenerate-redbook`, { method: 'POST' })
+      .then(r => r.json())
+      .catch(() => null);
 
     const rb = redbookRes?.data;
-    const ch = channelsRes?.data;
     const form = target === 'import' ? importForm.value : editForm.value;
 
-    // Title: prefer channels title (视频号 compliant, max 16 chars)
-    form.title = ch?.videoTitle || rb?.redbookTitle || form.title;
-    form.description = rb?.redbookDescription || ch?.videoDescription || form.description;
-    form.hashtags = rb?.redbookHashtags || ch?.videoHashtags || form.hashtags;
+    form.title = rb?.redbookTitle || form.title;
+    form.description = rb?.redbookDescription || form.description;
+    form.hashtags = rb?.redbookHashtags || form.hashtags;
   } catch (e) {
     alert('AI 生成失败: ' + (e as Error).message);
   } finally {
@@ -1192,7 +1188,14 @@ function coverLabel(asset: PublishAsset) {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   flex-shrink: 0; position: relative; overflow: hidden;
 }
-.thumb-img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center top;
+  border-radius: 8px;
+  background: #000;
+}
 .thumb-icon { color: var(--accent-color); opacity: 0.7; }
 .thumb-ext {
   font-size: 0.6rem; font-weight: 700; color: var(--text-secondary);
@@ -1243,7 +1246,9 @@ function coverLabel(asset: PublishAsset) {
 }
 .cover-thumb {
   height: 56px; border-radius: 6px; cursor: pointer;
-  border: 1px solid var(--border-color); object-fit: cover;
+  border: 1px solid var(--border-color); object-fit: contain;
+  object-position: center top;
+  background: #000;
   transition: all var(--transition-fast);
 }
 .cover-thumb:hover { border-color: var(--accent-color); transform: scale(1.05); }
@@ -1559,7 +1564,14 @@ function coverLabel(asset: PublishAsset) {
 /* Cover Preview */
 .cover-modal { max-width: 640px; }
 .cover-body { display: flex; align-items: center; justify-content: center; padding: 1rem; background: var(--bg-secondary); }
-.preview-cover { max-width: 100%; max-height: 60vh; border-radius: 4px; }
+.preview-cover {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  object-position: center top;
+  border-radius: 4px;
+  background: #000;
+}
 
 /* Searchable select dropdown */
 .searchable-select { position: relative; }
@@ -1634,14 +1646,26 @@ function coverLabel(asset: PublishAsset) {
 .import-card-filename { font-size: 0.7rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .video-icon-placeholder { color: var(--accent-color); }
 .browse-img-thumb {
-  width: 28px; height: 28px; object-fit: cover; border-radius: 3px; flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  object-position: center top;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: #000;
 }
 .pv-covers {
   display: flex; align-items: center; gap: 0.5rem;
 }
 .pv-cover-thumb {
-  width: 80px; height: 60px; object-fit: cover; border-radius: 4px; cursor: pointer;
+  width: 80px;
+  height: 60px;
+  object-fit: contain;
+  object-position: center top;
+  border-radius: 4px;
+  cursor: pointer;
   border: 1px solid var(--border-color);
+  background: #000;
 }
 .pv-video-thumb {
   width: 300px; max-height: 160px; object-fit: contain; border-radius: 4px;

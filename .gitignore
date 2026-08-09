@@ -29,3 +29,4 @@ server/cache/
 .env
 .env.production
 *transcript_*.json
+cookies.txt

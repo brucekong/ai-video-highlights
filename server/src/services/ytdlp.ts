@@ -112,11 +112,20 @@ export async function downloadWithYtDlpFallback(
       });
     }
 
-    const localCookiesTxt = path.join(process.cwd(), 'cookies.txt');
-    if (fs.existsSync(localCookiesTxt)) {
+    const localCookiesRoot = path.join(process.cwd(), '..', 'cookies.txt');
+    const localCookiesServer = path.join(process.cwd(), 'cookies.txt');
+    let validCookiePath = '';
+    
+    if (fs.existsSync(localCookiesRoot)) {
+      validCookiePath = localCookiesRoot;
+    } else if (fs.existsSync(localCookiesServer)) {
+      validCookiePath = localCookiesServer;
+    }
+
+    if (validCookiePath) {
       attempts.push({
         label: 'with local cookies.txt',
-        flags: { ...baseFlags, cookies: localCookiesTxt },
+        flags: { ...baseFlags, cookies: validCookiePath },
       });
     }
 

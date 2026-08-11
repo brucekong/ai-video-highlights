@@ -1504,6 +1504,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
                 videoTitle: { type: 'string', nullable: true },
                 videoDescription: { type: 'string', nullable: true },
                 videoHashtags: { type: 'string', nullable: true },
+                keywordGlossary: { type: 'array', nullable: true },
               },
             },
           },
@@ -1553,6 +1554,7 @@ export async function videoRoutes(fastify: FastifyInstance) {
           videoTitle: result.videoTitle,
           videoDescription: result.videoDescription,
           videoHashtags: result.videoHashtags,
+          keywordGlossary: result.keywordGlossary || [],
         },
       });
     } catch (error: any) {

@@ -1412,6 +1412,7 @@ watch(showBottomSubtitleDock, (value) => {
 const isAnalyzingSummary = ref(false); // 是否正在分析摘要/脑图
 const isGeneratingMindmap = ref(false);
 const isGeneratingPublishAssist = ref(false);
+const publishAnalysisStartedAt = ref<number | null>(null);
 const isGeneratingRedbookAssist = ref(false);
 const isRegeneratingSummary = ref(false);
 const isRegeneratingChannels = ref(false);
@@ -1474,7 +1475,7 @@ const pollAnalysisStatus = async () => {
         isGeneratingMindmap.value = false;
       }
 
-      if (result.data.publishReady) {
+      if (result.data.publishReady || (publishAnalysisStartedAt.value && Date.now() - publishAnalysisStartedAt.value > 45000)) {
         isGeneratingPublishAssist.value = false;
       }
 
@@ -1602,6 +1603,9 @@ const handleAnalyze = async (force: boolean = false) => {
 
       isGeneratingMindmap.value = !result.data.mindmapReady;
       isGeneratingPublishAssist.value = !result.data.publishReady;
+      if (isGeneratingPublishAssist.value) {
+        publishAnalysisStartedAt.value = Date.now();
+      }
       // Only show redbook generating state for non-cached (actively analyzing) videos
       isGeneratingRedbookAssist.value = !result.cached && !result.data.redbookReady;
 
@@ -1831,6 +1835,7 @@ const copyToClipboard = async (text: string, message: string = '内容已复制�
 const regenerateChannelsAssist = async () => {
   if (!videoId.value || isRegeneratingChannels.value) return;
   isRegeneratingChannels.value = true;
+  isGeneratingPublishAssist.value = true;
   try {
     const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/regenerate-channels`, {
       method: 'POST',
@@ -1840,13 +1845,19 @@ const regenerateChannelsAssist = async () => {
     if (result.success && result.data) {
       videoDescription.value = decodeHtml(result.data.videoDescription || '');
       videoHashtags.value = decodeHtml(result.data.videoHashtags || '');
-      showActionNotice({ title: '重新生成成功', message: '视频号文案已更新', type: 'success' });
+      if (result.data.keywordGlossary) {
+        keywordGlossary.value = normalizeKeywordGlossary(result.data.keywordGlossary || []);
+      }
+      showActionNotice({ title: '重新生成成功', message: '发布文案与关键词汇已更新', type: 'success' });
+    } else {
+      throw new Error(result.error || '生成失败');
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to regenerate channels assist:', err);
-    showActionNotice({ title: '生成失败', message: '重新生成视频号文案失败', type: 'error' });
+    showActionNotice({ title: '生成失败', message: err.message || '重新生成发布文案与词汇失败', type: 'error' });
   } finally {
     isRegeneratingChannels.value = false;
+    isGeneratingPublishAssist.value = false;
   }
 };
 
@@ -2530,6 +2541,13 @@ const exportTranscriptToObsidian = async () => {
 
                 <div class="publish-label publish-section-header">
                   <span>发布文案 / Publishing Copy</span>
+                  <div class="publish-label-actions">
+                    <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels || isGeneratingPublishAssist">
+                      <Loader2 v-if="isRegeneratingChannels || isGeneratingPublishAssist" :size="12" class="spin" />
+                      <RefreshCw v-else :size="12" />
+                      <span>{{ (isRegeneratingChannels || isGeneratingPublishAssist) ? '生成中...' : '重新生成' }}</span>
+                    </button>
+                  </div>
                 </div>
 
                 <!-- Loading state -->
@@ -2544,7 +2562,7 @@ const exportTranscriptToObsidian = async () => {
                 <div v-else-if="!mergedDescription && !mergedHashtags && !redbookTitle" class="publish-item">
                   <div class="publish-content glossary-empty-state publish-empty-action">
                     <span>暂无发布文案</span>
-                    <button class="btn-copy-mini" @click="regenerateRedbookAssist" :disabled="isRegeneratingChannels || isRegeneratingRedbook">
+                    <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels || isRegeneratingRedbook">
                       <Sparkles :size="12" />
                       <span>立即生成</span>
                     </button>
@@ -2556,7 +2574,7 @@ const exportTranscriptToObsidian = async () => {
                   <div class="publish-label">
                     <span>描述 / Description</span>
                     <div class="publish-label-actions">
-                      <button class="btn-copy-mini" @click="regenerateRedbookAssist" :disabled="isRegeneratingChannels || isRegeneratingRedbook">
+                      <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels || isRegeneratingRedbook">
                         <Loader2 v-if="isRegeneratingChannels || isRegeneratingRedbook" :size="12" class="spin" />
                         <RefreshCw v-else :size="12" />
                         <span>{{ (isRegeneratingChannels || isRegeneratingRedbook) ? '生成中...' : '重新生成' }}</span>
@@ -2575,20 +2593,36 @@ const exportTranscriptToObsidian = async () => {
               </div>
 
               <!-- 关键词汇独立区域 -->
-              <div v-if="keywordGlossary.length || showKeywordGlossaryForm || (isGeneratingPublishAssist && !keywordGlossary.length)" class="channels-publish-section animate-fade-in">
+              <div class="channels-publish-section animate-fade-in">
                 <div class="divider"></div>
 
+                <!-- Loading state -->
                 <div v-if="isGeneratingPublishAssist && !keywordGlossary.length && !showKeywordGlossaryForm" class="publish-item">
+                  <div class="publish-label">
+                    <span>关键单词与短语 / Key Vocabulary</span>
+                    <div class="publish-label-actions">
+                      <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels || isGeneratingPublishAssist">
+                        <Loader2 :size="12" class="spin" />
+                        <span>提炼中...</span>
+                      </button>
+                    </div>
+                  </div>
                   <div class="publish-content glossary-empty-state">
                     <Loader2 :size="16" class="spin" />
                     <span>正在提取关键词汇...</span>
                   </div>
                 </div>
 
-                <div v-if="keywordGlossary.length" class="publish-item">
+                <!-- Content state -->
+                <div v-else-if="keywordGlossary.length" class="publish-item">
                   <div class="publish-label">
                     <span>关键单词与短语 / Key Vocabulary</span>
                     <div class="publish-label-actions">
+                      <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels || isGeneratingPublishAssist">
+                        <Loader2 v-if="isRegeneratingChannels || isGeneratingPublishAssist" :size="12" class="spin" />
+                        <RefreshCw v-else :size="12" />
+                        <span>{{ (isRegeneratingChannels || isGeneratingPublishAssist) ? '提炼中...' : '重新提炼' }}</span>
+                      </button>
                       <button class="btn-copy-mini" @click="copyToClipboard(keywordGlossaryCopyText)">
                         <span>复制列表</span>
                       </button>
@@ -2684,12 +2718,20 @@ const exportTranscriptToObsidian = async () => {
                   </div>
                 </div>
 
+                <!-- Empty state -->
                 <div v-else class="publish-item">
                   <div class="publish-label">
                     <span>关键单词与短语 / Key Vocabulary</span>
-                    <button class="btn-copy-mini" @click="openKeywordGlossaryForm">
-                      <span>手动补充</span>
-                    </button>
+                    <div class="publish-label-actions">
+                      <button class="btn-copy-mini" @click="regenerateChannelsAssist" :disabled="isRegeneratingChannels || isGeneratingPublishAssist">
+                        <Loader2 v-if="isRegeneratingChannels || isGeneratingPublishAssist" :size="12" class="spin" />
+                        <RefreshCw v-else :size="12" />
+                        <span>{{ (isRegeneratingChannels || isGeneratingPublishAssist) ? '提炼中...' : '重新提炼' }}</span>
+                      </button>
+                      <button class="btn-copy-mini" @click="openKeywordGlossaryForm">
+                        <span>手动补充</span>
+                      </button>
+                    </div>
                   </div>
                   <div v-if="showKeywordGlossaryForm" class="glossary-form empty">
                     <div class="glossary-form-row">

@@ -419,10 +419,27 @@ async function findCachedFullVideoPath(
   }
 
   const files = await fs.readdir(CLIPS_DIR).catch(() => []);
+
+  const isMatch = (file: string, targetQuality?: string) => {
+    if (!file.endsWith('.mp4')) return false;
+    if (file.endsWith('_raw.mp4') || file.endsWith('_prepared.mp4')) return false;
+
+    const hasVideoId =
+      file.includes(`_${videoId}_full_`) ||
+      file.includes(`_${videoId}_source_`) ||
+      file.startsWith(`${videoId}_full_`) ||
+      file.startsWith(`${videoId}_source_`);
+
+    if (!hasVideoId) return false;
+
+    if (targetQuality) {
+      return file.includes(`_${targetQuality}.`) || file.includes(`_${targetQuality}_`);
+    }
+    return true;
+  };
+
   if (quality) {
-    const exactMatch = files.find((file) =>
-      file.includes(`_${videoId}_full_${quality}`) && file.endsWith('.mp4')
-    );
+    const exactMatch = files.find((file) => isMatch(file, quality));
     if (exactMatch) {
       return path.join(CLIPS_DIR, exactMatch);
     }
@@ -432,9 +449,7 @@ async function findCachedFullVideoPath(
     // a 2160p clip request). Missing exact cache should trigger a fresh fetch.
     return null;
   }
-  const match = files.find((file) =>
-    file.includes(`_${videoId}_full_`) && file.endsWith('.mp4')
-  );
+  const match = files.find((file) => isMatch(file));
 
   return match ? path.join(CLIPS_DIR, match) : null;
 }

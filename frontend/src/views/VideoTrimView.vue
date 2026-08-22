@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router';
 import { 
   Video, Upload, Play, Pause, ChevronLeft, ChevronRight, 
   Download, RefreshCw, ArrowLeft, CheckCircle2, AlertCircle, 
-  Loader2, Scissors, Clock, Trash2, HelpCircle, Camera, Search, X, Copy
+  Loader2, Scissors, Clock, Trash2, HelpCircle, Camera, Search, X, Copy,
+  Type, Image as ImageIcon, Move, Eye, Sliders, Layers
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -15,12 +16,197 @@ const videoFile = ref<File | null>(null);
 const videoSrc = ref<string>('');
 const isDragging = ref(false);
 
-// 播放器状态
+// 播放器状态与物理尺寸
 const videoRef = ref<HTMLVideoElement | null>(null);
+const videoWidth = ref(0);
+const videoHeight = ref(0);
+const videoAspectRatio = ref<number | null>(null);
 const isPlaying = ref(false);
 const duration = ref(0);
 const currentTime = ref(0);
 const previewBoundary = ref<number | null>(null); // when set, pause at this time
+
+// 水印配置
+export interface WatermarkConfig {
+  enabled: boolean;
+  type: 'text' | 'image';
+  // 文字水印属性
+  text: string;
+  fontSize: number; // px
+  textColor: string;
+  textBgColor: string;
+  hasBackground: boolean;
+  // 图片水印属性
+  imageFile: File | null;
+  imageSrc: string;
+  scale: number; // 百分比 10% - 80%
+  // 通用布局属性 (相对百分比 0-100)
+  xPercent: number; // 0% - 100%
+  yPercent: number; // 0% - 100%
+  opacity: number; // 0.1 - 1.0
+}
+
+const watermark = ref<WatermarkConfig>({
+  enabled: false,
+  type: 'image',
+  text: 'AI 高光精选',
+  fontSize: 24,
+  textColor: '#ffffff',
+  textBgColor: '#000000',
+  hasBackground: true,
+  imageFile: null,
+  imageSrc: '',
+  scale: 25,
+  xPercent: 73,
+  yPercent: 3,
+  opacity: 0.85
+});
+
+// 水印拖拽交互状态
+const isDraggingWatermark = ref(false);
+const dragStartPos = ref({ x: 0, y: 0, initXPercent: 0, initYPercent: 0 });
+
+const onWatermarkDragStart = (e: MouseEvent) => {
+  if (!watermark.value.enabled) return;
+  e.preventDefault();
+  isDraggingWatermark.value = true;
+  dragStartPos.value = {
+    x: e.clientX,
+    y: e.clientY,
+    initXPercent: watermark.value.xPercent,
+    initYPercent: watermark.value.yPercent
+  };
+
+  window.addEventListener('mousemove', onWatermarkDragMove);
+  window.addEventListener('mouseup', onWatermarkDragEnd);
+};
+
+const onWatermarkDragMove = (e: MouseEvent) => {
+  if (!isDraggingWatermark.value || !videoRef.value) return;
+  const videoEl = videoRef.value;
+  const rect = videoEl.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+
+  const deltaX = e.clientX - dragStartPos.value.x;
+  const deltaY = e.clientY - dragStartPos.value.y;
+
+  const deltaXPercent = (deltaX / rect.width) * 100;
+  const deltaYPercent = (deltaY / rect.height) * 100;
+
+  let newX = dragStartPos.value.initXPercent + deltaXPercent;
+  let newY = dragStartPos.value.initYPercent + deltaYPercent;
+
+  // 严格边界约束：不能超出视频右侧（考虑当前水印自身宽度的占用）
+  const currentWmWidthPercent = watermark.value.scale;
+  const maxX = Math.max(0, 100 - currentWmWidthPercent);
+  
+  newX = Math.max(0, Math.min(maxX, newX));
+  newY = Math.max(0, Math.min(90, newY));
+
+  watermark.value.xPercent = Number(newX.toFixed(2));
+  watermark.value.yPercent = Number(newY.toFixed(2));
+};
+
+const onWatermarkDragEnd = () => {
+  isDraggingWatermark.value = false;
+  window.removeEventListener('mousemove', onWatermarkDragMove);
+  window.removeEventListener('mouseup', onWatermarkDragEnd);
+};
+
+// 预设九宫格快速定位 (智能计算贴边)
+const alignWatermark = (pos: 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right') => {
+  const wmWidth = watermark.value.scale;
+  const rightX = Math.max(0, Number((98 - wmWidth).toFixed(1))); // 距离右边缘 2% 呼吸空隙
+  const centerX = Math.max(0, Number((50 - wmWidth / 2).toFixed(1)));
+
+  switch (pos) {
+    case 'top-left':
+      watermark.value.xPercent = 2;
+      watermark.value.yPercent = 3;
+      break;
+    case 'top-center':
+      watermark.value.xPercent = centerX;
+      watermark.value.yPercent = 3;
+      break;
+    case 'top-right':
+      watermark.value.xPercent = rightX;
+      watermark.value.yPercent = 3;
+      break;
+    case 'bottom-left':
+      watermark.value.xPercent = 2;
+      watermark.value.yPercent = 88;
+      break;
+    case 'bottom-center':
+      watermark.value.xPercent = centerX;
+      watermark.value.yPercent = 88;
+      break;
+    case 'bottom-right':
+      watermark.value.xPercent = rightX;
+      watermark.value.yPercent = 88;
+      break;
+  }
+};
+
+// 辅助函数：将任意图片（包括 SVG / PNG / JPG）通过 Canvas 转换为标准 PNG base64，保持绝对原比例
+const rasterizeImageToPngBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let naturalW = img.naturalWidth || img.width || 800;
+      let naturalH = img.naturalHeight || img.height || 300;
+
+      if (!naturalW || naturalW <= 0) naturalW = 800;
+      if (!naturalH || naturalH <= 0) naturalH = Math.round(naturalW * 0.35);
+
+      const maxDim = 1200;
+      let targetWidth = naturalW;
+      let targetHeight = naturalH;
+
+      if (naturalW > maxDim || naturalH > maxDim) {
+        if (naturalW >= naturalH) {
+          targetWidth = maxDim;
+          targetHeight = Math.round((naturalH / naturalW) * maxDim);
+        } else {
+          targetHeight = maxDim;
+          targetWidth = Math.round((naturalW / naturalH) * maxDim);
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, targetWidth, targetHeight);
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        const pngBase64 = canvas.toDataURL('image/png');
+        URL.revokeObjectURL(url);
+        resolve(pngBase64);
+      } else {
+        URL.revokeObjectURL(url);
+        resolve('');
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve('');
+    };
+    img.src = url;
+  });
+};
+
+const onWatermarkImageSelect = (e: Event) => {
+  const target = e.target as HTMLInputElement;
+  const files = target.files;
+  if (files && files.length > 0) {
+    const file = files[0];
+    watermark.value.imageFile = file;
+    watermark.value.imageSrc = URL.createObjectURL(file);
+    watermark.value.type = 'image';
+    watermark.value.enabled = true;
+  }
+};
 
 // 裁剪时间段 (秒)
 const startTime = ref(0);
@@ -144,6 +330,10 @@ const revokeVideoSrc = () => {
     URL.revokeObjectURL(videoSrc.value);
     videoSrc.value = '';
   }
+  if (watermark.value.imageSrc) {
+    URL.revokeObjectURL(watermark.value.imageSrc);
+    watermark.value.imageSrc = '';
+  }
 };
 
 onUnmounted(() => {
@@ -200,6 +390,11 @@ const onVideoLoaded = () => {
   if (videoRef.value) {
     duration.value = videoRef.value.duration;
     endTime.value = videoRef.value.duration;
+    videoWidth.value = videoRef.value.videoWidth || 0;
+    videoHeight.value = videoRef.value.videoHeight || 0;
+    if (videoWidth.value && videoHeight.value) {
+      videoAspectRatio.value = videoWidth.value / videoHeight.value;
+    }
   }
 };
 
@@ -494,44 +689,72 @@ const currentPointerStyle = computed(() => {
   };
 });
 
-// 执行裁剪
-const handleTrim = () => {
+// 执行裁剪与加工
+const handleTrim = async () => {
   if (!canTrim.value || !videoFile.value) return;
 
   isTrimming.value = true;
   trimSuccess.value = false;
   trimError.value = '';
-  trimProgress.value = 0;
+  trimProgress.value = 5;
+
+  let base64Image = '';
+  if (watermark.value.enabled && watermark.value.type === 'image' && watermark.value.imageFile) {
+    base64Image = await rasterizeImageToPngBase64(watermark.value.imageFile);
+  }
 
   const formData = new FormData();
   // 必须先 append 文本字段，最后 append 大视频文件
-  // 这是因为 Fastify 流式解析 multipart 请求时，如果视频在前，流解析完后后面的文本字段可能还没被传输，导致 data.fields 里拿不到值。
   formData.append('start', startTime.value.toString());
   formData.append('end', endTime.value.toString());
+
+  if (watermark.value.enabled) {
+    formData.append('hasWatermark', 'true');
+    formData.append('wmType', watermark.value.type);
+    formData.append('wmXPercent', watermark.value.xPercent.toString());
+    formData.append('wmYPercent', watermark.value.yPercent.toString());
+    formData.append('wmOpacity', watermark.value.opacity.toString());
+
+    if (watermark.value.type === 'text') {
+      formData.append('wmText', watermark.value.text);
+      formData.append('wmFontSize', watermark.value.fontSize.toString());
+      formData.append('wmTextColor', watermark.value.textColor);
+      formData.append('wmHasBg', watermark.value.hasBackground.toString());
+      formData.append('wmBgColor', watermark.value.textBgColor);
+    } else if (watermark.value.type === 'image') {
+      formData.append('wmScale', watermark.value.scale.toString());
+      if (base64Image) {
+        formData.append('wmBase64Image', base64Image);
+      }
+    }
+  } else {
+    formData.append('hasWatermark', 'false');
+  }
+
   formData.append('video', videoFile.value);
 
   // 使用 XMLHttpRequest 替代 fetch 方式以获得真实的流式上传进度监听
   const xhr = new XMLHttpRequest();
   
-  // 监听上传进度（占总进度的 0% - 85% 权重）
+  // 监听上传进度（占总进度的 0% - 75% 权重）
   xhr.upload.addEventListener('progress', (e) => {
     if (e.lengthComputable) {
-      const percentage = (e.loaded / e.total) * 85;
+      const percentage = (e.loaded / e.total) * 75;
       trimProgress.value = Math.round(percentage);
     }
   });
 
-  // ffmpeg 转码阶段模拟进度（占总进度的 85% - 98% 权重）
+  // ffmpeg 转码阶段模拟进度（占总进度的 75% - 98% 权重）
   let transcodeTimer: any = null;
   const startTranscodeProgress = () => {
-    trimProgress.value = 85;
+    trimProgress.value = 80;
     transcodeTimer = setInterval(() => {
       if (trimProgress.value < 98) {
         trimProgress.value += 1;
       } else {
         clearInterval(transcodeTimer);
       }
-    }, 450); // 每 450ms 递增 1%
+    }, 400);
   };
 
   // 监听上传完毕事件，开始进入转码阶段
@@ -549,7 +772,7 @@ const handleTrim = () => {
       const blob = xhr.response; // 必须是 blob 类型
       const url = URL.createObjectURL(blob);
       resultUrl.value = url;
-      resultFileName.value = `trimmed_${videoFile.value!.name}`;
+      resultFileName.value = watermark.value.enabled ? `watermarked_${videoFile.value!.name}` : `trimmed_${videoFile.value!.name}`;
       trimSuccess.value = true;
       isTrimming.value = false;
       
@@ -562,9 +785,9 @@ const handleTrim = () => {
       reader.onload = () => {
         try {
           const errData = JSON.parse(reader.result as string);
-          trimError.value = errData.message || errData.error || '裁剪失败';
+          trimError.value = errData.message || errData.error || '视频处理失败';
         } catch {
-          trimError.value = '裁剪处理失败，请稍后重试。';
+          trimError.value = '视频处理失败，请稍后重试。';
         }
       };
       reader.readAsText(xhr.response || new Blob());
@@ -574,11 +797,26 @@ const handleTrim = () => {
   xhr.addEventListener('error', () => {
     if (transcodeTimer) clearInterval(transcodeTimer);
     isTrimming.value = false;
-    trimError.value = '裁剪发生网络或系统错误，请检查后端服务。';
+    trimError.value = '视频处理发生网络或系统错误，请检查后端服务。';
   });
 
-  // 使用 POST 请求，并在 URL 上携带 query string 双重保险
-  xhr.open('POST', `${API_BASE}/api/video/trim-local?start=${startTime.value}&end=${endTime.value}`);
+  const params = new URLSearchParams({
+    start: startTime.value.toString(),
+    end: endTime.value.toString(),
+    hasWatermark: watermark.value.enabled ? 'true' : 'false',
+    wmType: watermark.value.type,
+    wmXPercent: watermark.value.xPercent.toString(),
+    wmYPercent: watermark.value.yPercent.toString(),
+    wmOpacity: watermark.value.opacity.toString(),
+    wmText: watermark.value.text,
+    wmFontSize: watermark.value.fontSize.toString(),
+    wmTextColor: watermark.value.textColor,
+    wmHasBg: watermark.value.hasBackground ? 'true' : 'false',
+    wmBgColor: watermark.value.textBgColor,
+    wmScale: watermark.value.scale.toString()
+  });
+
+  xhr.open('POST', `${API_BASE}/api/video/trim-local?${params.toString()}`);
   xhr.responseType = 'blob';
   xhr.send(formData);
 };
@@ -664,13 +902,62 @@ const resetAll = () => {
         <!-- Left Side: Player -->
         <div class="player-panel">
           <div class="video-wrapper glass-panel">
-            <video 
-              ref="videoRef"
-              :src="videoSrc"
-              @loadedmetadata="onVideoLoaded"
-              @timeupdate="onTimeUpdate"
-              @click="togglePlay"
-            ></video>
+            <!-- 真实视频渲染视口 (精准贴合视频像素宽高比，无任何黑边占位) -->
+            <div 
+              class="video-viewport"
+              :style="{
+                aspectRatio: videoAspectRatio ? `${videoAspectRatio}` : '16/9'
+              }"
+            >
+              <video 
+                ref="videoRef"
+                :src="videoSrc"
+                @loadedmetadata="onVideoLoaded"
+                @timeupdate="onTimeUpdate"
+                @click="togglePlay"
+              ></video>
+
+              <!-- 🎨 水印拖拽图层 (在真实视频像素内自由定位，宽度直接对齐 scale%) -->
+              <div 
+                v-if="watermark.enabled"
+                class="watermark-overlay-element"
+                :class="{ 'is-dragging': isDraggingWatermark }"
+                :style="{
+                  left: `${watermark.xPercent}%`,
+                  top: `${watermark.yPercent}%`,
+                  width: watermark.type === 'image' ? `${watermark.scale}%` : 'auto',
+                  opacity: watermark.opacity
+                }"
+                @mousedown.stop="onWatermarkDragStart"
+                title="按住鼠标左键可自由拖动水印位置"
+              >
+                <div 
+                  v-if="watermark.type === 'text'"
+                  class="watermark-text-box"
+                  :style="{
+                    fontSize: `${watermark.fontSize}px`,
+                    color: watermark.textColor,
+                    backgroundColor: watermark.hasBackground ? watermark.textBgColor : 'transparent'
+                  }"
+                >
+                  <span>{{ watermark.text || '请输入水印文字' }}</span>
+                  <div class="drag-handle-badge">
+                    <Move :size="10" />
+                  </div>
+                </div>
+
+                <div 
+                  v-else-if="watermark.type === 'image'"
+                  class="watermark-image-box"
+                >
+                  <img v-if="watermark.imageSrc" :src="watermark.imageSrc" alt="Watermark" />
+                  <div v-else class="watermark-placeholder">请在右侧选择水印图片</div>
+                  <div class="drag-handle-badge">
+                    <Move :size="10" />
+                  </div>
+                </div>
+              </div>
+            </div>
             
             <!-- Custom play button overlay when paused -->
             <div v-if="!isPlaying" class="play-overlay" @click="togglePlay">
@@ -853,6 +1140,93 @@ const resetAll = () => {
               <button @click="adjustEnd(-0.1)">-0.1s</button>
               <button @click="adjustEnd(0.1)">+0.1s</button>
               <button @click="adjustEnd(1.0)">+1.0s</button>
+            </div>
+          </div>
+
+          <!-- Watermark Setting Panel (集成水印工坊能力) -->
+          <div class="glass-panel config-card watermark-card">
+            <div class="card-header-toggle">
+              <span class="title-with-icon">
+                <Layers :size="16" />
+                <span>添加视频水印</span>
+              </span>
+              <input type="checkbox" v-model="watermark.enabled" class="switch-checkbox" />
+            </div>
+
+            <div v-if="watermark.enabled" class="watermark-settings animate-fade-in">
+              <div class="type-selector">
+                <button 
+                  class="type-btn" 
+                  :class="{ active: watermark.type === 'image' }"
+                  @click="watermark.type = 'image'"
+                >
+                  <ImageIcon :size="14" />
+                  <span>图片 / Logo (SVG/PNG)</span>
+                </button>
+                <button 
+                  class="type-btn" 
+                  :class="{ active: watermark.type === 'text' }"
+                  @click="watermark.type = 'text'"
+                >
+                  <Type :size="14" />
+                  <span>文字水印</span>
+                </button>
+              </div>
+
+              <!-- 图片水印设置 -->
+              <div v-if="watermark.type === 'image'" class="setting-group">
+                <label>选择 Logo 图片 (支持 SVG / PNG / JPG)</label>
+                <input type="file" accept="image/*,.svg" @change="onWatermarkImageSelect" class="input-file" />
+
+                <div class="flex justify-between mt-2">
+                  <label>Logo 宽度比例</label>
+                  <span class="value-text">{{ watermark.scale }}%</span>
+                </div>
+                <input type="range" min="5" max="60" v-model="watermark.scale" class="slider" />
+              </div>
+
+              <!-- 文字水印设置 -->
+              <div v-else class="setting-group">
+                <label>水印文字</label>
+                <input type="text" v-model="watermark.text" class="input-text" placeholder="输入水印内容" />
+
+                <div class="row-inputs">
+                  <div class="col-input">
+                    <label>字号 (px)</label>
+                    <input type="number" min="12" max="72" v-model="watermark.fontSize" class="input-text" />
+                  </div>
+                  <div class="col-input">
+                    <label>颜色</label>
+                    <input type="color" v-model="watermark.textColor" class="input-color" />
+                  </div>
+                </div>
+
+                <div class="bg-toggle-row">
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" v-model="watermark.hasBackground" />
+                    <span>添加深色半透明背景底衬</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 快捷对齐与透明度 -->
+              <div class="setting-group">
+                <div class="flex justify-between">
+                  <label>水印不透明度</label>
+                  <span class="value-text">{{ Math.round(watermark.opacity * 100) }}%</span>
+                </div>
+                <input type="range" min="0.1" max="1.0" step="0.05" v-model="watermark.opacity" class="slider" />
+
+                <label class="mt-3 block">九宫格快捷对齐 (或在左侧视频直接拖动)</label>
+                <div class="align-grid">
+                  <button @click="alignWatermark('top-left')">左上</button>
+                  <button @click="alignWatermark('top-center')">居中</button>
+                  <button @click="alignWatermark('top-right')">右上</button>
+                  <button @click="alignWatermark('bottom-left')">左下</button>
+                  <button @click="alignWatermark('bottom-center')">下中</button>
+                  <button @click="alignWatermark('bottom-right')">右下</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1211,20 +1585,246 @@ const resetAll = () => {
 .video-wrapper {
   position: relative;
   width: 100%;
-  aspect-ratio: 16/9;
   background: #000;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-lg);
+  min-height: 380px;
 }
 
-.video-wrapper video {
+.video-viewport {
+  position: relative;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 520px;
+  display: block;
+  overflow: hidden;
+}
+
+.video-viewport video {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: fill;
   cursor: pointer;
+}
+
+/* 水印覆盖图层样式 */
+.watermark-overlay-element {
+  position: absolute;
+  cursor: move;
+  user-select: none;
+  z-index: 10;
+  transition: box-shadow 0.2s ease;
+  transform: translate(0, 0);
+  display: inline-flex;
+}
+.watermark-overlay-element.is-dragging {
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.8);
+}
+
+.watermark-text-box {
+  padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  font-weight: bold;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+}
+
+.watermark-image-box {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(255, 255, 255, 0.4);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+.watermark-image-box img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+  margin: 0;
+  padding: 0;
+}
+
+.watermark-placeholder {
+  color: #fff;
+  font-size: 0.8rem;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.drag-handle-badge {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  background: rgba(99, 102, 241, 0.9);
+  color: #fff;
+  border-radius: 50%;
+  padding: 3px;
+  display: flex;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+/* 水印设置卡片样式 */
+.watermark-card {
+  padding: 16px;
+}
+
+.card-header-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.switch-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.watermark-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.type-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.type-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.type-btn.active {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.setting-group label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.input-file {
+  font-size: 0.8rem;
+  color: #fff;
+  padding: 6px 0;
+}
+
+.input-text {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+.row-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.col-input {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-color {
+  width: 100%;
+  height: 34px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+}
+
+.slider {
+  width: 100%;
+  accent-color: #6366f1;
+  cursor: pointer;
+}
+
+.value-text {
+  font-size: 0.8rem;
+  color: #818cf8;
+  font-weight: bold;
+}
+
+.bg-toggle-row {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.align-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.align-grid button {
+  padding: 6px 4px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.align-grid button:hover {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: #6366f1;
 }
 
 .play-overlay {

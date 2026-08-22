@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, User, Menu, Search, Globe, Video, CheckCircle2, AlertCircle, X, Loader2, Scissors, LayoutDashboard } from 'lucide-vue-next';
+import { Sparkles, User, Menu, Search, Globe, Video, CheckCircle2, AlertCircle, X, Loader2, Scissors, LayoutDashboard, Radio, Sliders } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 import GlobalSearchModal from './components/GlobalSearchModal.vue';
@@ -251,8 +251,16 @@ onUnmounted(() => {
           </button>
           <button
             class="btn-icon-labeled glass-panel"
+            @click="router.push('/scraper')"
+            title="素材采集 / 视频号嗅探"
+          >
+            <Radio :size="18" />
+            <span>采集</span>
+          </button>
+          <button
+            class="btn-icon-labeled glass-panel"
             @click="router.push('/trim')"
-            title="本地视频裁剪"
+            title="本地视频裁剪与水印加工"
           >
             <Scissors :size="18" />
             <span>裁剪</span>

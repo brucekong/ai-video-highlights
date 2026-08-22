@@ -4,6 +4,7 @@ import VideoView from '../views/VideoView.vue';
 const StorybookView = () => import('../views/StorybookView.vue');
 const StorybookPrintView = () => import('../views/StorybookPrintView.vue');
 const VideoTrimView = () => import('../views/VideoTrimView.vue');
+const ScraperView = () => import('../views/ScraperView.vue');
 const DashboardView = () => import('../views/admin/DashboardView.vue');
 const AssetsView = () => import('../views/admin/AssetsView.vue');
 const PublishView = () => import('../views/admin/PublishView.vue');
@@ -35,6 +36,15 @@ const router = createRouter({
       path: '/trim',
       name: 'video-trim',
       component: VideoTrimView
+    },
+    {
+      path: '/studio',
+      redirect: '/trim'
+    },
+    {
+      path: '/scraper',
+      name: 'media-scraper',
+      component: ScraperView
     },
     {
       path: '/admin',

@@ -369,7 +369,7 @@ function appendWatermarkFilter(baseFilter?: string): string {
   return baseFilter ? `${baseFilter},${watermarkFilter}` : watermarkFilter;
 }
 
-function getSubtitleFontFile(): string {
+export function getSubtitleFontFile(): string {
   if (process.env.SUBTITLE_FONT_FILE) {
     return process.env.SUBTITLE_FONT_FILE;
   }
@@ -384,6 +384,45 @@ function getSubtitleFontFile(): string {
   }
 
   if (process.platform === 'darwin') {
+    let assetsPingFangPath = '';
+    const assetsDir = '/System/Library/AssetsV2';
+    if (fs.existsSync(assetsDir)) {
+      try {
+        const subDirs = fs.readdirSync(assetsDir);
+        for (const subDir of subDirs) {
+          if (subDir.includes('MobileAsset_Font')) {
+            const fontParent = path.join(assetsDir, subDir);
+            const hashDirs = fs.readdirSync(fontParent);
+            for (const hashDir of hashDirs) {
+              const testPath = path.join(fontParent, hashDir, 'AssetData', 'PingFang.ttc');
+              if (fs.existsSync(testPath)) {
+                assetsPingFangPath = testPath;
+                break;
+              }
+            }
+          }
+          if (assetsPingFangPath) break;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const candidatePaths = [
+      '/System/Library/Fonts/PingFang.ttc',
+      '/Library/Fonts/PingFang.ttc',
+      assetsPingFangPath,
+      '/System/Library/Fonts/Hiragino Sans GB.ttc',
+      '/System/Library/Fonts/STHeiti Medium.ttc',
+      '/System/Library/Fonts/STHeiti Light.ttc',
+      '/Library/Fonts/Arial Unicode.ttf',
+    ];
+
+    for (const p of candidatePaths) {
+      if (p && fs.existsSync(p)) {
+        return p;
+      }
+    }
     return '/System/Library/Fonts/PingFang.ttc';
   }
 

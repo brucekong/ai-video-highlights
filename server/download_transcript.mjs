@@ -59,16 +59,15 @@ async function main() {
 
     const cookieHeader = '';
 
-    // 配置自定义 fetch 以支持 Cookies
     const customFetch = async (params) => {
-        const { url, lang, userAgent, method = 'GET', headers = {} } = params;
+        const { url, lang, userAgent, method = 'GET', headers = {}, body } = params;
         const fetchHeaders = {
             'User-Agent': userAgent || UA,
             ...(lang && { 'Accept-Language': lang }),
             ...headers,
-            'Cookie': cookieHeader,
+            ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
         };
-        return fetch(url, { method, headers: fetchHeaders });
+        return fetch(url, { method, headers: fetchHeaders, body });
     };
 
     try {

@@ -120,10 +120,22 @@ const openClippingDrawer = (start?: number, end?: number) => {
   showClippingDrawer.value = true;
 };
 
-// AI 助手相关状态
+// AI 助手相关状态 (Pi Agent)
+export interface ChatActionItem {
+  name: 'seek_video' | 'clip_highlight';
+  params: Record<string, any>;
+}
+
+export interface ChatMessageItem {
+  role: 'user' | 'assistant';
+  content: string;
+  statusText?: string;
+  actions?: ChatActionItem[];
+}
+
 const activeSidebarTab = ref<'transcript' | 'chat'>('transcript');
 const chatInput = ref('');
-const chatMessages = ref<{ role: 'user' | 'assistant'; content: string }[]>([]);
+const chatMessages = ref<ChatMessageItem[]>([]);
 const isChatLoading = ref(false);
 const chatListRef = ref<HTMLElement | null>(null);
 const isAutoScrollEnabled = ref(true);
@@ -1696,16 +1708,33 @@ const scrollToBottom = (force = false) => {
   }
 };
 
+// 格式化秒数为时间戳文本
+const formatSecondsToTime = (seconds?: number) => {
+  if (typeof seconds !== 'number' || isNaN(seconds)) return '0:00';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+};
+
 const sendChatMessage = async () => {
   if (!chatInput.value.trim() || isChatLoading.value || !videoId.value) return;
 
   const userMsg = chatInput.value;
   chatInput.value = '';
   chatMessages.value.push({ role: 'user', content: userMsg });
-  chatMessages.value.push({ role: 'assistant', content: '' });
+  chatMessages.value.push({ role: 'assistant', content: '', actions: [] });
   isChatLoading.value = true;
   isAutoScrollEnabled.value = true; // Reset auto-scroll on new message
   nextTick(() => scrollToBottom(true));
+
+  // 获取当前播放进度（秒）传递给 Pi Agent
+  let currentPlayTime: number | undefined = undefined;
+  if (playerRef.value && typeof playerRef.value.getCurrentTime === 'function') {
+    const t = playerRef.value.getCurrentTime();
+    if (typeof t === 'number' && !isNaN(t)) {
+      currentPlayTime = Math.floor(t);
+    }
+  }
 
   try {
     const response = await fetch(`${API_BASE}/api/chat/stream`, {
@@ -1716,7 +1745,8 @@ const sendChatMessage = async () => {
       },
       body: JSON.stringify({
         videoId: videoId.value,
-        message: userMsg
+        message: userMsg,
+        currentPlayTime
       })
     });
 
@@ -1735,13 +1765,32 @@ const sendChatMessage = async () => {
 
       for (const line of lines) {
         if (line.startsWith('data: ')) {
-          const dataStr = line.slice(6);
+          const dataStr = line.slice(6).trim();
           if (dataStr === '[DONE]') break;
           try {
             const data = JSON.parse(dataStr);
-            if (data.content) {
+            const currentAssistant = chatMessages.value[chatMessages.value.length - 1];
+
+            if (data.type === 'action' && data.action) {
+              if (!currentAssistant.actions) {
+                currentAssistant.actions = [];
+              }
+              currentAssistant.actions.push(data.action);
+
+              // 自动响应工具调用动作
+              if (data.action.name === 'seek_video' && typeof data.action.params?.timestamp === 'number') {
+                handleTimestampClick(data.action.params.timestamp);
+              } else if (data.action.name === 'clip_highlight' && typeof data.action.params?.startSec === 'number') {
+                openClippingDrawer(data.action.params.startSec, data.action.params.endSec);
+              }
+              nextTick(scrollToBottom);
+            } else if (data.type === 'status' && data.status) {
+              currentAssistant.statusText = data.status;
+              nextTick(scrollToBottom);
+            } else if (data.content) {
+              currentAssistant.statusText = '';
               assistantMsg += data.content;
-              chatMessages.value[chatMessages.value.length - 1].content = assistantMsg;
+              currentAssistant.content = assistantMsg;
               nextTick(scrollToBottom);
             }
           } catch (e) {
@@ -1752,32 +1801,37 @@ const sendChatMessage = async () => {
     }
   } catch (error) {
     console.error('Chat error:', error);
-    chatMessages.value[chatMessages.value.length - 1].content = '抱歉，对话出了一点问题，请重试。';
+    chatMessages.value[chatMessages.value.length - 1].content = '抱歉，伴学助手出了一点问题，请重试。';
   } finally {
     isChatLoading.value = false;
   }
 };
 
-// 处理时间戳点击跳转
-const handleTimestampClick = (ts: string) => {
+// 处理时间戳点击跳转（支持字符串与数字秒数）
+const handleTimestampClick = (ts: string | number) => {
   stopLoop();
-  // 清理可能存在的方括号
-  const cleanTs = ts.replace(/[\[\]]/g, '');
-  const parts = cleanTs.split(':').map(p => parseInt(p));
-
   let targetSeconds = 0;
-  if (parts.length === 3) {
-    // HH:MM:SS
-    targetSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-  } else if (parts.length === 2) {
-    // MM:SS
-    targetSeconds = parts[0] * 60 + parts[1];
+
+  if (typeof ts === 'number') {
+    targetSeconds = ts;
+  } else {
+    // 清理可能存在的方括号
+    const cleanTs = String(ts).replace(/[\[\]]/g, '').trim();
+    const parts = cleanTs.split(':').map(p => parseInt(p));
+
+    if (parts.length === 3) {
+      // HH:MM:SS
+      targetSeconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) {
+      // MM:SS
+      targetSeconds = parts[0] * 60 + parts[1];
+    } else if (!isNaN(Number(cleanTs))) {
+      targetSeconds = Number(cleanTs);
+    }
   }
 
   if (playerRef.value && !isNaN(targetSeconds)) {
     playerRef.value.seekTo(targetSeconds);
-    // 可选：如果是在移动端或较小屏幕，点击时间戳后可以自动滚动到视频位置
-    // window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 };
 
@@ -3316,11 +3370,12 @@ const exportTranscriptToObsidian = async () => {
                   <div class="empty-icon-wrapper">
                     <Bot :size="40" class="accent-glow-text" />
                   </div>
-                  <h4>我是你的 AI 视频助手</h4>
-                  <p>你可以问我关于视频内容的任何问题</p>
+                  <h4>我是你的 Pi 智能视频伴学</h4>
+                  <p>支持深度视频解读，并可直接联动播放器跳播与智能切片</p>
                   <div class="quick-prompts">
-                    <button class="quick-prompt-btn" @click="chatInput = '总结一下这个视频的核心要点'; sendChatMessage()">总结核心要点</button>
-                    <button class="quick-prompt-btn" @click="chatInput = '视频中提到了哪些具体的建议？'; sendChatMessage()">有哪些建议？</button>
+                    <button class="quick-prompt-btn" @click="chatInput = '总结一下这个视频的核心要点'; sendChatMessage()">💡 总结核心要点</button>
+                    <button class="quick-prompt-btn" @click="chatInput = '跳到视频中最精彩/关键的结论部分'; sendChatMessage()">⚡️ 跳到核心结论</button>
+                    <button class="quick-prompt-btn" @click="chatInput = '帮我标记并切片视频中最有价值的一段'; sendChatMessage()">✂️ 推荐高亮切片</button>
                   </div>
                 </div>
 
@@ -3335,6 +3390,13 @@ const exportTranscriptToObsidian = async () => {
                     <UserIcon v-else :size="16" />
                   </div>
                   <div class="message-bubble">
+                    <!-- Agent 执行中状态提示 -->
+                    <div v-if="msg.statusText" class="message-status-badge">
+                      <span class="status-pulse-dot"></span>
+                      <span>{{ msg.statusText }}</span>
+                    </div>
+
+                    <!-- 回复文本内容 -->
                     <div v-if="msg.content" class="message-content">
                       <template v-for="(part, pIdx) in parseMessageContent(msg.content)">
                         <span v-if="part.type === 'text'" :key="'text-' + idx + '-' + pIdx">{{ part.value }}</span>
@@ -3351,6 +3413,37 @@ const exportTranscriptToObsidian = async () => {
                     </div>
                     <div v-else-if="isChatLoading && idx === chatMessages.length - 1" class="typing-indicator">
                       <span></span><span></span><span></span>
+                    </div>
+
+                    <!-- Pi Agent 业务工具动作卡片 -->
+                    <div v-if="msg.actions && msg.actions.length > 0" class="chat-actions-container">
+                      <div
+                        v-for="(act, aIdx) in msg.actions"
+                        :key="aIdx"
+                        class="chat-action-card"
+                        :class="act.name"
+                      >
+                        <template v-if="act.name === 'seek_video'">
+                          <div class="action-card-header">
+                            <span class="action-badge seek">⚡️ 联动跳播</span>
+                            <span class="action-time">[{{ formatSecondsToTime(act.params.timestamp) }}]</span>
+                          </div>
+                          <div class="action-card-desc">{{ act.params.reason }}</div>
+                          <button class="action-replay-btn" @click="handleTimestampClick(act.params.timestamp)">
+                            再次跳到此处
+                          </button>
+                        </template>
+                        <template v-else-if="act.name === 'clip_highlight'">
+                          <div class="action-card-header">
+                            <span class="action-badge clip">✂️ 推荐切片</span>
+                            <span class="action-time">[{{ formatSecondsToTime(act.params.startSec) }} - {{ formatSecondsToTime(act.params.endSec) }}]</span>
+                          </div>
+                          <div class="action-card-desc">{{ act.params.title }}</div>
+                          <button class="action-replay-btn" @click="openClippingDrawer(act.params.startSec, act.params.endSec)">
+                            打开切片面板
+                          </button>
+                        </template>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -4096,6 +4189,109 @@ input::placeholder {
 @keyframes typing {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
+}
+
+/* Message Status Badge */
+.message-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--accent-color);
+  background: rgba(0, 163, 255, 0.08);
+  border: 1px solid rgba(0, 163, 255, 0.2);
+  padding: 3px 8px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.status-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  animation: pulse-dot 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+/* Chat Action Cards */
+.chat-actions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-action-card {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-action-card.seek_video {
+  border-left: 3px solid #00a3ff;
+}
+
+.chat-action-card.clip_highlight {
+  border-left: 3px solid #10b981;
+}
+
+.action-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.action-badge {
+  font-weight: 600;
+}
+
+.action-badge.seek {
+  color: #00a3ff;
+}
+
+.action-badge.clip {
+  color: #10b981;
+}
+
+.action-time {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+
+.action-card-desc {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.action-replay-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.action-replay-btn:hover {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
 }
 
 /* Chat Input */

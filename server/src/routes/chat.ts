@@ -1,14 +1,14 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../lib/prisma.js';
-import { streamChat } from '../services/ai.js';
+import { runPiVideoAgent, type PiAgentActionEvent } from '../services/piAgent.js';
 import { getUserId } from '../utils/auth.js';
 
 export async function chatRoutes(fastify: FastifyInstance) {
   fastify.post('/api/chat/stream', async (
-    request: FastifyRequest<{ Body: { videoId: string; message: string } }>,
+    request: FastifyRequest<{ Body: { videoId: string; message: string; currentPlayTime?: number } }>,
     reply: FastifyReply
   ) => {
-    const { videoId, message } = request.body;
+    const { videoId, message, currentPlayTime } = request.body;
     const userId = getUserId(request);
 
     if (!userId) {
@@ -49,16 +49,27 @@ export async function chatRoutes(fastify: FastifyInstance) {
     });
 
     let fullAssistantResponse = '';
+    const executedActions: PiAgentActionEvent[] = [];
 
     try {
-      // 4. 开始流式分析
-      const chatStream = streamChat(videoId, subtitles, message, formattedHistory);
-
-      for await (const chunk of chatStream) {
-        fullAssistantResponse += chunk;
-        // 按照 SSE 格式发送数据
-        reply.raw.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
-      }
+      // 4. 开始 Pi Agent 分析流
+      fullAssistantResponse = await runPiVideoAgent({
+        videoId,
+        transcriptItems: subtitles,
+        userMessage: message,
+        currentPlayTime,
+        history: formattedHistory,
+        onText: (chunk) => {
+          reply.raw.write(`data: ${JSON.stringify({ type: 'text', content: chunk })}\n\n`);
+        },
+        onAction: (action) => {
+          executedActions.push(action);
+          reply.raw.write(`data: ${JSON.stringify({ type: 'action', action })}\n\n`);
+        },
+        onStatus: (status) => {
+          reply.raw.write(`data: ${JSON.stringify({ type: 'status', status })}\n\n`);
+        },
+      });
 
       // 5. 保存对话记录到数据库
       await prisma.$transaction([
@@ -84,7 +95,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
       reply.raw.end();
     } catch (error: any) {
       fastify.log.error(`Chat stream error: ${error.message}`);
-      reply.raw.write(`data: ${JSON.stringify({ error: 'Chat failed' })}\n\n`);
+      reply.raw.write(`data: ${JSON.stringify({ error: error.message || 'Chat failed' })}\n\n`);
       reply.raw.end();
     }
   });

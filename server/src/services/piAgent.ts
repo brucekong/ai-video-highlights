@@ -163,17 +163,34 @@ ${transcriptContext}
 4. **语言与排版**：
    - 使用自然亲切的中文。可适当使用 Markdown 列表、加粗来突出重点，适度使用 Emoji 增加伴学亲和力。`;
 
-  // 3. 构建历史消息上下文
-  const agentMessages: any[] = history.map(h => ({
-    role: h.role,
-    content: h.content,
-    timestamp: Date.now(),
-  }));
+  // 3. 构建历史消息上下文（针对 Pi Agent 结构规范化）
+  const model = getDeepSeekModel();
+  const agentMessages: any[] = history
+    .filter(h => h.content && h.content.trim().length > 0)
+    .map(h => {
+      if (h.role === 'assistant') {
+        return {
+          role: 'assistant',
+          content: [{ type: 'text' as const, text: h.content }],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+          stopReason: 'stop',
+          timestamp: Date.now(),
+        };
+      }
+      return {
+        role: 'user',
+        content: h.content,
+        timestamp: Date.now(),
+      };
+    });
 
   // 4. 创建 Agent 实例
   const agent = new Agent({
     initialState: {
-      model: getDeepSeekModel(),
+      model,
       systemPrompt,
       tools: [seekVideoTool, clipHighlightTool],
       messages: agentMessages,
@@ -210,6 +227,10 @@ ${transcriptContext}
 
   // 6. 执行 prompt
   await agent.prompt(userMessage);
+
+  if (agent.state.errorMessage) {
+    throw new Error(`Pi Agent error: ${agent.state.errorMessage}`);
+  }
 
   return fullResponse;
 }

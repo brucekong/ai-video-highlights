@@ -71,25 +71,27 @@ export async function chatRoutes(fastify: FastifyInstance) {
         },
       });
 
-      // 5. 保存对话记录到数据库
-      await prisma.$transaction([
-        prisma.chatMessage.create({
-          data: {
-            videoId,
-            userId,
-            role: 'user',
-            content: message,
-          },
-        }),
-        prisma.chatMessage.create({
-          data: {
-            videoId,
-            userId,
-            role: 'assistant',
-            content: fullAssistantResponse,
-          },
-        }),
-      ]);
+      // 5. 保存对话记录到数据库（仅当存在有效回复时）
+      if (fullAssistantResponse && fullAssistantResponse.trim()) {
+        await prisma.$transaction([
+          prisma.chatMessage.create({
+            data: {
+              videoId,
+              userId,
+              role: 'user',
+              content: message,
+            },
+          }),
+          prisma.chatMessage.create({
+            data: {
+              videoId,
+              userId,
+              role: 'assistant',
+              content: fullAssistantResponse,
+            },
+          }),
+        ]);
+      }
 
       reply.raw.write('data: [DONE]\n\n');
       reply.raw.end();

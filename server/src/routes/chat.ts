@@ -1,14 +1,23 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import prisma from '../lib/prisma.js';
-import { runPiVideoAgent, type PiAgentActionEvent } from '../services/piAgent.js';
+import { runPiVideoAgent, getSupportedAgentModels, type PiAgentActionEvent } from '../services/piAgent.js';
 import { getUserId } from '../utils/auth.js';
 
 export async function chatRoutes(fastify: FastifyInstance) {
+  // 获取支持的模型列表
+  fastify.get('/api/chat/models', async (_request, reply: FastifyReply) => {
+    return reply.send({
+      success: true,
+      data: getSupportedAgentModels(),
+      defaultModelKey: 'deepseek:deepseek-chat',
+    });
+  });
+
   fastify.post('/api/chat/stream', async (
-    request: FastifyRequest<{ Body: { videoId: string; message: string; currentPlayTime?: number } }>,
+    request: FastifyRequest<{ Body: { videoId: string; message: string; modelKey?: string; currentPlayTime?: number } }>,
     reply: FastifyReply
   ) => {
-    const { videoId, message, currentPlayTime } = request.body;
+    const { videoId, message, modelKey, currentPlayTime } = request.body;
     const userId = getUserId(request);
 
     if (!userId) {
@@ -57,6 +66,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
         videoId,
         transcriptItems: subtitles,
         userMessage: message,
+        modelKey,
         currentPlayTime,
         history: formattedHistory,
         onText: (chunk) => {

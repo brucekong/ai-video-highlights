@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2, Volume2, Trash2, BookOpen, Download, Save, Copy, ChevronDown, ChevronUp } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Cpu, Map, Search, RefreshCw, Scissors, Edit2, Volume2, Trash2, BookOpen, Download, Save, Copy, ChevronDown, ChevronUp } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
@@ -132,6 +132,81 @@ export interface ChatMessageItem {
   statusText?: string;
   actions?: ChatActionItem[];
 }
+
+export interface AgentModelItem {
+  key: string;
+  label: string;
+  provider: 'deepseek' | 'github-copilot';
+  modelId: string;
+  badge: string;
+  available: boolean;
+}
+
+const availableModels = ref<AgentModelItem[]>([
+  {
+    key: 'deepseek:deepseek-chat',
+    label: 'DeepSeek-V3',
+    provider: 'deepseek',
+    modelId: 'deepseek-chat',
+    badge: '推荐 · 极速',
+    available: true
+  },
+  {
+    key: 'deepseek:deepseek-reasoner',
+    label: 'DeepSeek-R1 (深度思考)',
+    provider: 'deepseek',
+    modelId: 'deepseek-reasoner',
+    badge: '强推理',
+    available: true
+  },
+  {
+    key: 'github-copilot:gpt-4o',
+    label: 'Copilot · GPT-4o',
+    provider: 'github-copilot',
+    modelId: 'gpt-4o',
+    badge: '需配 Token',
+    available: false
+  },
+  {
+    key: 'github-copilot:claude-sonnet-4.5',
+    label: 'Copilot · Claude Sonnet',
+    provider: 'github-copilot',
+    modelId: 'claude-sonnet-4.5',
+    badge: '需配 Token',
+    available: false
+  }
+]);
+
+const selectedModelKey = ref<string>(localStorage.getItem('ai_companion_model') || 'deepseek:deepseek-chat');
+
+const selectedModel = computed(() => {
+  return availableModels.value.find(m => m.key === selectedModelKey.value);
+});
+
+const onModelChange = () => {
+  localStorage.setItem('ai_companion_model', selectedModelKey.value);
+};
+
+const fetchAvailableModels = async () => {
+  try {
+    const res = await fetch(`${API_BASE}/api/chat/models`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        availableModels.value = data.data;
+        const currentSelected = data.data.find((m: any) => m.key === selectedModelKey.value);
+        if (!currentSelected || !currentSelected.available) {
+          const firstAvail = data.data.find((m: any) => m.available);
+          if (firstAvail) {
+            selectedModelKey.value = firstAvail.key;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('获取模型列表失败:', err);
+  }
+};
 
 const activeSidebarTab = ref<'transcript' | 'chat'>('transcript');
 const chatInput = ref('');
@@ -1373,6 +1448,7 @@ const formatTranscriptTime = (segments: TranscriptSegment[], index: number) => {
 
 
 onMounted(() => {
+  fetchAvailableModels();
   const persistedBottomSubtitlePreference = window.localStorage.getItem(BOTTOM_SUBTITLE_TOGGLE_STORAGE_KEY);
   if (persistedBottomSubtitlePreference !== null) {
     showBottomSubtitleDock.value = persistedBottomSubtitlePreference === 'true';
@@ -1746,6 +1822,7 @@ const sendChatMessage = async () => {
       body: JSON.stringify({
         videoId: videoId.value,
         message: userMsg,
+        modelKey: selectedModelKey.value,
         currentPlayTime
       })
     });
@@ -3365,6 +3442,25 @@ const exportTranscriptToObsidian = async () => {
 
             <!-- Tab Content: AI Chat -->
             <div v-else class="tab-pane chat-pane">
+              <!-- 模型选择控制栏 -->
+              <div class="chat-model-toolbar">
+                <div class="model-select-capsule">
+                  <Cpu :size="13" class="model-icon" />
+                  <select v-model="selectedModelKey" class="model-dropdown" @change="onModelChange">
+                    <option
+                      v-for="m in availableModels"
+                      :key="m.key"
+                      :value="m.key"
+                    >
+                      {{ m.label }} {{ m.badge ? `(${m.badge})` : '' }}
+                    </option>
+                  </select>
+                </div>
+                <span class="model-status-tag" :class="{ ready: selectedModel?.available, warning: !selectedModel?.available }">
+                  {{ selectedModel?.available ? '● 就绪' : '⚠ 待配置 Token' }}
+                </span>
+              </div>
+
               <div ref="chatListRef" class="chat-messages" @scroll="handleChatScroll">
                 <div v-if="chatMessages.length === 0" class="chat-empty">
                   <div class="empty-icon-wrapper">
@@ -4025,6 +4121,71 @@ input::placeholder {
 .chat-pane {
   display: flex;
   flex-direction: column;
+}
+
+/* Chat Model Selector Toolbar */
+.chat-model-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.model-select-capsule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  padding: 3px 10px;
+  transition: all 0.2s ease;
+}
+
+.model-select-capsule:hover {
+  border-color: var(--accent-color);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.model-icon {
+  color: var(--accent-color);
+  flex-shrink: 0;
+}
+
+.model-dropdown {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+}
+
+.model-dropdown option {
+  background: #1a1a2e;
+  color: #fff;
+}
+
+.model-status-tag {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+.model-status-tag.ready {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.model-status-tag.warning {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 .chat-messages {

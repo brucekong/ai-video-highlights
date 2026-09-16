@@ -20,6 +20,7 @@ export interface PiAgentStreamOptions {
   videoId: string;
   transcriptItems: PiAgentSubtitleItem[];
   userMessage: string;
+  modelKey?: string; // 选中的模型标识，如 deepseek:deepseek-chat, github-copilot:gpt-4o
   currentPlayTime?: number; // 当前播放进度（秒）
   history?: PiAgentHistoryItem[];
   onText?: (chunk: string) => void;
@@ -28,7 +29,168 @@ export interface PiAgentStreamOptions {
   signal?: AbortSignal;
 }
 
-function getDeepSeekModel(): Model<'openai-completions'> {
+export interface AgentModelOption {
+  key: string;
+  label: string;
+  provider: 'deepseek' | 'github-copilot';
+  modelId: string;
+  badge: string;
+  available: boolean;
+}
+
+export function getSupportedAgentModels(): AgentModelOption[] {
+  const hasDeepSeek = !!process.env.DEEPSEEK_API_KEY;
+  const hasCopilot = !!(process.env.COPILOT_GITHUB_TOKEN || process.env.COPILOT_API_KEY || process.env.GITHUB_TOKEN);
+
+  return [
+    {
+      key: 'deepseek:deepseek-chat',
+      label: 'DeepSeek-V3',
+      provider: 'deepseek',
+      modelId: 'deepseek-chat',
+      badge: '推荐 · 极速',
+      available: hasDeepSeek,
+    },
+    {
+      key: 'deepseek:deepseek-reasoner',
+      label: 'DeepSeek-R1 (深度思考)',
+      provider: 'deepseek',
+      modelId: 'deepseek-reasoner',
+      badge: '强推理',
+      available: hasDeepSeek,
+    },
+    {
+      key: 'github-copilot:gpt-4o',
+      label: 'Copilot · GPT-4o',
+      provider: 'github-copilot',
+      modelId: 'gpt-4o',
+      badge: hasCopilot ? '已就绪' : '需配 Token',
+      available: hasCopilot,
+    },
+    {
+      key: 'github-copilot:claude-sonnet-4.5',
+      label: 'Copilot · Claude Sonnet',
+      provider: 'github-copilot',
+      modelId: 'claude-sonnet-4.5',
+      badge: hasCopilot ? '已就绪' : '需配 Token',
+      available: hasCopilot,
+    },
+  ];
+}
+
+let cachedCopilotAccessToken = '';
+let copilotTokenExpiresAt = 0;
+
+export async function resolveApiKeyForProvider(provider: string): Promise<string> {
+  if (provider === 'github-copilot') {
+    if (process.env.COPILOT_API_KEY) {
+      return process.env.COPILOT_API_KEY;
+    }
+    const githubToken = process.env.COPILOT_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+    if (!githubToken) {
+      throw new Error(
+        '未检测到 GitHub Copilot Token！请在 server/.env 中配置 COPILOT_GITHUB_TOKEN=ghp_xxx（或 COPILOT_API_KEY）以开启 Copilot 模型。'
+      );
+    }
+    if (cachedCopilotAccessToken && Date.now() < copilotTokenExpiresAt - 60000) {
+      return cachedCopilotAccessToken;
+    }
+    try {
+      const { refreshGitHubCopilotToken } = await import('@earendil-works/pi-ai/dist/utils/oauth/github-copilot.js');
+      const creds = await refreshGitHubCopilotToken(githubToken);
+      cachedCopilotAccessToken = creds.access;
+      copilotTokenExpiresAt = creds.expires;
+      return cachedCopilotAccessToken;
+    } catch (err: any) {
+      console.warn('换取 GitHub Copilot Token 失败，尝试直接使用 Token:', err.message);
+      return githubToken;
+    }
+  }
+
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    throw new Error('DEEPSEEK_API_KEY is not configured in server environment');
+  }
+  return apiKey;
+}
+
+export function resolveModelByKey(modelKey?: string): Model<any> {
+  const key = modelKey || 'deepseek:deepseek-chat';
+
+  if (key === 'deepseek:deepseek-reasoner') {
+    return {
+      id: 'deepseek-reasoner',
+      name: 'DeepSeek Reasoner',
+      api: 'openai-completions',
+      provider: 'deepseek',
+      baseUrl: 'https://api.deepseek.com',
+      compat: {
+        requiresReasoningContentOnAssistantMessages: true,
+        thinkingFormat: 'deepseek',
+      },
+      reasoning: true,
+      thinkingLevelMap: {
+        minimal: null,
+        low: null,
+        medium: null,
+        high: 'high',
+        xhigh: 'max',
+      },
+      input: ['text'],
+      cost: { input: 0.55, output: 2.19, cacheRead: 0.14, cacheWrite: 0 },
+      contextWindow: 64000,
+      maxTokens: 8192,
+    };
+  }
+
+  if (key === 'github-copilot:gpt-4o') {
+    return {
+      id: 'gpt-4o',
+      name: 'GPT-4o (Copilot)',
+      api: 'openai-completions',
+      provider: 'github-copilot',
+      baseUrl: 'https://api.individual.githubcopilot.com',
+      headers: {
+        'User-Agent': 'GitHubCopilotChat/0.35.0',
+        'Editor-Version': 'vscode/1.107.0',
+        'Editor-Plugin-Version': 'copilot-chat/0.35.0',
+        'Copilot-Integration-Id': 'vscode-chat',
+      },
+      compat: {
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: false,
+      },
+      reasoning: false,
+      input: ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 4096,
+    };
+  }
+
+  if (key === 'github-copilot:claude-sonnet-4.5') {
+    return {
+      id: 'claude-sonnet-4.5',
+      name: 'Claude Sonnet 4.5 (Copilot)',
+      api: 'anthropic-messages',
+      provider: 'github-copilot',
+      baseUrl: 'https://api.individual.githubcopilot.com',
+      headers: {
+        'User-Agent': 'GitHubCopilotChat/0.35.0',
+        'Editor-Version': 'vscode/1.107.0',
+        'Editor-Plugin-Version': 'copilot-chat/0.35.0',
+        'Copilot-Integration-Id': 'vscode-chat',
+      },
+      compat: { supportsEagerToolInputStreaming: false },
+      reasoning: true,
+      input: ['text', 'image'],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 144000,
+      maxTokens: 8192,
+    };
+  }
+
   const modelId = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
   return {
     id: modelId,
@@ -77,6 +239,7 @@ export async function runPiVideoAgent(options: PiAgentStreamOptions): Promise<st
   const {
     transcriptItems,
     userMessage,
+    modelKey,
     currentPlayTime,
     history = [],
     onText,
@@ -84,11 +247,6 @@ export async function runPiVideoAgent(options: PiAgentStreamOptions): Promise<st
     onStatus,
     signal,
   } = options;
-
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    throw new Error('DEEPSEEK_API_KEY is not configured in server environment');
-  }
 
   const transcriptContext = formatTranscriptContext(transcriptItems);
   const currentTimeInfo = typeof currentPlayTime === 'number'
@@ -164,7 +322,7 @@ ${transcriptContext}
    - 使用自然亲切的中文。可适当使用 Markdown 列表、加粗来突出重点，适度使用 Emoji 增加伴学亲和力。`;
 
   // 3. 构建历史消息上下文（针对 Pi Agent 结构规范化）
-  const model = getDeepSeekModel();
+  const model = resolveModelByKey(modelKey);
   const agentMessages: any[] = history
     .filter(h => h.content && h.content.trim().length > 0)
     .map(h => {
@@ -195,7 +353,7 @@ ${transcriptContext}
       tools: [seekVideoTool, clipHighlightTool],
       messages: agentMessages,
     },
-    getApiKey: () => apiKey,
+    getApiKey: () => resolveApiKeyForProvider(model.provider),
   });
 
   let fullResponse = '';

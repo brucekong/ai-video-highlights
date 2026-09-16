@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { 
   Video, Upload, Play, Pause, ChevronLeft, ChevronRight, 
   Download, RefreshCw, ArrowLeft, CheckCircle2, AlertCircle, 
   Loader2, Scissors, Clock, Trash2, HelpCircle, Camera, Search, X, Copy,
-  Type, Image as ImageIcon, Move, Eye, Sliders, Layers
+  Type, Image as ImageIcon, Move, Layers
 } from 'lucide-vue-next';
 
 const router = useRouter();
@@ -13,6 +13,7 @@ const API_BASE = import.meta.env.VITE_API_URL;
 
 // 视频文件相关状态
 const videoFile = ref<File | null>(null);
+const fileInput = ref<HTMLInputElement | null>(null);
 const videoSrc = ref<string>('');
 const isDragging = ref(false);
 
@@ -766,10 +767,16 @@ const handleTrim = async () => {
     if (transcodeTimer) clearInterval(transcodeTimer);
     
     if (xhr.status >= 200 && xhr.status < 300) {
-      trimProgress.value = 100;
-      
       // 处理流式下载
       const blob = xhr.response; // 必须是 blob 类型
+      if (!blob || blob.size <= 1024) {
+        isTrimming.value = false;
+        trimProgress.value = 0;
+        trimError.value = '裁剪生成的视频文件异常或为空（0 字节），请检查裁剪起止时间并重试。';
+        return;
+      }
+
+      trimProgress.value = 100;
       const url = URL.createObjectURL(blob);
       resultUrl.value = url;
       resultFileName.value = watermark.value.enabled ? `watermarked_${videoFile.value!.name}` : `trimmed_${videoFile.value!.name}`;
@@ -879,7 +886,7 @@ const resetAll = () => {
         @dragover.prevent="onDragOver"
         @dragleave="onDragLeave"
         @drop.prevent="onDrop"
-        @click="$refs.fileInput.click()"
+        @click="fileInput?.click()"
       >
         <input 
           ref="fileInput"

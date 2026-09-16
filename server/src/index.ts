@@ -16,6 +16,7 @@ import multipart from '@fastify/multipart';
 import { trimRoutes } from './routes/trim.js';
 import { assetsRoutes } from './routes/assets.js';
 import { publishRoutes } from './routes/publish.js';
+import { comicRoutes } from './routes/comic.js';
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -30,6 +31,20 @@ async function main() {
         },
       },
     },
+  });
+
+  // 允许空的 application/json 请求体，避免 FST_ERR_CTP_EMPTY_JSON_BODY
+  fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body: string, done) => {
+    if (!body || body.trim() === '') {
+      done(null, {});
+      return;
+    }
+    try {
+      done(null, JSON.parse(body));
+    } catch (err: any) {
+      err.statusCode = 400;
+      done(err, undefined);
+    }
   });
 
   // CORS — 允许前端访问
@@ -64,7 +79,7 @@ async function main() {
   // 注册 Multipart 支持以支持本地视频上传裁剪
   await fastify.register(multipart, {
     limits: {
-      fileSize: 1024 * 1024 * 1024, // 限制 1GB
+      fileSize: 50 * 1024 * 1024 * 1024, // 限制 50GB，避免大文件被截断
     }
   });
 
@@ -109,6 +124,7 @@ async function main() {
   await fastify.register(trimRoutes);
   await fastify.register(assetsRoutes);
   await fastify.register(publishRoutes);
+  await fastify.register(comicRoutes);
 
   // Health checks
   fastify.get('/api/health', {

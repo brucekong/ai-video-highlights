@@ -280,7 +280,7 @@ async function requestJsonFromDeepSeek(params: {
       console.log(`🤖 DeepSeek API attempt ${attempt}/${MAX_RETRIES}...`);
 
       const completion = await client.chat.completions.create({
-        model: 'deepseek-v4-flash',
+        model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
         messages: [
           {
             role: 'system',
@@ -494,7 +494,7 @@ export async function translateTranscriptSegments(
         console.log(`[Batch ${batchIdx + 1}] Translation attempt ${attempt}/${MAX_RETRIES}...`);
 
         const completion = await client.chat.completions.create({
-          model: 'deepseek-v4-flash',
+          model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
           messages: [
             {
               role: 'system',
@@ -615,7 +615,7 @@ ${transcriptContext}
   ];
 
   const stream = await client.chat.completions.create({
-    model: 'deepseek-v4-flash',
+    model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
     messages,
     stream: true,
     temperature: 0.5,
@@ -709,4 +709,123 @@ export async function getEmbeddings(texts: string[]): Promise<number[][]> {
 
     return response.data.map(d => d.embedding);
   }
+}
+
+/**
+ * 清除文本中所有时间戳/时间刻度标记
+ * 例如 [00:15], (01:23), 01:23-02:45, 时间点 01:23 等
+ */
+export function cleanTimecodes(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/[\[(【]\s*\d{1,2}:\d{2}(?::\d{2})?\s*[\])】]/g, '')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\s*[-~至到]\s*\d{1,2}:\d{2}(?::\d{2})?\b/g, '')
+    .replace(/(?:^|\s)\d{1,2}:\d{2}(?::\d{2})?(?:[:\s-]*)/gm, ' ')
+    .replace(/(?:时间|时间戳|时间点|进度)\s*[:：]?\s*\d{1,2}:\d{2}/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+const TAKEAWAY_STORY_TITLE_SYSTEM_PROMPT = `你是一个儿童绘本与故事起名专家。你的任务是根据给定的单个核心摘要、要点背景以及相关对白，提炼出一个生动有趣、简单易懂的故事标题。
+
+请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
+{
+  "story_title": "简单生动的故事标题"
+}
+
+要求：
+1. 标题风格要简单、生动、有故事感和画面感，契合该片段的主题和儿童故事特点（例如《玛雅的脏裙子》《弄脏的新衣服》《学会真诚道歉》《彩色颜料融化了》等）。
+2. 长度控制在 4-16 个汉字以内，不要冗长。
+3. 严禁包含任何时间标记、时间戳或时间刻度（如 [00:15]、00:15、01:23、分钟等）。
+4. 只返回纯 JSON，不要有任何多余的解释说明。`;
+
+export async function generateTakeawayStoryTitle(params: {
+  videoTitle?: string;
+  takeawayTitle: string;
+  takeawaySummary?: string;
+  transcriptSnippet?: string;
+}): Promise<string> {
+  const contextParts = [
+    params.videoTitle ? `视频主题：${params.videoTitle}` : '',
+    `要点标题：${params.takeawayTitle}`,
+    params.takeawaySummary ? `要点摘要：${params.takeawaySummary}` : '',
+    params.transcriptSnippet ? `本段故事对白与字幕：\n${params.transcriptSnippet}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  const parsed = await requestJsonFromDeepSeek({
+    systemPrompt: TAKEAWAY_STORY_TITLE_SYSTEM_PROMPT,
+    userContent: `请为以下故事片段生成一个简单的故事标题（严禁包含任何时间刻度）：\n\n${contextParts}`,
+    maxTokens: 150,
+    temperature: 0.7,
+  });
+
+  let title = String(parsed.story_title || '').trim();
+  title = cleanTimecodes(title);
+  title = title.replace(/^[《"“](.*)[》"”]$/, '$1').trim();
+  return title || params.takeawayTitle;
+}
+
+const TAKEAWAY_REDBOOK_COPY_SYSTEM_PROMPT = `你是一个小红书爆款内容运营专家。你的任务是根据给定的单个核心故事/片段摘要以及台词内容，为该故事单独生成一篇适合在小红书发布的图文/短视频文案。
+
+请严格按照以下 JSON 格式返回结果（不要返回其他任何文字）：
+{
+  "title": "带 emoji 的吸引人标题",
+  "content": "小红书风格正文，包含 emoji、分段、细节和情绪（严禁包含任何时间刻度）",
+  "hashtags": "#话题1 #话题2 #话题3"
+}
+
+文案要求：
+1. **💥 严禁包含任何时间刻度/时间戳**：绝对不能出现 [00:15]、00:15、01:23、02:45 等时间数字或进度提示，必须纯粹讲述故事剧情、反思与感悟！
+2. 标题要吸引人，适合小红书爆款风格，带 1-3 个 emoji，长度 16-24 个汉字。
+3. 正文采用小红书经典排版：
+   - 开头 1-2 句吸引眼球的钩子，点出故事冲突或情绪共鸣
+   - 中间 3-5 个短段落，讲述故事的主要转折与温馨结局
+   - 适当提炼 1 点儿童成长/育儿启示，或日常实用的英语表达（如果是英语故事）
+   - 全文穿插贴切的 emoji，排版清爽舒适
+4. 结尾加上 4-8 个热门话题标签，包含：#儿童故事 #睡前故事 #育儿日常 #绘本分享 等。
+5. 只返回纯 JSON，不要有任何多余的解释。`;
+
+export async function generateTakeawayRedbookCopy(params: {
+  videoTitle?: string;
+  takeawayTitle: string;
+  takeawaySummary?: string;
+  transcriptSnippet?: string;
+}): Promise<{
+  title: string;
+  content: string;
+  hashtags: string;
+  fullCopy: string;
+}> {
+  const contextParts = [
+    params.videoTitle ? `视频主题：${params.videoTitle}` : '',
+    `要点标题：${params.takeawayTitle}`,
+    params.takeawaySummary ? `要点摘要：${params.takeawaySummary}` : '',
+    params.transcriptSnippet ? `本段故事对白与字幕：\n${params.transcriptSnippet}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  const parsed = await requestJsonFromDeepSeek({
+    systemPrompt: TAKEAWAY_REDBOOK_COPY_SYSTEM_PROMPT,
+    userContent: `请为以下故事片段生成一篇小红书发布文案（严禁带有任何时间刻度）：\n\n${contextParts}`,
+    maxTokens: 1000,
+    temperature: 0.8,
+  });
+
+  const title = cleanTimecodes(String(parsed.title || '').trim());
+  const content = cleanTimecodes(String(parsed.content || '').trim());
+  const hashtags = normalizeRedbookHashtags(cleanTimecodes(parsed.hashtags));
+
+  const fullCopy = [
+    title,
+    '',
+    content,
+    '',
+    hashtags,
+  ].filter(part => part !== undefined).join('\n').trim();
+
+  return {
+    title,
+    content,
+    hashtags,
+    fullCopy,
+  };
 }

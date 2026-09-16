@@ -335,10 +335,26 @@ function generateSrt(subtitles: SubtitleItem[], startTimeSec: number, options: S
 function buildHardSubtitleFilter(srtPath: string): string {
   const safeSrtPath = srtPath.replace(/\\/g, '/').replace(/:/g, '\\:');
   const padFilter = `setpts=PTS-STARTPTS,pad=iw:ih+${BURN_SUBTITLE_PAD_HEIGHT}:0:0:color=black`;
-  const fontName = process.env.SUBTITLE_FONT
-    || (process.platform === 'darwin' ? 'PingFang SC' : process.platform === 'win32' ? 'Microsoft YaHei' : 'Noto Sans CJK SC');
-  let fontsDir = '';
+
   const localFontsDir = path.join(process.cwd(), 'fonts');
+  const localFontTtf = path.join(localFontsDir, 'PingFang.ttf');
+  const localFontTtc = path.join(localFontsDir, 'PingFang.ttc');
+
+  // 当项目 fonts 目录下存在 PingFang 字体时，其内部 family/fullname 为 '苹方_中等'，
+  // 必须使用该名称以避免 macOS CoreText 递归回退至受限的 PrivateFrameworks 引起逐帧 open 报错与严重卡顿。
+  let defaultFont = 'PingFang SC';
+  if (fs.existsSync(localFontTtf) || fs.existsSync(localFontTtc)) {
+    defaultFont = '苹方_中等';
+  } else if (process.platform === 'darwin') {
+    defaultFont = 'Hiragino Sans GB';
+  } else if (process.platform === 'win32') {
+    defaultFont = 'Microsoft YaHei';
+  } else {
+    defaultFont = 'Noto Sans CJK SC';
+  }
+
+  const fontName = process.env.SUBTITLE_FONT || defaultFont;
+  let fontsDir = '';
   if (fs.existsSync(localFontsDir)) {
     fontsDir = localFontsDir.replace(/\\/g, '/').replace(/:/g, '\\:');
   } else {
@@ -433,11 +449,11 @@ export function getSubtitleFontFile(): string {
   return '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc';
 }
 
-function escapeDrawtextPath(value: string): string {
+export function escapeDrawtextPath(value: string): string {
   return value.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
 }
 
-function escapeDrawtextText(value: string): string {
+export function escapeDrawtextText(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
     .replace(/:/g, '\\:')
@@ -448,7 +464,8 @@ function escapeDrawtextText(value: string): string {
     .replace(/\n/g, '\\n');
 }
 
-async function findCachedFullVideoPath(
+
+export async function findCachedFullVideoPath(
   videoId: string,
   quality?: '1080' | '1440' | '2160' | 'best',
 ): Promise<string | null> {
@@ -501,7 +518,7 @@ function buildPreferredVideoFormat(quality: '1080' | '1440' | '2160' | 'best' = 
   return `bestvideo[height<=${quality}][vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/best[vcodec^=avc1][ext=mp4]/best`;
 }
 
-async function ensureClipSourceVideo({
+export async function ensureClipSourceVideo({
   videoId,
   title = 'video',
   url,
@@ -706,7 +723,7 @@ export async function downloadFullVideo({
       if (isHighRes) {
         console.log(`[Full Download] High-res detected, transcoding to H.264 for compatibility...`);
         // 2K/4K 强制转码，确保 H.264 + YUV420P，否则微信无法播放
-        await execAsync(`ffmpeg -y -i "${rawPath}" -c:v libx264 -preset superfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${preparedPath}"`);
+        await execAsync(`ffmpeg -y -i "${rawPath}" -c:v libx264 -preset ultrafast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${preparedPath}"`);
       } else {
         await execAsync(`ffmpeg -y -i "${rawPath}" -c copy -movflags faststart "${preparedPath}"`);
       }
@@ -717,14 +734,13 @@ export async function downloadFullVideo({
       await fs.writeFile(srtPath, srtContent);
       const vfFilter = appendWatermarkFilter(buildHardSubtitleFilter(srtPath));
       console.log(`[Full Download] Burning translated subtitles into ${outputPath}...`);
-      await execAsync(`ffmpeg -y -i "${preparedPath}" -vf "${vfFilter}" -c:v libx264 -preset superfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
+      await execAsync(`ffmpeg -y -i "${preparedPath}" -vf "${vfFilter}" -c:v libx264 -preset ultrafast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
     } else {
       const vfFilter = appendWatermarkFilter();
-      await execAsync(`ffmpeg -y -i "${preparedPath}" -vf "${vfFilter}" -c:v libx264 -preset superfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
+      await execAsync(`ffmpeg -y -i "${preparedPath}" -vf "${vfFilter}" -c:v libx264 -preset ultrafast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`);
     }
 
-    await fs.remove(rawPath).catch(() => {});
-    await fs.remove(preparedPath).catch(() => {});
+    // 保留原始下载及 prepared 视频文件，避免耗时重新下载，仅清理临时生成的 srt
     await fs.remove(srtPath).catch(() => {});
     
     return outputPath;

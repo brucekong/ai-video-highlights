@@ -12,6 +12,8 @@ import {
   analyzeTranscriptSummary,
   enrichKeywordGlossaryItem,
   generatePublishAssist,
+  generateTakeawayRedbookCopy,
+  generateTakeawayStoryTitle,
   getEmbedding,
   isValidKeywordGlossaryEnglish,
   normalizeKeywordGlossaryEnglish,
@@ -523,6 +525,8 @@ export async function videoRoutes(fastify: FastifyInstance) {
           summary: t.summary,
           timestamp: t.timestamp,
           duration: t.duration,
+          storyTitle: t.storyTitle,
+          redbookCopy: t.redbookCopy,
         })),
         transcript,
         category: video.category,
@@ -1654,16 +1658,23 @@ export async function videoRoutes(fastify: FastifyInstance) {
         })),
       });
 
+      const createdTakeaways = await prisma.takeaway.findMany({
+        where: { videoId },
+        orderBy: { sortOrder: 'asc' },
+      });
+
       return reply.send({
         success: true,
         data: {
           videoTitle: result.title,
-          takeaways: result.takeaways.map((t, index) => ({
-            id: `regen-${videoId}-${index}`,
+          takeaways: createdTakeaways.map((t) => ({
+            id: t.id,
             title: t.title,
             summary: t.summary,
             timestamp: t.timestamp,
             duration: t.duration,
+            storyTitle: t.storyTitle,
+            redbookCopy: t.redbookCopy,
           })),
         },
       });
@@ -1753,4 +1764,193 @@ export async function videoRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({ error: '重新生成小红书文案失败', message: error.message });
     }
   });
+
+  /**
+   * POST /api/videos/:videoId/takeaways/:takeawayId/story-title
+   * 为单个核心摘要生成简单生动的故事标题
+   */
+  fastify.post('/api/videos/:videoId/takeaways/:takeawayId/story-title', {
+    schema: {
+      tags: ['Videos'],
+      summary: '为核心摘要生成简单故事标题',
+      params: {
+        type: 'object',
+        properties: {
+          videoId: { type: 'string' },
+          takeawayId: { type: 'string' },
+        },
+        required: ['videoId', 'takeawayId'],
+      },
+    },
+    handler: async (request: FastifyRequest<{ Params: { videoId: string; takeawayId: string } }>, reply: FastifyReply) => {
+      const { videoId, takeawayId } = request.params;
+      try {
+        const video = await prisma.video.findUnique({ where: { videoId } });
+        if (!video) {
+          return reply.status(404).send({ error: '视频不存在' });
+        }
+
+        const takeaway = await findTakeawayByIdOrParam(videoId, takeawayId);
+        if (!takeaway) {
+          return reply.status(404).send({ error: '未找到指定的核心摘要' });
+        }
+
+        const durSec = parseDurationToSeconds(takeaway.duration);
+        const transcriptSnippet = await getTranscriptSnippetForTakeaway(videoId, takeaway.timestamp, durSec);
+
+        const storyTitle = await generateTakeawayStoryTitle({
+          videoTitle: video.title || undefined,
+          takeawayTitle: takeaway.title,
+          takeawaySummary: takeaway.summary || undefined,
+          transcriptSnippet,
+        });
+
+        const updated = await prisma.takeaway.update({
+          where: { id: takeaway.id },
+          data: { storyTitle },
+        });
+
+        return reply.send({
+          success: true,
+          data: {
+            takeawayId: updated.id,
+            storyTitle: updated.storyTitle,
+          },
+        });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.status(500).send({ error: '生成故事标题失败', message: error.message });
+      }
+    },
+  });
+
+  /**
+   * POST /api/videos/:videoId/takeaways/:takeawayId/redbook-copy
+   * 为单个核心摘要生成小红书发布文案（无时间刻度）
+   */
+  fastify.post('/api/videos/:videoId/takeaways/:takeawayId/redbook-copy', {
+    schema: {
+      tags: ['Videos'],
+      summary: '为核心摘要生成小红书发布文案（无时间刻度）',
+      params: {
+        type: 'object',
+        properties: {
+          videoId: { type: 'string' },
+          takeawayId: { type: 'string' },
+        },
+        required: ['videoId', 'takeawayId'],
+      },
+    },
+    handler: async (request: FastifyRequest<{ Params: { videoId: string; takeawayId: string } }>, reply: FastifyReply) => {
+      const { videoId, takeawayId } = request.params;
+      try {
+        const video = await prisma.video.findUnique({ where: { videoId } });
+        if (!video) {
+          return reply.status(404).send({ error: '视频不存在' });
+        }
+
+        const takeaway = await findTakeawayByIdOrParam(videoId, takeawayId);
+        if (!takeaway) {
+          return reply.status(404).send({ error: '未找到指定的核心摘要' });
+        }
+
+        const durSec = parseDurationToSeconds(takeaway.duration);
+        const transcriptSnippet = await getTranscriptSnippetForTakeaway(videoId, takeaway.timestamp, durSec);
+
+        const result = await generateTakeawayRedbookCopy({
+          videoTitle: video.title || undefined,
+          takeawayTitle: takeaway.title,
+          takeawaySummary: takeaway.summary || undefined,
+          transcriptSnippet,
+        });
+
+        const updated = await prisma.takeaway.update({
+          where: { id: takeaway.id },
+          data: { redbookCopy: result.fullCopy },
+        });
+
+        return reply.send({
+          success: true,
+          data: {
+            takeawayId: updated.id,
+            redbookCopy: updated.redbookCopy,
+            title: result.title,
+            content: result.content,
+            hashtags: result.hashtags,
+          },
+        });
+      } catch (error: any) {
+        fastify.log.error(error);
+        return reply.status(500).send({ error: '生成小红书发布文案失败', message: error.message });
+      }
+    },
+  });
+}
+
+function parseDurationToSeconds(durationStr?: string | null): number {
+  if (!durationStr) return 0;
+  const parts = durationStr.split(':');
+  if (parts.length === 2) {
+    return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+  } else if (parts.length === 3) {
+    return (parseInt(parts[0], 10) || 0) * 3600 + (parseInt(parts[1], 10) || 0) * 60 + (parseInt(parts[2], 10) || 0);
+  }
+  return parseInt(durationStr, 10) || 0;
+}
+
+async function findTakeawayByIdOrParam(videoId: string, takeawayParam: string) {
+  let takeaway = await prisma.takeaway.findFirst({
+    where: { id: takeawayParam, videoId },
+  });
+  if (takeaway) return takeaway;
+
+  const allTakeaways = await prisma.takeaway.findMany({
+    where: { videoId },
+    orderBy: { sortOrder: 'asc' },
+  });
+
+  const numericIndex = parseInt(takeawayParam.replace(/^ta-/, ''), 10);
+  if (!isNaN(numericIndex) && allTakeaways[numericIndex]) {
+    return allTakeaways[numericIndex];
+  }
+
+  if (takeawayParam.startsWith('regen-')) {
+    const parts = takeawayParam.split('-');
+    const idx = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(idx) && allTakeaways[idx]) {
+      return allTakeaways[idx];
+    }
+  }
+
+  return null;
+}
+
+async function getTranscriptSnippetForTakeaway(
+  videoId: string,
+  startSeconds: number,
+  durationSeconds: number
+): Promise<string> {
+  const allSubtitles = await getPreferredTranscriptForVideo(prisma, videoId);
+  if (!allSubtitles || allSubtitles.length === 0) return '';
+
+  const startMs = Math.max(0, (startSeconds - 2) * 1000);
+  const endSeconds = durationSeconds > 0 ? startSeconds + durationSeconds + 2 : startSeconds + 180;
+  const endMs = endSeconds * 1000;
+
+  const relevant = allSubtitles.filter((s) => {
+    const sStart = s.offset;
+    const sEnd = s.offset + s.duration;
+    return sEnd >= startMs && sStart <= endMs;
+  });
+
+  if (relevant.length === 0) return '';
+
+  return relevant
+    .map((s) => {
+      const en = (s.text || '').trim();
+      const zh = (s.translatedText || '').trim();
+      if (en && zh) return `${en} (${zh})`;
+      return en || zh;
+    })
+    .join('\n');
 }

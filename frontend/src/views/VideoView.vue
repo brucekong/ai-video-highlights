@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2, Volume2, Trash2, BookOpen, Download, Save } from 'lucide-vue-next';
+import { Loader2, Sparkles, AlertCircle, FileText, Clock, Play, Send, MessageCircle, User as UserIcon, Bot, Map, Search, RefreshCw, Scissors, Edit2, Volume2, Trash2, BookOpen, Download, Save, Copy, ChevronDown, ChevronUp } from 'lucide-vue-next';
 import YouTubePlayer from '../components/YouTubePlayer.vue';
 import BilibiliPlayer from '../components/BilibiliPlayer.vue';
 import MindMapModal from '../components/MindMapModal.vue';
@@ -24,6 +24,8 @@ interface Takeaway {
   summary: string;
   timestamp: number;  // 秒（AI 返回的单位）
   duration: string;   // 如 "2:30"
+  storyTitle?: string;
+  redbookCopy?: string;
 }
 
 interface KeywordGlossaryItem {
@@ -1832,6 +1834,122 @@ const copyToClipboard = async (text: string, message: string = '内容已复制�
   }
 };
 
+// 核心摘要：故事标题与小红书发布文案生成状态
+const isGeneratingTakeawayTitleMap = ref<Record<string, boolean>>({});
+const isGeneratingTakeawayRedbookMap = ref<Record<string, boolean>>({});
+const expandedTakeawayRedbookMap = ref<Record<string, boolean>>({});
+
+const toggleTakeawayRedbook = (key: string | number) => {
+  expandedTakeawayRedbookMap.value[key] = !expandedTakeawayRedbookMap.value[key];
+};
+
+const generateTakeawayStoryTitleAction = async (item: Takeaway & { index: number }) => {
+  const targetKey = item.id || `ta-${item.index}`;
+  if (!videoId.value || isGeneratingTakeawayTitleMap.value[targetKey]) return;
+
+  isGeneratingTakeawayTitleMap.value[targetKey] = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/takeaways/${item.id || item.index}/story-title`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({}),
+    });
+
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || result.message || '生成故事标题失败');
+    }
+
+    const storyTitle = result.data.storyTitle;
+    item.storyTitle = storyTitle;
+    const found = takeaways.value.find((t, i) => (t.id && t.id === item.id) || i === item.index);
+    if (found) {
+      found.storyTitle = storyTitle;
+    }
+
+    showActionNotice({
+      title: '生成成功',
+      message: `已为该核心摘要生成故事标题：《${storyTitle}》`,
+      type: 'success',
+    });
+  } catch (err: any) {
+    console.error('generateTakeawayStoryTitleAction error:', err);
+    showActionNotice({
+      title: '生成失败',
+      message: err.message || '生成故事标题失败，请重试',
+      type: 'error',
+    });
+  } finally {
+    isGeneratingTakeawayTitleMap.value[targetKey] = false;
+  }
+};
+
+const generateTakeawayRedbookAction = async (item: Takeaway & { index: number }) => {
+  const targetKey = item.id || `ta-${item.index}`;
+  if (!videoId.value || isGeneratingTakeawayRedbookMap.value[targetKey]) return;
+
+  isGeneratingTakeawayRedbookMap.value[targetKey] = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/videos/${videoId.value}/takeaways/${item.id || item.index}/redbook-copy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({}),
+    });
+
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      throw new Error(result.error || result.message || '生成小红书文案失败');
+    }
+
+    const redbookCopy = result.data.redbookCopy;
+    item.redbookCopy = redbookCopy;
+    const found = takeaways.value.find((t, i) => (t.id && t.id === item.id) || i === item.index);
+    if (found) {
+      found.redbookCopy = redbookCopy;
+    }
+    expandedTakeawayRedbookMap.value[targetKey] = true;
+
+    showActionNotice({
+      title: '生成成功',
+      message: '已为该核心摘要生成小红书发布文案（无时间刻度）',
+      type: 'success',
+    });
+  } catch (err: any) {
+    console.error('generateTakeawayRedbookAction error:', err);
+    showActionNotice({
+      title: '生成失败',
+      message: err.message || '生成小红书发布文案失败，请重试',
+      type: 'error',
+    });
+  } finally {
+    isGeneratingTakeawayRedbookMap.value[targetKey] = false;
+  }
+};
+
+const openComicForTakeaway = (item: any) => {
+  if (!videoId.value) return;
+  const start = item.timestamp;
+  const dur = typeof item.actualDuration === 'number' ? item.actualDuration : 60;
+  const end = item.timestamp + dur;
+  router.push({
+    path: '/comic',
+    query: {
+      videoId: videoId.value,
+      start: start.toString(),
+      end: end.toString(),
+      takeawayIndex: (item.index !== undefined ? item.index : '').toString(),
+      title: item.storyTitle || item.title || '',
+    },
+  });
+};
+
+
 const regenerateChannelsAssist = async () => {
   if (!videoId.value || isRegeneratingChannels.value) return;
   isRegeneratingChannels.value = true;
@@ -2498,6 +2616,79 @@ const exportTranscriptToObsidian = async () => {
                   <div class="takeaway-content">
                     <div class="takeaway-title">{{ item.title }}</div>
                     <div class="takeaway-summary">{{ item.summary }}</div>
+
+                    <!-- 故事标题展示 -->
+                    <div v-if="item.storyTitle" class="takeaway-generated-box story-title-box animate-fade-in" @click.stop>
+                      <div class="box-tag-label">
+                        <Sparkles :size="11" />
+                        <span>故事标题</span>
+                      </div>
+                      <div class="box-tag-content">{{ item.storyTitle }}</div>
+                      <button class="btn-copy-tag" @click.stop="copyToClipboard(item.storyTitle, '故事标题已复制到剪贴板。')" title="复制故事标题">
+                        <Copy :size="11" />
+                        <span>复制</span>
+                      </button>
+                    </div>
+
+                    <!-- 小红书发布文案展示 -->
+                    <div v-if="item.redbookCopy" class="takeaway-generated-box redbook-box animate-fade-in" @click.stop>
+                      <div class="redbook-box-header">
+                        <div class="box-tag-label redbook-label">
+                          <FileText :size="11" />
+                          <span>小红书发布文案</span>
+                        </div>
+                        <div class="box-tag-actions">
+                          <button class="btn-copy-tag" @click.stop="copyToClipboard(item.redbookCopy, '小红书发布文案已复制到剪贴板。')" title="复制全部文案">
+                            <Copy :size="11" />
+                            <span>复制</span>
+                          </button>
+                          <button class="btn-toggle-tag" @click.stop="toggleTakeawayRedbook(item.id || item.index)">
+                            <span>{{ expandedTakeawayRedbookMap[item.id || item.index] ? '收起' : '展开' }}</span>
+                            <ChevronUp v-if="expandedTakeawayRedbookMap[item.id || item.index]" :size="11" />
+                            <ChevronDown v-else :size="11" />
+                          </button>
+                        </div>
+                      </div>
+                      <div v-show="expandedTakeawayRedbookMap[item.id || item.index]" class="redbook-copy-content">
+                        <pre class="redbook-copy-pre">{{ item.redbookCopy }}</pre>
+                      </div>
+                    </div>
+
+                    <!-- 两个功能按钮：标题生成、小红书发布文案 -->
+                    <div class="takeaway-ai-actions" @click.stop>
+                      <button
+                        class="btn-takeaway-ai btn-title-ai"
+                        :class="{ 'has-val': !!item.storyTitle }"
+                        :disabled="isGeneratingTakeawayTitleMap[item.id || item.index]"
+                        @click.stop="generateTakeawayStoryTitleAction(item)"
+                        :title="item.storyTitle ? '重新生成简单故事标题' : '生成简单的故事标题'"
+                      >
+                        <Loader2 v-if="isGeneratingTakeawayTitleMap[item.id || item.index]" :size="11" class="spin" />
+                        <Sparkles v-else :size="11" />
+                        <span>{{ isGeneratingTakeawayTitleMap[item.id || item.index] ? '生成中...' : (item.storyTitle ? '重成标题' : '标题生成') }}</span>
+                      </button>
+
+                      <button
+                        class="btn-takeaway-ai btn-redbook-ai"
+                        :class="{ 'has-val': !!item.redbookCopy }"
+                        :disabled="isGeneratingTakeawayRedbookMap[item.id || item.index]"
+                        @click.stop="generateTakeawayRedbookAction(item)"
+                        :title="item.redbookCopy ? '重新生成小红书发布文案' : '生成小红书发布文案（无时间刻度）'"
+                      >
+                        <Loader2 v-if="isGeneratingTakeawayRedbookMap[item.id || item.index]" :size="11" class="spin" />
+                        <FileText v-else :size="11" />
+                        <span>{{ isGeneratingTakeawayRedbookMap[item.id || item.index] ? '生成中...' : (item.redbookCopy ? '重成文案' : '小红书发布文案') }}</span>
+                      </button>
+
+                      <button
+                        class="btn-takeaway-ai btn-comic-ai"
+                        @click.stop="openComicForTakeaway(item)"
+                        title="将此切片制作成连环画分镜图文"
+                      >
+                        <BookOpen :size="11" />
+                        <span>制作连环画</span>
+                      </button>
+                    </div>
                   </div>
                   <div class="seg-actions">
                     <button
@@ -4857,6 +5048,164 @@ input::placeholder {
 .takeaway-item.active .takeaway-summary {
   color: var(--text-primary);
   opacity: 0.8;
+}
+
+/* Takeaway AI Story Title & Redbook Copy Styles */
+.takeaway-generated-box {
+  margin-top: 8px;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.story-title-box {
+  background: rgba(99, 102, 241, 0.07);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.box-tag-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #6366f1;
+  flex-shrink: 0;
+}
+
+.box-tag-content {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.redbook-box {
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.18);
+}
+
+.redbook-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.redbook-label {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.box-tag-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-copy-tag,
+.btn-toggle-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-copy-tag:hover,
+.btn-toggle-tag:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--text-tertiary);
+}
+
+.redbook-copy-content {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(239, 68, 68, 0.2);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.redbook-copy-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.takeaway-ai-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-takeaway-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-takeaway-ai:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-title-ai {
+  background: rgba(99, 102, 241, 0.08);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+}
+
+.btn-title-ai:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.btn-redbook-ai {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+}
+
+.btn-redbook-ai:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.btn-comic-ai {
+  background: rgba(16, 185, 129, 0.08);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+}
+
+.btn-comic-ai:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.4);
 }
 
 @keyframes indicator-grow {

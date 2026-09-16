@@ -4,14 +4,36 @@ import path from 'node:path';
 import os from 'node:os';
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
+import { pipeline } from 'node:stream/promises';
 import { resolveFfmpegLocation } from '../services/ytdlp.js';
+import { getSubtitleFontFile, escapeDrawtextPath, escapeDrawtextText } from '../services/clipping.js';
 
 const execAsync = promisify(exec);
 const TEMP_DIR = path.join(process.cwd(), 'cache', 'trim-temp');
 
+/**
+ * 清理临时目录中超过 30 分钟的废弃文件
+ */
+async function cleanupOldTempFiles() {
+  try {
+    const files = await fs.readdir(TEMP_DIR);
+    const now = Date.now();
+    for (const f of files) {
+      const fullPath = path.join(TEMP_DIR, f);
+      const stat = await fs.stat(fullPath).catch(() => null);
+      if (stat && now - stat.mtimeMs > 30 * 60 * 1000) {
+        await fs.remove(fullPath).catch(() => {});
+      }
+    }
+  } catch {
+    // 忽略清理异常
+  }
+}
+
 export async function trimRoutes(fastify: FastifyInstance) {
-  // 确保临时目录存在
+  // 确保临时目录存在并清理陈旧文件
   await fs.ensureDir(TEMP_DIR);
+  await cleanupOldTempFiles();
 
   fastify.post('/api/video/trim-local', {
     schema: {
@@ -52,7 +74,7 @@ export async function trimRoutes(fastify: FastifyInstance) {
     const startVal = startQuery !== undefined ? startQuery : startField?.value;
     const endVal = endQuery !== undefined ? endQuery : endField?.value;
 
-    const start = parseFloat(String(startVal || '0'));
+    const start = Math.max(0, parseFloat(String(startVal || '0')));
     const end = parseFloat(String(endVal || '0'));
 
     request.log.info({ 
@@ -64,7 +86,7 @@ export async function trimRoutes(fastify: FastifyInstance) {
       endFieldValue: endField?.value 
     }, '[Trim Local] Time Parameters');
 
-    if (isNaN(start) || isNaN(end) || start < 0 || end <= start) {
+    if (isNaN(start) || isNaN(end) || end <= start) {
       return reply.status(400).send({ error: '无效的裁剪时间范围' });
     }
 
@@ -89,21 +111,6 @@ export async function trimRoutes(fastify: FastifyInstance) {
     const wmScale = parseFloat(String(fields.wmScale?.value || query?.wmScale || '25'));
     const wmBase64Image = String(fields.wmBase64Image?.value || '');
 
-    // 🔍 详细调试日志：对比 fields 和 query 中的值
-    request.log.info({
-      hasWatermark,
-      wmType,
-      wmScale,
-      wmXPercent,
-      wmYPercent,
-      wmOpacity,
-      wmBase64ImageLength: wmBase64Image.length,
-      'fields.wmScale': fields.wmScale?.value,
-      'fields.wmBase64Image_exists': !!fields.wmBase64Image?.value,
-      'query.wmScale': query?.wmScale,
-      'all_field_keys': Object.keys(fields),
-    }, '[Trim Local] Watermark params');
-
     // 随机生成临时文件名，避免并发冲突
     const fileId = `${Date.now()}_${Math.floor(Math.random() * 10000)}`;
     const originalExt = path.extname(data.filename) || '.mp4';
@@ -112,13 +119,21 @@ export async function trimRoutes(fastify: FastifyInstance) {
     const outputPath = path.join(TEMP_DIR, `output_${fileId}${originalExt}`);
 
     try {
-      // 写入上传视频文件
+      // 写入上传视频文件，使用 pipeline 确保完全刷新到磁盘并关闭文件句柄
       const writeStream = fs.createWriteStream(inputPath);
-      await new Promise<void>((resolve, reject) => {
-        data.file.pipe(writeStream);
-        data.file.on('end', () => resolve());
-        data.file.on('error', (err) => reject(err));
-      });
+      await pipeline(data.file, writeStream);
+
+      // 严格检查文件上传是否由于体积超限被 busboy 截断
+      if (data.file.truncated) {
+        throw new Error('上传的视频体积超出最大限制，上传已被截断。');
+      }
+
+      const inputStat = await fs.stat(inputPath);
+      if (inputStat.size === 0) {
+        throw new Error('上传的视频文件为空。');
+      }
+
+      request.log.info({ inputSize: inputStat.size, filename: data.filename }, '[Trim Local] Upload saved successfully');
 
       // 验证 ffmpeg 是否可用
       const ffmpegLocation = resolveFfmpegLocation();
@@ -145,57 +160,47 @@ export async function trimRoutes(fastify: FastifyInstance) {
       }
 
       // 构造 FFmpeg 命令与滤镜
+      // 核心优化：将 -ss 放在 -i 之前实现毫秒级快速跳转，避免从第 0 秒慢速逐帧解码，
+      // 并配合 -avoid_negative_ts make_zero 规范化 PTS 时间戳。
       let cmd = '';
 
       if (hasWatermark && wmType === 'image' && hasValidWmImage) {
-        // scale2ref 滤镜说明：
-        // 输入: [1:v]=水印图片, [0:v]=原始视频(参考)
-        // 在 scale2ref 表达式中:
-        //   - main_w/main_h = 第一个输入(水印)的原始宽高
-        //   - iw/ih = 第二个输入(参考视频)的宽高  
-        // 因此要让水印宽度 = 视频宽度 * scale%，必须用 iw (视频宽)
         const scaleFactor = (wmScale / 100).toFixed(4);
         const xFactor = (wmXPercent / 100).toFixed(4);
         const yFactor = (wmYPercent / 100).toFixed(4);
 
-        // 缩放: iw = 参考视频宽, ow/mdar = 等比缩放高度
-        // overlay 坐标: W = 底层视频宽度, H = 底层视频高度
         const filterComplex = [
           `[1:v][0:v]scale2ref=iw*${scaleFactor}:ow/mdar[wm_scaled][main_vid]`,
           `[wm_scaled]format=rgba,colorchannelmixer=aa=${wmOpacity}[wm]`,
           `[main_vid][wm]overlay=x='W*${xFactor}':y='H*${yFactor}'`
         ].join(';');
 
-        cmd = `"${ffmpegLocation}" -y -i "${inputPath}" -i "${wmImagePath}" -ss ${start} -t ${duration} -filter_complex "${filterComplex}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+        cmd = `"${ffmpegLocation}" -y -ss ${start} -i "${inputPath}" -i "${wmImagePath}" -t ${duration} -filter_complex "${filterComplex}" -avoid_negative_ts make_zero -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
 
       } else if (hasWatermark && wmType === 'text' && wmText) {
-        // 构造文字水印 filter
-        // 坐标转换为基于 main_w, main_h 的相对百分比
         const xPos = `(w*${(wmXPercent / 100).toFixed(4)})`;
         const yPos = `(h*${(wmYPercent / 100).toFixed(4)})`;
         
-        // 适当转义文本中的特殊字符
-        const escapedText = wmText.replace(/'/g, "'\\\\''").replace(/:/g, '\\:');
+        const escapedText = escapeDrawtextText(wmText);
+        const fontFile = escapeDrawtextPath(getSubtitleFontFile());
         
-        let drawtextFilter = `drawtext=text='${escapedText}':x=${xPos}:y=${yPos}:fontsize=${wmFontSize}:fontcolor=${wmTextColor}@${wmOpacity}`;
-        
-        // 字体兼容性配置 (macOS / Linux)
-        if (process.platform === 'darwin') {
-          drawtextFilter += `:font='PingFang SC'`;
-        }
+        let drawtextFilter = `drawtext=fontfile='${fontFile}':text='${escapedText}':x=${xPos}:y=${yPos}:fontsize=${wmFontSize}:fontcolor=${wmTextColor}@${wmOpacity}`;
         
         if (wmHasBg) {
           drawtextFilter += `:box=1:boxcolor=${wmBgColor}@${wmOpacity}:boxborderw=6`;
         }
 
-        cmd = `"${ffmpegLocation}" -y -i "${inputPath}" -ss ${start} -t ${duration} -vf "${drawtextFilter}" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+        cmd = `"${ffmpegLocation}" -y -ss ${start} -i "${inputPath}" -t ${duration} -vf "${drawtextFilter}" -avoid_negative_ts make_zero -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
       } else {
-        // 无水印标准裁剪
-        cmd = `"${ffmpegLocation}" -y -i "${inputPath}" -ss ${start} -t ${duration} -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
+        // 无水印标准快速裁剪
+        cmd = `"${ffmpegLocation}" -y -ss ${start} -i "${inputPath}" -t ${duration} -avoid_negative_ts make_zero -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart "${outputPath}"`;
       }
       
       request.log.info(`[Trim Local] Running command: ${cmd}`);
+      const startTimeMs = Date.now();
       await execAsync(cmd);
+      const elapsedMs = Date.now() - startTimeMs;
+      request.log.info({ elapsedMs }, '[Trim Local] FFmpeg command completed');
 
       // 检查输出文件是否存在并获取状态
       if (!(await fs.pathExists(outputPath))) {
@@ -203,6 +208,11 @@ export async function trimRoutes(fastify: FastifyInstance) {
       }
 
       const stat = await fs.stat(outputPath);
+      // 避免输出只有 261 字节的空文件（无任何视频/音频帧）被当成正常结果下载
+      if (stat.size <= 1024) {
+        throw new Error('视频裁剪生成的文件为空（0 字节有效数据），请检查裁剪起止时间是否在视频有效时长范围内。');
+      }
+
       const downloadName = `processed_${path.basename(data.filename)}`;
 
       // 设置响应头

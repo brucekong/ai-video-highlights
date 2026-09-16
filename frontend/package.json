@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@types/jszip": "^3.4.0",
     "d3-scale": "^4.0.2",
     "d3-transition": "^3.0.1",
+    "jszip": "^3.10.2",
     "lucide-vue-next": "^0.575.0",
     "markmap-common": "^0.18.9",
     "markmap-lib": "^0.18.12",

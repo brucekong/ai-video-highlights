@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { Sparkles, User, Menu, Search, Globe, Video, CheckCircle2, AlertCircle, X, Loader2, Scissors, LayoutDashboard, Radio, Sliders } from 'lucide-vue-next';
+import { Sparkles, User, Menu, Search, Globe, Video, CheckCircle2, AlertCircle, X, Loader2, Scissors, LayoutDashboard, Radio, BookOpen } from 'lucide-vue-next';
 import LoginModal from './components/LoginModal.vue';
 import HistoryDrawer from './components/HistoryDrawer.vue';
 import GlobalSearchModal from './components/GlobalSearchModal.vue';
@@ -264,6 +264,14 @@ onUnmounted(() => {
           >
             <Scissors :size="18" />
             <span>裁剪</span>
+          </button>
+          <button
+            class="btn-icon-labeled glass-panel"
+            @click="router.push('/comic')"
+            title="分镜连环画与图文长图"
+          >
+            <BookOpen :size="18" />
+            <span>连环画</span>
           </button>
           <button
             class="btn-icon-labeled glass-panel"

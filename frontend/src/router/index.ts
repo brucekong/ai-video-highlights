@@ -33,6 +33,11 @@ const router = createRouter({
       component: StorybookPrintView
     },
     {
+      path: '/comic',
+      name: 'comic-storyboard',
+      component: () => import('../views/ComicView.vue')
+    },
+    {
       path: '/trim',
       name: 'video-trim',
       component: VideoTrimView

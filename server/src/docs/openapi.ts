@@ -18,6 +18,8 @@ export const Schemas = {
       summary: { type: 'string', nullable: true, description: '要点摘要' },
       timestamp: { type: 'integer', description: '视频中的时间点（秒）' },
       duration: { type: 'string', nullable: true, description: '该段持续时长' },
+      storyTitle: { type: 'string', nullable: true, description: '简单的故事标题' },
+      redbookCopy: { type: 'string', nullable: true, description: '小红书发布文案（无时间刻度）' },
     },
   },
   TranscriptSegment: {

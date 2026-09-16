@@ -92,13 +92,15 @@ model UserHistory {
 model Takeaway {
   id        String   @id @default(cuid())
   videoId   String   @map("video_id")
-  title     String
-  summary   String?
-  timestamp Int
-  duration  String?
-  sortOrder Int      @default(0) @map("sort_order")
-  createdAt DateTime @default(now()) @map("created_at")
-  video     Video    @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
+  title       String
+  summary     String?
+  timestamp   Int
+  duration    String?
+  storyTitle  String?  @map("story_title")
+  redbookCopy String?  @map("redbook_copy")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  video       Video    @relation(fields: [videoId], references: [videoId], onDelete: Cascade)
 
   @@map("takeaways")
 }

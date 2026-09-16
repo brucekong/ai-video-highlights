@@ -96,7 +96,7 @@ export async function resolveApiKeyForProvider(provider: string): Promise<string
       return cachedCopilotAccessToken;
     }
     try {
-      const { refreshGitHubCopilotToken } = await import('@earendil-works/pi-ai/dist/utils/oauth/github-copilot.js');
+      const { refreshGitHubCopilotToken } = await import('@earendil-works/pi-ai/oauth');
       const creds = await refreshGitHubCopilotToken(githubToken);
       cachedCopilotAccessToken = creds.access;
       copilotTokenExpiresAt = creds.expires;
